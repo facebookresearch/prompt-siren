@@ -75,7 +75,7 @@ ufmt = [
     "black==25.11.0",
     "ruff-api==0.1.0",
     "stdlibs==2024.1.28",
-    "ufmt==2.8.0",
+    "ufmt==2.9.0",
     "usort==1.0.8.post1",
 ]
 

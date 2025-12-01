@@ -2816,7 +2816,7 @@ requires-dist = [
     { name = "swebench", git = "https://github.com/princeton-nlp/SWE-bench.git?rev=v4.1.0" },
     { name = "tabulate", specifier = ">=0.9.0" },
     { name = "typing-extensions", specifier = ">=4.15.0" },
-    { name = "ufmt", marker = "extra == 'ufmt'", specifier = "==2.8.0" },
+    { name = "ufmt", marker = "extra == 'ufmt'", specifier = "==2.9.0" },
     { name = "usort", marker = "extra == 'ufmt'", specifier = "==1.0.8.post1" },
 ]
 provides-extras = ["ufmt"]
@@ -4086,7 +4086,7 @@ wheels = [
 
 [[package]]
 name = "ufmt"
-version = "2.8.0"
+version = "2.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "black" },
@@ -4098,9 +4098,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "usort" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/18/f8/c25e242a8e12062172dea4117859757a11339bbc39b1a3c7fb6a6de03bb2/ufmt-2.8.0.tar.gz", hash = "sha256:72c9502915497678de9aeab8aa18604890f14f869f7f378dd26e2878bde84f13", size = 24482, upload-time = "2024-10-25T06:21:57.239Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6c/b5/81ba8939a251d60921c068c63e043216de531656f0618c0db986cacc0d66/ufmt-2.9.0.tar.gz", hash = "sha256:ef0094a8ff554e978ddd7c27cf0c8e87e44ae70c55112ccb5c8c23b47f5467cd", size = 24800, upload-time = "2025-10-31T06:20:57.487Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/11/4b/3f1b6f566b6cf70ccc5cba9a638fe4459f1e373c34d74df2e40e41871d70/ufmt-2.8.0-py3-none-any.whl", hash = "sha256:47a690811c576ebd3a0e30d77d43b65c84240e5c1611e5cb4a880bdd7f4507c1", size = 28268, upload-time = "2024-10-25T06:21:55.822Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/6e/d25c36760578813afff46dfc5e8e0275abeac1cdef040de547cf70ac8c00/ufmt-2.9.0-py3-none-any.whl", hash = "sha256:177f791827299770f07b376518b4fdf033fd1e2cec1b56d53e7447067816f780", size = 28866, upload-time = "2025-10-31T06:20:56.011Z" },
 ]
 
 [[package]]
