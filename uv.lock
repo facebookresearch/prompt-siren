@@ -2812,7 +2812,7 @@ requires-dist = [
     { name = "pydantic-ai-slim", extras = ["anthropic", "bedrock", "openai"], specifier = ">=1.1.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "ruff-api", marker = "extra == 'ufmt'", specifier = "==0.1.0" },
-    { name = "stdlibs", marker = "extra == 'ufmt'", specifier = "==2024.1.28" },
+    { name = "stdlibs", marker = "extra == 'ufmt'", specifier = "==2025.10.28" },
     { name = "swebench", git = "https://github.com/princeton-nlp/SWE-bench.git?rev=v4.1.0" },
     { name = "tabulate", specifier = ">=0.9.0" },
     { name = "typing-extensions", specifier = ">=4.15.0" },
@@ -3813,11 +3813,11 @@ wheels = [
 
 [[package]]
 name = "stdlibs"
-version = "2024.1.28"
+version = "2025.10.28"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b9/4d/8143b4d1b76f25a253e493f9ecce923e624de2b1e90b098019428d6438df/stdlibs-2024.1.28.tar.gz", hash = "sha256:ea158ac5b23c1a304153678908044d89a94c6354fa724f4452d754f9d6c16941", size = 25491, upload-time = "2024-01-28T23:02:07.97Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/83/ac15c4a3c059725dcb5f5d76270b986808cc12d2d7d417ee540d37609e46/stdlibs-2025.10.28.tar.gz", hash = "sha256:18db81f45f7783ddf86b80771e061782c70e2f4a8642843b3c80b42cd774b24f", size = 20108, upload-time = "2025-10-28T22:14:42.308Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1b/59/bb56d43b39d8be0ea5117eaebb5cc5dd441bdb0b455ab7727a21bf631f3b/stdlibs-2024.1.28-py3-none-any.whl", hash = "sha256:a4e8e72485d589cfdbf2c75736e3c58058af9d699b008be7fb1507a9efb7dab7", size = 54939, upload-time = "2024-01-28T23:02:04.269Z" },
+    { url = "https://files.pythonhosted.org/packages/65/de/5fcc806280950b9535d3892c7f1f3477efc4c2f8624ae6c0b2c3baf9a339/stdlibs-2025.10.28-py3-none-any.whl", hash = "sha256:fc25a3608c417c7fecec06736a2671adaceafc9f20c3f536d967e894a998afea", size = 59232, upload-time = "2025-10-28T22:14:40.799Z" },
 ]
 
 [[package]]
