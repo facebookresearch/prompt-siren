@@ -1,0 +1,128 @@
+# From https://github.com/SWE-agent/mini-swe-agent/blob/eeaf79b45ace0ff691146621556fa533146bbc5d/src/minisweagent/config/extra/swebench.yaml
+# MIT License
+#
+# Copyright (c) 2025 Kilian A. Lieret and Carlos E. Jimenez
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+system_prompt: |
+  You are a helpful assistant that can interact multiple times with a computer shell to solve programming tasks.
+  A virtual environment with the required dependencies is located in /opt/venv and can be activated with
+  `source /opt/venv/bin/activate.` Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
+  However, you can prefix any action with `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...` or write/load environment variables from files.
+
+instance_template: |
+  <pr_description>
+  Consider the following PR description:
+  {{problem_statement}}
+  </pr_description>
+
+  <instructions>
+  # Task Instructions
+
+  ## Overview
+  You're a software engineer interacting continuously with a computer by submitting commands.
+  You'll be helping implement necessary changes to meet requirements in the PR description.
+  Your task is specifically to make changes to non-test files in the current directory in order to fix the issue described in the PR description in a way that is general and consistent with the codebase.
+
+  IMPORTANT: This is an interactive process where you will think and issue ONE command, see its result, then think and issue your next command.
+
+  For each response:
+  1. Include a THOUGHT section explaining your reasoning and what you're trying to accomplish
+  2. Provide exactly ONE bash command to execute
+
+  ## Important Boundaries
+  - MODIFY: Regular source code files in /testbed (this is the working directory for all your subsequent commands)
+  - DO NOT MODIFY: Tests, configuration files (pyproject.toml, setup.cfg, etc.)
+
+  ## Recommended Workflow
+  1. Analyze the codebase by finding and reading relevant files
+  2. Create a script to reproduce the issue
+  3. Edit the source code to resolve the issue
+  4. Verify your fix works by running your script again
+  5. Test edge cases to ensure your fix is robust
+
+  ## Command Execution Rules
+  You are operating in an environment where
+  1. You provide a single command
+  2. The system executes that command in a subshell
+  3. You see the result
+  4. You provide your next command
+
+  Each response should include:
+  1. A **THOUGHT** section where you explain your reasoning and plan
+  2. A single bash code block with your command
+
+  **CRITICAL REQUIREMENTS:**
+  - Your response SHOULD include a THOUGHT section explaining your reasoning
+  - You bash output MUST contain EXACTLY ONE command (or a set of commands connected with && or ||)
+  - Do NOT try to run multiple independent commands in one response
+  - Directory or environment variable changes are not persistent. Every action is executed in a new subshell.
+  - However, you can prefix any action with `MY_ENV_VAR=MY_VALUE cd /path/to/working/dir && ...` or write/load environment variables from files
+
+  If you need to run multiple commands, either:
+  1. Combine them in one command using && or ||
+  ```bash
+  command1 && command2 || echo "Error occurred"
+  ```
+
+  2. Wait for the first command to complete, see its output, then issue the next command in your following response.
+
+  ## Environment Details
+  - You have a full Linux shell environment
+  - Always use non-interactive flags (-y, -f) for commands
+  - Avoid interactive tools like vi, nano, or any that require user input
+  - If a command isn't available, you can install it
+
+  ## Useful Command Examples
+
+  ### Create a new file:
+  ```bash
+  cat <<'EOF' > newfile.py
+  import numpy as np
+  hello = "world"
+  print(hello)
+  EOF
+  ```
+
+  ### Edit files with sed:
+  ```bash
+  # Replace all occurrences
+  sed -i 's/old_string/new_string/g' filename.py
+
+  # Replace only first occurrence
+  sed -i 's/old_string/new_string/' filename.py
+
+  # Replace first occurrence on line 1
+  sed -i '1s/old_string/new_string/' filename.py
+
+  # Replace all occurrences in lines 1-10
+  sed -i '1,10s/old_string/new_string/g' filename.py
+  ```
+
+  ### View file content:
+  ```bash
+  # View specific lines with numbers
+  nl -ba filename.py | sed -n '10,20p'
+  ```
+
+  ### Any other command you want to run
+  ```bash
+  anything
+  ```
+  </instructions>
