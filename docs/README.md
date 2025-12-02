@@ -12,4 +12,4 @@ Documentation for the Siren prompt injection research tool.
 
 - **[Sandbox Manager System](sandbox_manager.md)** - Container orchestration and isolated execution
 - **[Persistence System](persistence.md)** - Saving results, concurrent execution, and data organization
-- **[Plugin System](custom_components/plugin_system.md)** - Component discovery and registration
+- **[Plugin System](plugins/plugin_system.md)** - Component discovery and registration
