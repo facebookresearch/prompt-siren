@@ -1,0 +1,4 @@
+type: agentdojo # Dataset type identifier
+config:
+  suite_name: travel # AgentDojo suite name
+  version: v1.2.2 # AgentDojo benchmark version

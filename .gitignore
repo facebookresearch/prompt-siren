@@ -1,0 +1,32 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache
+
+# Virtual environments
+.venv
+.venv-container
+
+*.env
+pydantic_ai_docs.md
+pydantic_docs.md
+
+scratchpad.py
+NOTES.md
+
+traces
+*_PLAN.md
+
+
+*.env
+
+.vscode/*
+/config/
+
+.swebench_cache
+.claude/*
+multirun/*

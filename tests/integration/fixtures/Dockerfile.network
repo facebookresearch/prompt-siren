@@ -1,0 +1,10 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+FROM debian:bookworm-slim
+
+# Install netcat for network connectivity testing
+RUN apt-get update && \
+    apt-get install -y netcat-openbsd && \
+    rm -rf /var/lib/apt/lists/*
+
+# Keep container running
+CMD ["sleep", "infinity"]

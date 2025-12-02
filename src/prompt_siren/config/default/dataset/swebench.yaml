@@ -1,0 +1,11 @@
+type: swebench # Dataset type identifier matching entry point
+config:
+  dataset_name: SWE-bench/SWE-bench_Lite # HuggingFace dataset
+  max_instances: null
+  instance_ids:
+    - "astropy__astropy-12907"
+  use_cache: true # Cache build contexts
+  build_timeout: 1800 # 30 minutes
+  cache_dir: .swebench_cache # Cache directory
+  include_hints: false # Don't include hints in prompts
+  enable_network: false # No network access during execution

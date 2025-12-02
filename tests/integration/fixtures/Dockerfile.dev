@@ -1,0 +1,8 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+FROM debian:bookworm-slim
+
+# Test build args
+ARG TEST_ARG=default_value
+RUN echo "Build arg value: ${TEST_ARG}" > /build-arg-test.txt
+
+CMD ["cat", "/build-arg-test.txt"]

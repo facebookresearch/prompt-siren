@@ -1,0 +1,109 @@
+# Default Configuration
+# This file contains a comprehensive set of defaults for all configuration pieces.
+
+defaults:
+  # @package _global_
+  - _self_
+  - override hydra/job_logging: none # Disable Hydra's default logging to file
+  - override hydra/hydra_logging: none # Disable Hydra's internal logging to file
+
+# =============================================================================
+# HYDRA CONFIGURATION
+# =============================================================================
+# Disable Hydra's default output directory creation since we use our own
+# persistence system with trace_dir
+hydra:
+  output_subdir: null # Don't create .hydra subdirectory
+  job:
+    chdir: false # Don't change working directory
+  run:
+    dir: . # Use current directory instead of outputs/
+
+# =============================================================================
+# EXPERIMENT METADATA
+# =============================================================================
+name: "default_experiment"
+
+# =============================================================================
+# AGENT CONFIGURATION
+# =============================================================================
+agent:
+  type: plain # Available types: plain
+  config:
+    model: azure:gpt-5-nano # Model identifier
+    model_settings: {} # Additional model-specific settings
+    tool_result_serialization_mode: json # How to serialize tool outputs ("json" or "yaml")
+
+# =============================================================================
+# EXECUTION CONFIGURATION
+# =============================================================================
+execution:
+  concurrency: 1 # Number of concurrent tasks (1-4 recommended)
+
+# =============================================================================
+# TASK SELECTION
+# =============================================================================
+task_ids: null # Task IDs to run (null = all tasks appropriate for mode)
+
+# Alternative task selection configurations:
+#
+# For all tasks (default):
+# task_ids: null
+#
+# For specific task couples (format: "benign_id:malicious_id"):
+# task_ids: ["user_task_1:injection_task_1", "user_task_2:injection_task_2"]
+#
+# For specific individual tasks:
+# task_ids: ["user_task_1", "user_task_2"]
+#
+# Note: Execution mode determines what "all tasks" means:
+#   - Benign mode: all unique benign tasks
+#   - Attack mode: all task couples
+
+# =============================================================================
+# OUTPUT CONFIGURATION
+# =============================================================================
+output:
+  trace_dir: "traces" # Directory for trace outputs
+
+# =============================================================================
+# OBSERVABILITY & TELEMETRY
+# =============================================================================
+telemetry:
+  trace_console: true # Enable console tracing
+  otel_endpoint: "http://localhost:6006/v1/traces" # OpenTelemetry endpoint
+
+# =============================================================================
+# USAGE LIMITS
+# =============================================================================
+# Set to null for no limits
+usage_limits:
+  request_limit: null # Maximum number of requests
+  # tool_calls_limit: null # Maximum tool calls (null = no limit) -- Commented out because it is not enforced.
+  input_tokens_limit: null # Maximum input tokens (null = no limit)
+  output_tokens_limit: null # Maximum output tokens (null = no limit)
+  total_tokens_limit: null # Maximum total tokens
+  count_tokens_before_request: false # Count tokens before making request
+
+# =============================================================================
+# COMMON EXPERIMENT CONFIGURATIONS
+# =============================================================================
+#
+# To use these configurations, copy the relevant sections above and modify:
+#
+# 1. BENIGN ONLY EXPERIMENT:
+#    - Use: prompt-siren run benign +dataset=agentdojo-workspace
+#    - Increase execution.concurrency to 4 for faster execution
+#
+# 2. ATTACK EXPERIMENT:
+#    - Use: prompt-siren run attack +dataset=agentdojo-workspace +attack=agentdojo
+#    - Set execution.concurrency to 1 for better reproducibility
+#
+# 3. EXPERIMENT WITH USAGE LIMITS:
+#    - Configure usage_limits section with appropriate values
+#    - Keep execution.concurrency: 1 to better control resource usage
+#
+# 4. HIGH CONCURRENCY EXPERIMENT:
+#    - Set execution.concurrency to 4
+#    - Ensure your system can handle the load
+#    - Monitor resource usage
