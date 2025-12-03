@@ -30,7 +30,7 @@ dataset_registry = BaseRegistry[AbstractDataset, AbstractSandboxManager | None](
 def register_dataset(
     dataset_type: str,
     config_class: type[ConfigT],
-    factory: Callable[[ConfigT, AbstractSandboxManager | None], AbstractDataset],
+    factory: DatasetFactory[ConfigT],
 ) -> None:
     """Register a dataset type with its configuration class and factory."""
     dataset_registry.register(dataset_type, config_class, factory)

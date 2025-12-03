@@ -44,19 +44,11 @@ openssl req -x509 -newkey rsa:2048 -nodes \\
 
 from importlib.resources import files
 
-try:
-    from importlib.resources.abc import Traversable
-except ImportError:
-    # Python 3.10 compatibility
-    from importlib.abc import Traversable
-
 from ....sandbox_managers.image_spec import BuildImageSpec
 from ....sandbox_managers.sandbox_task_setup import ContainerSpec
 
 # Get the docker directory path using importlib.resources
-_DOCKER_CONTEXT_PATH: Traversable = files("prompt_siren.datasets.swebench_dataset").joinpath(
-    "dockerfiles"
-)
+_DOCKER_CONTEXT_PATH = files("prompt_siren.datasets.swebench_dataset").joinpath("dockerfiles")
 
 _SIMPLE_AGENT_CONTAINER_SPEC = ContainerSpec(
     image_spec=BuildImageSpec(

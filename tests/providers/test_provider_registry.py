@@ -7,6 +7,7 @@ from prompt_siren.providers import (
     provider_registry,
     register_provider,
 )
+from pydantic import BaseModel
 from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 
@@ -84,7 +85,6 @@ def test_create_component_without_config():
 
 def test_create_component_rejects_config_when_not_needed():
     """Test that passing config to a no-config component raises an error."""
-    from pydantic import BaseModel
 
     class DummyConfig(BaseModel):
         value: int = 1

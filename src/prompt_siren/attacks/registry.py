@@ -29,7 +29,7 @@ attack_registry = BaseRegistry[AbstractAttack, None]("attack", "prompt_siren.att
 def register_attack(
     attack_type: str,
     config_class: type[ConfigT],
-    factory: Callable[[ConfigT, None], AbstractAttack],
+    factory: AttackFactory[ConfigT],
 ) -> None:
     """Register a new attack type with its config class and factory function."""
     attack_registry.register(attack_type, config_class, factory)

@@ -29,7 +29,7 @@ agent_registry = BaseRegistry[AbstractAgent, None]("agent", "prompt_siren.agents
 def register_agent(
     agent_type: str,
     config_class: type[ConfigT],
-    factory: Callable[[ConfigT, None], AbstractAgent],
+    factory: AgentFactory[ConfigT],
 ) -> None:
     """Register a new agent type with its config class and factory function."""
     agent_registry.register(agent_type, config_class, factory)

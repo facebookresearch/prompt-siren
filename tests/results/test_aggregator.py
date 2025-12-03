@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from prompt_siren.results import (
     _group_by_task,
+    _read_index,
     aggregate_results,
     estimate_pass_at_k,
     GroupBy,
@@ -479,8 +480,6 @@ def output_dir_multiple_k_values(tmp_path: Path) -> Path:
 def test_aggregator_basic(temp_output_dir: Path) -> None:
     """Test basic aggregation functionality."""
     # Read from index
-    from prompt_siren.results import _read_index
-
     all_rows = _read_index(temp_output_dir)
     df = pd.DataFrame(all_rows)
 
@@ -509,9 +508,6 @@ def test_aggregator_average_metrics(temp_output_dir: Path) -> None:
 
 def test_aggregator_multiple_timestamps_same_task(output_dir_multiple_timestamps: Path) -> None:
     """Test averaging when same task has multiple timestamps."""
-    # Read from index
-    from prompt_siren.results import _read_index
-
     # Raw data has 3 rows
     all_rows = _read_index(output_dir_multiple_timestamps)
     df = pd.DataFrame(all_rows)
@@ -615,8 +611,6 @@ def test_pass_at_k_with_estimator(output_dir_estimator_samples: Path) -> None:
     assert benign_pass_k == pytest.approx(0.9)
 
     # Verify against direct calculation
-    from prompt_siren.results import estimate_pass_at_k
-
     expected = estimate_pass_at_k(5, [2], 3)[0]
     assert benign_pass_k == pytest.approx(expected)
 
