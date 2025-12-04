@@ -8,7 +8,11 @@ from typing import Any
 import logfire
 
 try:
-    from swebench.harness.constants import KEY_INSTANCE_ID, KEY_PREDICTION, SWEbenchInstance
+    from swebench.harness.constants import (
+        KEY_INSTANCE_ID,
+        KEY_PREDICTION,
+        SWEbenchInstance,
+    )
     from swebench.harness.grading import (
         compute_fail_to_pass,
         compute_pass_to_pass,
