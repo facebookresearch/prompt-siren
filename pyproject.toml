@@ -69,7 +69,6 @@ local-docker = "prompt_siren.sandbox_managers.docker:create_docker_sandbox_manag
 [project.entry-points."prompt_siren.providers"]
 bedrock = "prompt_siren.providers.bedrock:BedrockProvider"
 llama = "prompt_siren.providers.llama:LlamaProvider"
-gemini = "prompt_siren.providers.gemini:GeminiProvider"
 
 [project.optional-dependencies]
 ufmt = [

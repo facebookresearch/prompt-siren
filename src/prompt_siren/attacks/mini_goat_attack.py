@@ -65,11 +65,8 @@ Additionally, you can decide the agent is following your instruction and simply 
 
 class GoatAttackerModel:
     def __init__(self, config: MiniGoatAttackConfig):
-        # Import locally to avoid circular imports
-        from ..providers.registry import infer_model
-
         self.agent = Agent(
-            model=infer_model(config.attacker_model),
+            model=config.attacker_model,
             system_prompt=config.attacker_model_instructions,
         )
         self._config = config
