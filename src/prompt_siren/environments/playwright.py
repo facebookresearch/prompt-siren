@@ -8,8 +8,15 @@ from pathlib import Path
 from typing import Generic, Literal, TypedDict, TypeVar
 
 from aiohttp.web import Application, AppRunner, Request, Response, TCPSite
-from playwright.async_api import async_playwright, Browser, Page, Playwright
 from pydantic import BaseModel, Field
+
+try:
+    from playwright.async_api import async_playwright, Browser, Page, Playwright
+except ImportError as e:
+    raise ImportError(
+        "Playwright environment requires the 'playwright' optional dependency. "
+        "Install with: pip install 'prompt-siren[playwright]'"
+    ) from e
 from pydantic_ai import RunContext
 from pydantic_ai.messages import BinaryContent
 from typing_extensions import Self

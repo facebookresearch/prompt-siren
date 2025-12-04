@@ -2683,7 +2683,6 @@ dependencies = [
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-sdk" },
     { name = "pandas" },
-    { name = "playwright" },
     { name = "pydantic-ai-slim", extra = ["anthropic", "bedrock", "openai"] },
     { name = "pyyaml" },
     { name = "tabulate" },
@@ -2694,8 +2693,18 @@ dependencies = [
 agentdojo = [
     { name = "agentdojo" },
 ]
+all = [
+    { name = "agentdojo" },
+    { name = "aiodocker" },
+    { name = "jinja2" },
+    { name = "playwright" },
+    { name = "swebench" },
+]
 docker = [
     { name = "aiodocker" },
+]
+playwright = [
+    { name = "playwright" },
 ]
 swebench = [
     { name = "jinja2" },
@@ -2739,7 +2748,8 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.20.0" },
     { name = "opentelemetry-sdk", specifier = ">=1.20.0" },
     { name = "pandas", specifier = ">=2.0.0" },
-    { name = "playwright", specifier = ">=1.54.0" },
+    { name = "playwright", marker = "extra == 'playwright'", specifier = ">=1.54.0" },
+    { name = "prompt-siren", extras = ["agentdojo", "swebench", "docker", "playwright"], marker = "extra == 'all'" },
     { name = "pydantic-ai-slim", extras = ["anthropic", "bedrock", "openai"], specifier = ">=1.1.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "ruff-api", marker = "extra == 'ufmt'", specifier = "==0.1.0" },
@@ -2750,7 +2760,7 @@ requires-dist = [
     { name = "ufmt", marker = "extra == 'ufmt'", specifier = "==2.8.0" },
     { name = "usort", marker = "extra == 'ufmt'", specifier = "==1.0.8.post1" },
 ]
-provides-extras = ["agentdojo", "swebench", "docker", "ufmt"]
+provides-extras = ["agentdojo", "swebench", "docker", "playwright", "all", "ufmt"]
 
 [package.metadata.requires-dev]
 dev = [
