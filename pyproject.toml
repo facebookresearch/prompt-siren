@@ -10,7 +10,6 @@ classifiers = [
     "Operating System :: MacOS",
 ]
 dependencies = [
-    "agentdojo>=0.1.35",
     "aiohttp>=3.12.15",
     "anyio>=4.10.0",
     "click>=8.3.0",
@@ -71,6 +70,7 @@ bedrock = "prompt_siren.providers.bedrock:BedrockProvider"
 llama = "prompt_siren.providers.llama:LlamaProvider"
 
 [project.optional-dependencies]
+agentdojo = ["agentdojo>=0.1.35"]
 ufmt = [
     "black==25.11.0",
     "ruff-api==0.1.0",
