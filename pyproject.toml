@@ -23,7 +23,7 @@ dependencies = [
     "logfire>=4.7.0",
     "pandas>=2.0.0",
     "playwright>=1.54.0",
-    "pydantic-ai-slim[anthropic,bedrock,openai]>=1.1.0",
+    "pydantic-ai-slim[anthropic,bedrock,google,openai]>=1.1.0",
     "pyyaml>=6.0.2",
     "opentelemetry-api>=1.20.0",
     "opentelemetry-sdk>=1.20.0",
@@ -69,6 +69,7 @@ local-docker = "prompt_siren.sandbox_managers.docker:create_docker_sandbox_manag
 [project.entry-points."prompt_siren.providers"]
 bedrock = "prompt_siren.providers.bedrock:BedrockProvider"
 llama = "prompt_siren.providers.llama:LlamaProvider"
+gemini = "prompt_siren.providers.gemini:GeminiProvider"
 
 [project.optional-dependencies]
 ufmt = [
