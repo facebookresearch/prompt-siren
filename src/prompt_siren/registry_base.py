@@ -102,9 +102,12 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
                     if ep.name not in self._registry:
                         self._registry[ep.name] = (config_class, factory)
 
-                except Exception as e:  # noqa: PERF203 - graceful plugin loading
-                    # Store the error silently - will be raised when plugin is actually requested
+                except ImportError as e:  # noqa: PERF203 - graceful plugin loading
+                    # Store the import error silently - will be raised when plugin is actually requested
                     self._failed_entry_points[ep.name] = e
+                except Exception as e:
+                    print(f"Warning: Failed to load entry point {ep.name}: {e}")
+
         except Exception as e:
             print(f"Warning: Failed to load entry points for {self._entry_point_group}: {e}")
 
