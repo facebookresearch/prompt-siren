@@ -8,8 +8,14 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-import aiodocker
-from aiodocker.containers import DockerContainer
+try:
+    import aiodocker
+    from aiodocker.containers import DockerContainer
+except ImportError as e:
+    raise ImportError(
+        "Docker sandbox manager requires the 'docker' optional dependency. "
+        "Install with: pip install 'prompt-siren[docker]'"
+    ) from e
 
 from ..sandbox_state import ContainerID, SandboxState
 from ..sandbox_task_setup import ContainerSetup, TaskSetup

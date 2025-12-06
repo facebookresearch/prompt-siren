@@ -9,9 +9,16 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-import aiodocker
-from aiodocker import DockerError
 from typing_extensions import assert_never
+
+try:
+    import aiodocker
+    from aiodocker import DockerError
+except ImportError as e:
+    raise ImportError(
+        "Docker sandbox manager requires the 'docker' optional dependency. "
+        "Install with: pip install 'prompt-siren[docker]'"
+    ) from e
 
 from ..image_spec import (
     BuildImageSpec,

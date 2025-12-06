@@ -15,10 +15,32 @@ A research workbench for developing and testing attacks against large language m
 
 ## Quick Start
 
-Install dependencies:
+### Installation
+
+Install the core package with desired optional features:
+
 ```sh
+# Full installation (all features)
 uv sync --all-extras
+
+# Or install only what you need:
+uv sync --extra agentdojo      # AgentDojo benchmark support
+uv sync --extra swebench       # SWE-bench support
+uv sync --extra docker         # Docker sandbox manager
+uv sync --extra playwright     # Web automation environment
+
+# Combine multiple extras
+uv sync --extra agentdojo --extra docker
 ```
+
+**Available optional dependencies:**
+
+| Extra | Description |
+|-------|-------------|
+| `agentdojo` | AgentDojo dataset, environment, and attacks |
+| `swebench` | SWE-bench dataset for code editing benchmarks |
+| `docker` | Docker sandbox manager |
+| `playwright` | Web automation environment |
 
 Set up environment variables:
 ```sh

@@ -7,8 +7,15 @@ from itertools import product
 import logfire
 from pydantic_ai.tools import Tool
 from pydantic_ai.toolsets import FunctionToolset
-from swebench.harness.constants import SWEbenchInstance
-from swebench.harness.utils import load_swebench_dataset
+
+try:
+    from swebench.harness.constants import SWEbenchInstance
+    from swebench.harness.utils import load_swebench_dataset
+except ImportError as e:
+    raise ImportError(
+        "SWE-bench support requires the 'swebench' optional dependency. "
+        "Install with: pip install 'prompt-siren[swebench]'"
+    ) from e
 
 from ...environments.abstract import AbstractEnvironment
 from ...environments.bash_env import BashEnvironment, BashEnvState

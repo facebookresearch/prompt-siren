@@ -266,22 +266,47 @@ Datasets specify which environment implementation to use and configure it during
 
 ## Dependencies
 
-- **Core**:
-  - `pydantic-ai-slim[anthropic,bedrock,openai]` - AI framework with model integrations
-  - `agentdojo` - Agent testing framework
-  - `swebench` (v4.1.0) - Software Engineering Benchmark for code editing tasks
-  - `playwright` - Web automation
-  - `click` - CLI framework for structured subcommands
-  - `hydra-core` - Configuration management and experiment orchestration
-  - `hydra-submitit-launcher` - Submitit launcher for Hydra
-  - `logfire` - Logging and observability
-  - `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp` - Telemetry
-  - `omegaconf` - Configuration management
-  - `pyyaml` - YAML parsing
-  - `jinja2` (>=3.1.6) - Template engine for SWE-bench prompts
-  - `aiohttp` - Async HTTP client
-  - `filelock` - File locking utilities
+### Core Dependencies (always installed)
+- `pydantic-ai-slim[anthropic,bedrock,openai]` - AI framework with model integrations
+- `click` - CLI framework for structured subcommands
+- `hydra-core` - Configuration management and experiment orchestration
+- `hydra-submitit-launcher` - Submitit launcher for Hydra
+- `logfire` - Logging and observability
+- `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp` - Telemetry
+- `omegaconf` - Configuration management
+- `pyyaml` - YAML parsing
+- `aiohttp` - Async HTTP client
+- `filelock` - File locking utilities
+- `pandas` - Data analysis for results aggregation
 
+### Optional Dependencies
+
+Install optional features with: `pip install 'prompt-siren[feature]'`
+
+| Group | Dependencies | Purpose |
+|-------|--------------|---------|
+| `[agentdojo]` | `agentdojo>=0.1.35` | AgentDojo dataset, environment, and attacks |
+| `[swebench]` | `swebench`, `jinja2>=3.1.6` | SWE-bench dataset for code editing benchmarks |
+| `[docker]` | `aiodocker>=0.24.0` | Docker sandbox manager |
+| `[playwright]` | `playwright>=1.54.0` | Web automation environment |
+| `[all]` | All optional deps | Full installation with all features |
+
+**Examples:**
+```bash
+# Minimal install (core only)
+pip install prompt-siren
+
+# AgentDojo support
+pip install 'prompt-siren[agentdojo]'
+
+# SWE-bench with Docker sandbox manager
+pip install 'prompt-siren[swebench,docker]'
+
+# Everything
+pip install 'prompt-siren[all]'
+```
+
+### Requirements
 - **Python**: Requires Python 3.10+
 - **Package Manager**: Uses `uv` for dependency management
 - **Platform**: Linux and macOS only (Windows not supported due to sandbox architecture)

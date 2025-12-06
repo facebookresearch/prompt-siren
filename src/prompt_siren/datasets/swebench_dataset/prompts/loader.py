@@ -5,8 +5,15 @@ import os
 from importlib import resources
 
 import yaml
-from jinja2 import Environment, StrictUndefined
-from swebench.harness.constants import SWEbenchInstance
+
+try:
+    from jinja2 import Environment, StrictUndefined
+    from swebench.harness.constants import SWEbenchInstance
+except ImportError as e:
+    raise ImportError(
+        "SWE-bench support requires the 'swebench' optional dependency. "
+        "Install with: pip install 'prompt-siren[swebench]'"
+    ) from e
 
 # Built-in prompt templates available
 BUILTIN_TEMPLATES = ["mini-swe-agent", "swe-agent-swebench"]

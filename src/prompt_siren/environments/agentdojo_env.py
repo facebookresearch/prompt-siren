@@ -7,9 +7,17 @@ from types import NoneType
 from typing import Generic, TypeVar
 
 import yaml
-from agentdojo.functions_runtime import FunctionReturnType, TaskEnvironment
-from agentdojo.task_suite.load_suites import get_suite
-from agentdojo.task_suite.task_suite import read_suite_file, TaskSuite
+
+try:
+    from agentdojo.functions_runtime import FunctionReturnType, TaskEnvironment
+    from agentdojo.task_suite.load_suites import get_suite
+    from agentdojo.task_suite.task_suite import read_suite_file, TaskSuite
+except ImportError as e:
+    raise ImportError(
+        "AgentDojo support requires the 'agentdojo' optional dependency. "
+        "Install with: pip install 'prompt-siren[agentdojo]'"
+    ) from e
+
 from pydantic import BaseModel
 from typing_extensions import Self
 

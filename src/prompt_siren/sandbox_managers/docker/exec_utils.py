@@ -6,9 +6,16 @@ from __future__ import annotations
 import shlex
 from pathlib import Path
 
-import aiodocker
 import anyio
 from aiohttp import ClientTimeout
+
+try:
+    import aiodocker
+except ImportError as e:
+    raise ImportError(
+        "Docker sandbox manager requires the 'docker' optional dependency. "
+        "Install with: pip install 'prompt-siren[docker]'"
+    ) from e
 
 from ..abstract import ExecOutput, ExecTimeoutError, StderrChunk, StdoutChunk
 from ..sandbox_state import ContainerID

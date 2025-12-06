@@ -5,16 +5,23 @@ from dataclasses import dataclass
 from itertools import product
 from typing import Any, Generic, TypeVar
 
-from agentdojo.agent_pipeline.agent_pipeline import load_system_message
-from agentdojo.base_tasks import BaseInjectionTask, BaseUserTask
-from agentdojo.functions_runtime import (
-    Function,
-    FunctionCall,
-    FunctionReturnType,
-    TaskEnvironment,
-)
-from agentdojo.task_suite.load_suites import get_suite
-from agentdojo.task_suite.task_suite import TaskSuite
+try:
+    from agentdojo.agent_pipeline.agent_pipeline import load_system_message
+    from agentdojo.base_tasks import BaseInjectionTask, BaseUserTask
+    from agentdojo.functions_runtime import (
+        Function,
+        FunctionCall,
+        FunctionReturnType,
+        TaskEnvironment,
+    )
+    from agentdojo.task_suite.load_suites import get_suite
+    from agentdojo.task_suite.task_suite import TaskSuite
+except ImportError as e:
+    raise ImportError(
+        "AgentDojo support requires the 'agentdojo' optional dependency. "
+        "Install with: pip install 'prompt-siren[agentdojo]'"
+    ) from e
+
 from pydantic import BaseModel, Field
 from pydantic_ai import RunContext
 from pydantic_ai.messages import (

@@ -4,8 +4,14 @@
 import hashlib
 from pathlib import Path
 
-from swebench.harness.constants import SWEbenchInstance
-from swebench.harness.test_spec.test_spec import TestSpec
+try:
+    from swebench.harness.constants import SWEbenchInstance
+    from swebench.harness.test_spec.test_spec import TestSpec
+except ImportError as e:
+    raise ImportError(
+        "SWE-bench support requires the 'swebench' optional dependency. "
+        "Install with: pip install 'prompt-siren[swebench]'"
+    ) from e
 
 from ...sandbox_managers.image_spec import BuildStage, MultiStageBuildImageSpec
 from .config import SwebenchDatasetConfig

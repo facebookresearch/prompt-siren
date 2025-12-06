@@ -6,13 +6,24 @@ import tempfile
 from typing import Any
 
 import logfire
-from swebench.harness.constants import KEY_INSTANCE_ID, KEY_PREDICTION, SWEbenchInstance
-from swebench.harness.grading import (
-    compute_fail_to_pass,
-    compute_pass_to_pass,
-    get_eval_report,
-)
-from swebench.harness.test_spec.test_spec import TestSpec
+
+try:
+    from swebench.harness.constants import (
+        KEY_INSTANCE_ID,
+        KEY_PREDICTION,
+        SWEbenchInstance,
+    )
+    from swebench.harness.grading import (
+        compute_fail_to_pass,
+        compute_pass_to_pass,
+        get_eval_report,
+    )
+    from swebench.harness.test_spec.test_spec import TestSpec
+except ImportError as e:
+    raise ImportError(
+        "SWE-bench support requires the 'swebench' optional dependency. "
+        "Install with: pip install 'prompt-siren[swebench]'"
+    ) from e
 
 from ...environments.bash_env import BashEnvState
 from ...sandbox_managers.abstract import AbstractSandboxManager

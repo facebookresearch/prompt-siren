@@ -76,9 +76,15 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
         self._component_name = component_name
         self._entry_point_group = entry_point_group
         self._entry_points_loaded = False
+        # Store errors from failed entry point loads to re-raise when plugin is actually requested
+        self._failed_entry_points: dict[str, Exception] = {}
 
     def _load_entry_points(self) -> None:
-        """Load components from entry points if not already loaded."""
+        """Load components from entry points if not already loaded.
+
+        Failed entry points are stored silently and re-raised when the plugin is actually requested.
+        This avoids warning users about missing optional dependencies they don't intend to use.
+        """
         if self._entry_points_loaded or not self._entry_point_group:
             return
 
@@ -96,12 +102,28 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
                     if ep.name not in self._registry:
                         self._registry[ep.name] = (config_class, factory)
 
-                except Exception as e:  # noqa: PERF203 - graceful plugin loading
+                except ImportError as e:  # noqa: PERF203 - graceful plugin loading
+                    # Store the import error silently - will be raised when plugin is actually requested
+                    self._failed_entry_points[ep.name] = e
+                except Exception as e:
                     print(f"Warning: Failed to load entry point {ep.name}: {e}")
+
         except Exception as e:
             print(f"Warning: Failed to load entry points for {self._entry_point_group}: {e}")
 
         self._entry_points_loaded = True
+
+    def _check_failed_entry_point(self, component_type: str) -> None:
+        """Check if a component failed to load and re-raise the original error.
+
+        Args:
+            component_type: The component type being requested
+
+        Raises:
+            The original exception that occurred when trying to load the entry point
+        """
+        if component_type in self._failed_entry_points:
+            raise self._failed_entry_points[component_type]
 
     def _get_config_class_from_factory(
         self, factory: Callable[..., Any], name: str
@@ -170,8 +192,12 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
 
         Raises:
             UnknownComponentError: If the component type is not registered
+            ImportError: If the component failed to load due to missing dependencies
         """
         self._load_entry_points()  # Ensure entry points are loaded
+
+        # Check if this component failed to load - re-raise the original error
+        self._check_failed_entry_point(component_type)
 
         if component_type not in self._registry:
             raise UnknownComponentError(
@@ -201,8 +227,12 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
             UnknownComponentError: If the component type is not registered
             TypeError: If the config is not of the expected type
             ValueError: If config is provided but component doesn't accept config, or vice versa
+            ImportError: If the component failed to load due to missing dependencies
         """
         self._load_entry_points()  # Ensure entry points are loaded
+
+        # Check if this component failed to load - re-raise the original error
+        self._check_failed_entry_point(component_type)
 
         if component_type not in self._registry:
             raise UnknownComponentError(

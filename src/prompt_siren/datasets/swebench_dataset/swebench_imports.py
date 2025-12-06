@@ -32,29 +32,36 @@ from typing import Any, TypeAlias
 
 import yaml
 from packaging.version import Version
-from swebench.harness.constants import (
-    END_TEST_OUTPUT,
-    KEY_INSTANCE_ID,
-    LATEST,
-    MAP_REPO_TO_EXT,
-    MAP_REPO_TO_INSTALL,
-    MAP_REPO_VERSION_TO_SPECS,
-    REPO_BASE_COMMIT_BRANCH,
-    START_TEST_OUTPUT,
-    SWEbenchInstance,
-)
-from swebench.harness.test_spec.javascript import make_eval_script_list_js
-from swebench.harness.test_spec.python import (
-    get_environment_yml,
-    get_requirements,
-    get_test_directives,
-)
-from swebench.harness.test_spec.test_spec import TestSpec
-from swebench.harness.test_spec.utils import (
-    make_env_script_list_common,
-    make_eval_script_list_common,
-)
-from swebench.harness.utils import get_modified_files
+
+try:
+    from swebench.harness.constants import (
+        END_TEST_OUTPUT,
+        KEY_INSTANCE_ID,
+        LATEST,
+        MAP_REPO_TO_EXT,
+        MAP_REPO_TO_INSTALL,
+        MAP_REPO_VERSION_TO_SPECS,
+        REPO_BASE_COMMIT_BRANCH,
+        START_TEST_OUTPUT,
+        SWEbenchInstance,
+    )
+    from swebench.harness.test_spec.javascript import make_eval_script_list_js
+    from swebench.harness.test_spec.python import (
+        get_environment_yml,
+        get_requirements,
+        get_test_directives,
+    )
+    from swebench.harness.test_spec.test_spec import TestSpec
+    from swebench.harness.test_spec.utils import (
+        make_env_script_list_common,
+        make_eval_script_list_common,
+    )
+    from swebench.harness.utils import get_modified_files
+except ImportError as e:
+    raise ImportError(
+        "SWE-bench support requires the 'swebench' optional dependency. "
+        "Install with: pip install 'prompt-siren[swebench]'"
+    ) from e
 
 from .constants import InjectionSpec
 

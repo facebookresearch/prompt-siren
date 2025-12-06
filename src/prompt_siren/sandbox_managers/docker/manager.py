@@ -8,8 +8,15 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import aiodocker
 from pydantic import BaseModel, Field
+
+try:
+    import aiodocker
+except ImportError as e:
+    raise ImportError(
+        "Docker sandbox manager requires the 'docker' optional dependency. "
+        "Install with: pip install 'prompt-siren[docker]'"
+    ) from e
 
 from ..abstract import ExecOutput
 from ..sandbox_state import ContainerID, SandboxState
