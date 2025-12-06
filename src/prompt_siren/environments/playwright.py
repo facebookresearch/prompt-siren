@@ -147,10 +147,17 @@ class PlaywrightEnvironment(
         app.router.add_post("/{tail:.*}", handle_post)
         runner = AppRunner(app)
         await runner.setup()
-        # TODO: make sure port is not used
-        site = TCPSite(runner, "localhost", 42352)
+        site = TCPSite(runner, "localhost", 0)
         await site.start()
-        self._server = Server(runner, site, site._port)
+        
+        server = site._server
+        sockets = getattr(server, "sockets", None) if server is not None else None
+        if not sockets:
+            await runner.cleanup()
+            raise RuntimeError("Failed to bind Playwright server socket")
+
+        port = sockets[0].getsockname()[1]
+        self._server = Server(runner, site, port)
 
     @asynccontextmanager
     async def create_batch_context(
