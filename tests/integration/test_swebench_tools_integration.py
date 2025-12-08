@@ -6,7 +6,7 @@ Run with: pytest -vx -m docker_integration
 Skip with: pytest -vx -m "not docker_integration"
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from uuid import uuid4
 
@@ -45,12 +45,17 @@ pytestmark = pytest.mark.anyio
 @pytest.fixture(scope="module")
 async def sandbox_manager(
     test_image: str,
+    docker_client_type: str,
+    skip_if_des_unavailable,
+    create_manager_config: Callable[[str, bool, str | list[str] | None], DockerSandboxConfig],
 ) -> AsyncIterator[tuple[AbstractSandboxManager, str, TaskSetup]]:
     """Create a sandbox manager for tool testing.
 
     Returns tuple of (sandbox_manager, test_image, task_setup) for use by dependent fixtures.
     """
-    config = DockerSandboxConfig(network_enabled=False)
+    config = create_manager_config(
+        docker_client_type, network_enabled=False, test_images=test_image
+    )
     manager = DockerSandboxManager(config)
 
     # Create TaskSetup for API

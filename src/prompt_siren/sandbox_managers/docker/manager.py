@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -10,20 +11,15 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-try:
-    import aiodocker
-except ImportError as e:
-    raise ImportError(
-        "Docker sandbox manager requires the 'docker' optional dependency. "
-        "Install with: pip install 'prompt-siren[docker]'"
-    ) from e
-
 from ..abstract import ExecOutput
 from ..sandbox_state import ContainerID, SandboxState
 from ..sandbox_task_setup import ContainerSetup, SandboxTaskSetup
+from .client_registry import get_docker_client
 from .contexts import BatchState, TaskSandboxContext
 from .exec_utils import exec_in_container
 from .image_cache import ImageCache
+
+logger = logging.getLogger(__name__)
 
 
 class DockerSandboxConfig(BaseModel):
@@ -34,6 +30,18 @@ class DockerSandboxConfig(BaseModel):
         description="Whether to enable network access in containers",
     )
     batch_id_prefix: str = "workbench"
+    docker_client: str = Field(
+        default="local",
+        description="Name of the Docker client plugin to use (e.g., 'local', 'des')",
+    )
+    des_session_timeout: int = Field(
+        default=3600,
+        description="DES session timeout in seconds (only used when docker_client='des')",
+    )
+    des_docker_images: list[str] = Field(
+        default_factory=list,
+        description="Docker images to make available on DES VM (only used when docker_client='des')",
+    )
 
 
 class DockerSandboxManager:
@@ -44,6 +52,7 @@ class DockerSandboxManager:
     - Image caching and modification (dockerfile_extra)
     - Container cloning for state snapshots
     - Concurrent task execution within a batch
+    - Local Docker or remote DES execution
 
     Architecture:
     - BatchState: Shared state for entire batch (Docker client, image cache, contexts)
@@ -55,19 +64,17 @@ class DockerSandboxManager:
         """Initialize Docker sandbox manager.
 
         Args:
-            batch_id_prefix: Prefix for batch ID generation
-            network_enabled: Whether networking is enabled for containers
+            config: Docker sandbox configuration
         """
-        self._batch_id_prefix = config.batch_id_prefix
-        self._network_enabled = config.network_enabled
+        self._config = config
         self._batch_state: BatchState | None = None
 
     @asynccontextmanager
     async def setup_batch(self, task_setups: Sequence[SandboxTaskSetup]) -> AsyncIterator[None]:
         """Prepare all images and resources for the batch.
 
-        Creates Docker client, builds/pulls all images sequentially,
-        and tracks all task contexts for cleanup.
+        Creates Docker client (local or DES based on config), builds/pulls all images
+        sequentially, and tracks all task contexts for cleanup.
 
         Args:
             task_setups: All task setups for this batch
@@ -75,17 +82,48 @@ class DockerSandboxManager:
         Yields:
             Control for task execution
         """
+        logger.debug(
+            f"[DockerSandboxManager] setup_batch: Starting with {len(task_setups)} task setups"
+        )
         # Generate unique batch ID
-        batch_id = f"{self._batch_id_prefix}-{uuid.uuid4().hex[:8]}"
+        batch_id = f"{self._config.batch_id_prefix}-{uuid.uuid4().hex[:8]}"
+        logger.debug(f"[DockerSandboxManager] setup_batch: Generated batch_id: {batch_id}")
 
-        # Create Docker client
-        docker_client = aiodocker.Docker()
+        # Create appropriate Docker client based on configuration
+        logger.debug(
+            f"[DockerSandboxManager] setup_batch: Creating Docker client '{self._config.docker_client}'"
+        )
+
+        # Get the base client from the registry
+        docker_client = get_docker_client(self._config.docker_client)
+
+        # For DES client, we need to configure it with session timeout and images
+        # Check if it's a DES client by looking for the configuration attributes
+        if hasattr(docker_client, "_session_timeout"):
+            logger.debug("[DockerSandboxManager] setup_batch: Configuring DES Docker client")
+            logger.debug(
+                f"[DockerSandboxManager] setup_batch: DES session timeout: {self._config.des_session_timeout}"
+            )
+            logger.debug(
+                f"[DockerSandboxManager] setup_batch: DES docker images: {self._config.des_docker_images}"
+            )
+            # Re-create DES client with proper configuration
+            from prompt_siren_internal.sandbox_managers.docker.plugins.des_client import (
+                DesDockerClient,
+            )
+
+            docker_client = DesDockerClient(
+                session_timeout=self._config.des_session_timeout,
+                docker_images=self._config.des_docker_images,
+            )
 
         try:
             # Create image cache
+            logger.debug("[DockerSandboxManager] setup_batch: Creating image cache")
             image_cache = ImageCache(docker_client, batch_id)
 
             # Create batch state
+            logger.debug("[DockerSandboxManager] setup_batch: Creating batch state")
             self._batch_state = BatchState(
                 batch_id=batch_id,
                 docker_client=docker_client,
@@ -99,11 +137,25 @@ class DockerSandboxManager:
                 all_container_setups.append(task_setup.agent_container)
                 all_container_setups.extend(task_setup.service_containers.values())
 
+            logger.debug(
+                f"[DockerSandboxManager] setup_batch: Collected {len(all_container_setups)} container setups"
+            )
+            for idx, setup in enumerate(all_container_setups):
+                logger.debug(
+                    f"[DockerSandboxManager] setup_batch: Container setup {idx}: name='{setup.name}', image_spec={type(setup.spec.image_spec).__name__}"
+                )
+
             # Build/pull all base images sequentially
+            logger.debug("[DockerSandboxManager] setup_batch: Calling ensure_all_base_images")
             await image_cache.ensure_all_base_images(all_container_setups)
+            logger.debug("[DockerSandboxManager] setup_batch: ensure_all_base_images completed")
 
             # Yield control for task execution
+            logger.debug("[DockerSandboxManager] setup_batch: Yielding control for task execution")
             yield
+            logger.debug(
+                "[DockerSandboxManager] setup_batch: Task execution completed, starting cleanup"
+            )
 
         finally:
             # Cleanup all task contexts
@@ -111,12 +163,17 @@ class DockerSandboxManager:
                 async with self._batch_state._lock:
                     contexts = list(self._batch_state.contexts.values())
 
+                logger.debug(
+                    f"[DockerSandboxManager] setup_batch: Cleaning up {len(contexts)} task contexts"
+                )
                 for context in contexts:
                     await context.cleanup()
 
             # Close Docker client
+            logger.debug("[DockerSandboxManager] setup_batch: Closing Docker client")
             await docker_client.close()
             self._batch_state = None
+            logger.debug("[DockerSandboxManager] setup_batch: Cleanup completed")
 
     @asynccontextmanager
     async def setup_task(self, task_setup: SandboxTaskSetup) -> AsyncIterator[SandboxState]:
@@ -151,7 +208,7 @@ class DockerSandboxManager:
         try:
             # Create containers and network
             sandbox_state = await context.create_containers(
-                task_setup, network_enabled=self._network_enabled
+                task_setup, network_enabled=self._config.network_enabled
             )
 
             # Yield sandbox state

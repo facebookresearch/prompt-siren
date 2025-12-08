@@ -12,7 +12,6 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from aiodocker import Docker
 from prompt_siren.sandbox_managers.docker.manager import (
     DockerSandboxConfig,
     DockerSandboxManager,
@@ -53,7 +52,7 @@ class TestDockerSandboxManagerCleanup:
 
     @patch("prompt_siren.sandbox_managers.docker.manager.aiodocker.Docker")
     async def test_setup_batch_cleans_up_contexts(
-        self, mock_docker_cls: Docker, manager: DockerSandboxManager, task_setup: TaskSetup
+        self, mock_docker_cls, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that setup_batch cleans up all task contexts on exit."""
         mock_docker = AsyncMock()
@@ -121,7 +120,7 @@ class TestDockerSandboxManagerContextLookup:
 
     @patch("prompt_siren.sandbox_managers.docker.manager.aiodocker.Docker")
     async def test_clone_invalid_execution_id_raises_error(
-        self, mock_docker_cls: Docker, manager: DockerSandboxManager, task_setup: TaskSetup
+        self, mock_docker_cls, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that cloning with invalid execution_id raises ValueError."""
         mock_docker = AsyncMock()
@@ -147,7 +146,7 @@ class TestDockerSandboxManagerConcurrency:
 
     @patch("prompt_siren.sandbox_managers.docker.manager.aiodocker.Docker")
     async def test_parallel_tasks_with_same_task_id(
-        self, mock_docker_cls: Docker, manager: DockerSandboxManager, task_setup: TaskSetup
+        self, mock_docker_cls, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that parallel tasks with same task_id get unique execution_ids."""
         mock_docker = AsyncMock()
@@ -195,7 +194,7 @@ class TestDockerSandboxManagerCloning:
 
     @patch("prompt_siren.sandbox_managers.docker.manager.aiodocker.Docker")
     async def test_clone_preserves_custom_command(
-        self, mock_docker_cls: Docker, manager: DockerSandboxManager, task_setup: TaskSetup
+        self, mock_docker_cls, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that cloning a container preserves custom command."""
         # Setup mock Docker client
