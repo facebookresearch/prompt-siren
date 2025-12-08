@@ -149,7 +149,7 @@ class PlaywrightEnvironment(
         await runner.setup()
         site = TCPSite(runner, "localhost", 0)
         await site.start()
-        
+
         server = site._server
         sockets = getattr(server, "sockets", None) if server is not None else None
         if not sockets:
