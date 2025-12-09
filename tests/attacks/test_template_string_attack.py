@@ -1,11 +1,10 @@
 """Tests for the template string attack functionality."""
 
-import pytest
 from prompt_siren.attacks import create_attack, get_attack_config_class, get_registered_attacks
 from prompt_siren.attacks.agentdojo_attack import (
+    create_template_string_attack,
     TemplateStringAttack,
     TemplateStringAttackConfig,
-    create_template_string_attack,
 )
 from prompt_siren.attacks.registry import attack_registry
 
@@ -28,8 +27,7 @@ class TestTemplateStringAttackConfig:
         """Test creating config with custom values."""
         custom_template = "Custom template: {goal} for {user}"
         config = TemplateStringAttackConfig(
-            attack_template=custom_template,
-            template_short_name="custom"
+            attack_template=custom_template, template_short_name="custom"
         )
 
         assert config.attack_template == custom_template
@@ -38,8 +36,7 @@ class TestTemplateStringAttackConfig:
     def test_config_serialization(self):
         """Test that config can be serialized and deserialized."""
         config = TemplateStringAttackConfig(
-            attack_template="Test {goal}",
-            template_short_name="test"
+            attack_template="Test {goal}", template_short_name="test"
         )
 
         # Serialize to dict
@@ -64,8 +61,7 @@ class TestTemplateStringAttack:
     def test_attack_with_custom_config(self):
         """Test creating attack with custom config."""
         config = TemplateStringAttackConfig(
-            attack_template="Custom: {goal}",
-            template_short_name="custom"
+            attack_template="Custom: {goal}", template_short_name="custom"
         )
         attack = TemplateStringAttack(_config=config)
 
@@ -75,8 +71,7 @@ class TestTemplateStringAttack:
     def test_factory_function(self):
         """Test the factory function creates correct attack instance."""
         config = TemplateStringAttackConfig(
-            attack_template="Factory test: {goal}",
-            template_short_name="factory"
+            attack_template="Factory test: {goal}", template_short_name="factory"
         )
         attack = create_template_string_attack(config)
 
@@ -112,8 +107,7 @@ class TestTemplateStringAttackRegistry:
     def test_create_via_template_string_type(self):
         """Test creating attack using template_string type."""
         config = TemplateStringAttackConfig(
-            attack_template="Test {goal}",
-            template_short_name="test"
+            attack_template="Test {goal}", template_short_name="test"
         )
         attack = create_attack("template_string", config)
 
@@ -123,8 +117,7 @@ class TestTemplateStringAttackRegistry:
     def test_create_via_agentdojo_type(self):
         """Test creating attack using agentdojo type (backwards compatibility)."""
         config = TemplateStringAttackConfig(
-            attack_template="Test {goal}",
-            template_short_name="legacy"
+            attack_template="Test {goal}", template_short_name="legacy"
         )
         attack = create_attack("agentdojo", config)
 
@@ -148,16 +141,13 @@ class TestTemplateShortNameInAttackType:
         # Create attacks with different template names
         configs = [
             TemplateStringAttackConfig(
-                attack_template="Template 1: {goal}",
-                template_short_name="variant1"
+                attack_template="Template 1: {goal}", template_short_name="variant1"
             ),
             TemplateStringAttackConfig(
-                attack_template="Template 2: {goal}",
-                template_short_name="variant2"
+                attack_template="Template 2: {goal}", template_short_name="variant2"
             ),
             TemplateStringAttackConfig(
-                attack_template="Template 3: {goal}",
-                template_short_name="variant3"
+                attack_template="Template 3: {goal}", template_short_name="variant3"
             ),
         ]
 

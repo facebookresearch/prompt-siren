@@ -1,6 +1,7 @@
 """Tests for results processing with template_short_name."""
 
-import json
+from pathlib import Path
+
 from prompt_siren.results import _parse_index_entry
 from prompt_siren.run_persistence import IndexEntry
 
@@ -12,8 +13,11 @@ class TestResultsProcessingWithTemplateShortName:
         """Test that benign runs have attack_type set to 'benign'."""
         # Create an index entry for a benign run
         entry = IndexEntry(
+            execution_id="exec123",
             task_id="test_task",
-            dataset_type="test_dataset",
+            timestamp="2024-01-01T00:00:00",
+            dataset="test_dataset",
+            dataset_config={},
             agent_type="plain",
             agent_name="test_agent",
             attack_type=None,
@@ -21,7 +25,7 @@ class TestResultsProcessingWithTemplateShortName:
             config_hash="abc123",
             benign_score=1.0,
             attack_score=None,
-            outputs_path="outputs.jsonl",
+            path=Path("outputs.jsonl"),
         )
 
         # Serialize to JSON string (like what's in the index file)
@@ -36,8 +40,11 @@ class TestResultsProcessingWithTemplateShortName:
     def test_template_string_attack_with_default_short_name(self):
         """Test that template_string attack with default short name gets suffix."""
         entry = IndexEntry(
+            execution_id="exec123",
             task_id="test_task",
-            dataset_type="test_dataset",
+            timestamp="2024-01-01T00:00:00",
+            dataset="test_dataset",
+            dataset_config={},
             agent_type="plain",
             agent_name="test_agent",
             attack_type="template_string",
@@ -45,7 +52,7 @@ class TestResultsProcessingWithTemplateShortName:
             config_hash="abc123",
             benign_score=0.5,
             attack_score=0.8,
-            outputs_path="outputs.jsonl",
+            path=Path("outputs.jsonl"),
         )
 
         json_str = entry.model_dump_json()
@@ -57,19 +64,19 @@ class TestResultsProcessingWithTemplateShortName:
     def test_template_string_attack_with_custom_short_name(self):
         """Test that template_string attack with custom short name gets suffix."""
         entry = IndexEntry(
+            execution_id="exec123",
             task_id="test_task",
-            dataset_type="test_dataset",
+            timestamp="2024-01-01T00:00:00",
+            dataset="test_dataset",
+            dataset_config={},
             agent_type="plain",
             agent_name="test_agent",
             attack_type="template_string",
-            attack_config={
-                "template_short_name": "urgent",
-                "attack_template": "URGENT: {goal}"
-            },
+            attack_config={"template_short_name": "urgent", "attack_template": "URGENT: {goal}"},
             config_hash="abc123",
             benign_score=0.5,
             attack_score=0.9,
-            outputs_path="outputs.jsonl",
+            path=Path("outputs.jsonl"),
         )
 
         json_str = entry.model_dump_json()
@@ -81,8 +88,11 @@ class TestResultsProcessingWithTemplateShortName:
     def test_template_string_attack_without_short_name(self):
         """Test that template_string attack without short name in config stays as-is."""
         entry = IndexEntry(
+            execution_id="exec123",
             task_id="test_task",
-            dataset_type="test_dataset",
+            timestamp="2024-01-01T00:00:00",
+            dataset="test_dataset",
+            dataset_config={},
             agent_type="plain",
             agent_name="test_agent",
             attack_type="template_string",
@@ -90,7 +100,7 @@ class TestResultsProcessingWithTemplateShortName:
             config_hash="abc123",
             benign_score=0.5,
             attack_score=0.7,
-            outputs_path="outputs.jsonl",
+            path=Path("outputs.jsonl"),
         )
 
         json_str = entry.model_dump_json()
@@ -102,8 +112,11 @@ class TestResultsProcessingWithTemplateShortName:
     def test_template_string_attack_with_none_config(self):
         """Test that template_string attack with None config stays as-is."""
         entry = IndexEntry(
+            execution_id="exec123",
             task_id="test_task",
-            dataset_type="test_dataset",
+            timestamp="2024-01-01T00:00:00",
+            dataset="test_dataset",
+            dataset_config={},
             agent_type="plain",
             agent_name="test_agent",
             attack_type="template_string",
@@ -111,7 +124,7 @@ class TestResultsProcessingWithTemplateShortName:
             config_hash="abc123",
             benign_score=0.5,
             attack_score=0.7,
-            outputs_path="outputs.jsonl",
+            path=Path("outputs.jsonl"),
         )
 
         json_str = entry.model_dump_json()
@@ -124,8 +137,11 @@ class TestResultsProcessingWithTemplateShortName:
         """Test that other attack types are not affected by template_short_name logic."""
         for attack_type in ["dict", "mini-goat", "custom_attack"]:
             entry = IndexEntry(
+                execution_id="exec123",
                 task_id="test_task",
-                dataset_type="test_dataset",
+                timestamp="2024-01-01T00:00:00",
+                dataset="test_dataset",
+                dataset_config={},
                 agent_type="plain",
                 agent_name="test_agent",
                 attack_type=attack_type,
@@ -133,7 +149,7 @@ class TestResultsProcessingWithTemplateShortName:
                 config_hash="abc123",
                 benign_score=0.5,
                 attack_score=0.6,
-                outputs_path="outputs.jsonl",
+                path=Path("outputs.jsonl"),
             )
 
             json_str = entry.model_dump_json()
@@ -152,19 +168,22 @@ class TestResultsProcessingWithTemplateShortName:
 
         for short_name, expected_type in variants:
             entry = IndexEntry(
+                execution_id="exec123",
                 task_id="test_task",
-                dataset_type="test_dataset",
+                timestamp="2024-01-01T00:00:00",
+                dataset="test_dataset",
+                dataset_config={},
                 agent_type="plain",
                 agent_name="test_agent",
                 attack_type="template_string",
                 attack_config={
                     "template_short_name": short_name,
-                    "attack_template": f"Template {short_name}: {{goal}}"
+                    "attack_template": f"Template {short_name}: {{goal}}",
                 },
                 config_hash="abc123",
                 benign_score=0.5,
                 attack_score=0.7,
-                outputs_path="outputs.jsonl",
+                path=Path("outputs.jsonl"),
             )
 
             json_str = entry.model_dump_json()
@@ -176,8 +195,11 @@ class TestResultsProcessingWithTemplateShortName:
     def test_attack_score_nan_conversion(self):
         """Test that None attack_score is converted to NaN."""
         entry = IndexEntry(
+            execution_id="exec123",
             task_id="test_task",
-            dataset_type="test_dataset",
+            timestamp="2024-01-01T00:00:00",
+            dataset="test_dataset",
+            dataset_config={},
             agent_type="plain",
             agent_name="test_agent",
             attack_type=None,
@@ -185,7 +207,7 @@ class TestResultsProcessingWithTemplateShortName:
             config_hash="abc123",
             benign_score=1.0,
             attack_score=None,
-            outputs_path="outputs.jsonl",
+            path=Path("outputs.jsonl"),
         )
 
         json_str = entry.model_dump_json()
@@ -193,4 +215,5 @@ class TestResultsProcessingWithTemplateShortName:
 
         # Verify attack_score is converted to NaN
         import math
+
         assert math.isnan(parsed["attack_score"])
