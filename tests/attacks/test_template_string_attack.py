@@ -1,6 +1,10 @@
 """Tests for the template string attack functionality."""
 
-from prompt_siren.attacks import create_attack, get_attack_config_class, get_registered_attacks
+from prompt_siren.attacks import (
+    create_attack,
+    get_attack_config_class,
+    get_registered_attacks,
+)
 from prompt_siren.attacks.agentdojo_attack import (
     create_template_string_attack,
     TemplateStringAttack,
