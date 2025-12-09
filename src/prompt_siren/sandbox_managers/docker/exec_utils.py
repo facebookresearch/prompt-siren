@@ -7,22 +7,14 @@ import shlex
 from pathlib import Path
 
 import anyio
-from aiohttp import ClientTimeout
 
-try:
-    import aiodocker
-except ImportError as e:
-    raise ImportError(
-        "Docker sandbox manager requires the 'docker' optional dependency. "
-        "Install with: pip install 'prompt-siren[docker]'"
-    ) from e
-
-from ..abstract import ExecOutput, ExecTimeoutError, StderrChunk, StdoutChunk
+from ..abstract import ExecOutput, ExecTimeoutError
 from ..sandbox_state import ContainerID
+from .plugins import AbstractDockerClient
 
 
 async def exec_in_container(
-    docker: aiodocker.Docker,
+    docker: AbstractDockerClient,
     container_id: ContainerID,
     cmd: str | list[str],
     stdin: str | bytes | None = None,
@@ -36,7 +28,7 @@ async def exec_in_container(
     """Execute a command in a Docker container.
 
     Args:
-        docker: Docker client
+        docker: Abstract Docker client
         container_id: Container ID to execute command in
         cmd: Command to execute (string or list of arguments)
         stdin: Optional stdin data to pass to the command
@@ -54,7 +46,7 @@ async def exec_in_container(
         ExecTimeoutError: If command execution exceeds timeout
     """
     # Get container
-    container = await docker.containers.get(container_id)
+    container = await docker.get_container(container_id)
     _shell_path = str(shell_path) if shell_path is not None else "/bin/bash"
 
     # Normalize command to bash -c format
@@ -68,49 +60,15 @@ async def exec_in_container(
     try:
         # Use anyio for timeout (Python 3.10 compatible)
         with anyio.fail_after(timeout_value):
-            # Create exec instance
-            exec_instance = await container.exec(
+            # Execute command in container
+            return await container.exec(
                 cmd=bash_cmd,
-                stdout=True,
-                stderr=True,
-                stdin=stdin is not None,
+                stdin=stdin,
                 user=user or "",
                 environment=env,
                 workdir=cwd,
+                timeout=timeout_value,
             )
-
-            # Start execution
-            stream = exec_instance.start(detach=False, timeout=ClientTimeout(total=timeout_value))
-
-            # Write stdin if provided
-            if stdin is not None:
-                if isinstance(stdin, str):
-                    stdin = stdin.encode()
-                await stream.write_in(stdin)
-                # Signal EOF on stdin without closing stdout/stderr
-                # Access transport directly like write_in() does
-                assert stream._resp is not None
-                assert stream._resp.connection is not None
-                transport = stream._resp.connection.transport
-                if transport and transport.can_write_eof():
-                    transport.write_eof()
-
-            # Read output
-            outputs = []
-            while True:
-                msg = await stream.read_out()
-                if msg is None:
-                    break
-                decoded = msg.data.decode("utf-8", errors="replace")
-                if msg.stream == 1:  # stdout
-                    outputs.append(StdoutChunk(content=decoded))
-                elif msg.stream == 2:  # stderr
-                    outputs.append(StderrChunk(content=decoded))
-
-            # Get exit code
-            exit_code = (await exec_instance.inspect())["ExitCode"]
-
-            return ExecOutput(outputs=outputs, exit_code=exit_code)
 
     except TimeoutError as e:
         raise ExecTimeoutError(container_id, cmd, timeout_value) from e

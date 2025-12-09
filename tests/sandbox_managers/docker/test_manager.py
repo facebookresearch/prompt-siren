@@ -9,10 +9,9 @@ by integration tests.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from aiodocker import Docker
 from prompt_siren.sandbox_managers.docker.manager import (
     DockerSandboxConfig,
     DockerSandboxManager,
@@ -51,29 +50,26 @@ def task_setup() -> TaskSetup:
 class TestDockerSandboxManagerCleanup:
     """Tests for cleanup orchestration."""
 
-    @patch("prompt_siren.sandbox_managers.docker.manager.aiodocker.Docker")
+    @patch("prompt_siren.sandbox_managers.docker.manager.create_docker_client_from_config")
     async def test_setup_batch_cleans_up_contexts(
-        self, mock_docker_cls: Docker, manager: DockerSandboxManager, task_setup: TaskSetup
+        self, mock_get_client, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that setup_batch cleans up all task contexts on exit."""
         mock_docker = AsyncMock()
         mock_docker.close = AsyncMock()
-        mock_docker.images = MagicMock()
-        mock_docker.images.inspect = AsyncMock()
-        mock_docker.containers = MagicMock()
-        mock_docker.containers.create = AsyncMock()
-        mock_docker.containers.get = AsyncMock()
-        mock_docker_cls.return_value = mock_docker  # type: ignore -- mock class
+        mock_docker.inspect_image = AsyncMock()
 
-        # Create mock container
-        mock_container = MagicMock()
+        # Create mock container (AbstractContainer interface)
+        mock_container = AsyncMock()
         mock_container.show = AsyncMock(
             return_value={"Id": "test-container-id", "State": {"Running": True}}
         )
         mock_container.start = AsyncMock()
         mock_container.stop = AsyncMock()
         mock_container.delete = AsyncMock()
-        mock_docker.containers.create.return_value = mock_container
+
+        mock_docker.create_container = AsyncMock(return_value=mock_container)
+        mock_get_client.return_value = mock_docker
 
         async with manager.setup_batch([task_setup]):
             # Create a task (which creates a context)
@@ -119,16 +115,15 @@ class TestDockerSandboxManagerGuardConditions:
 class TestDockerSandboxManagerContextLookup:
     """Tests for context lookup logic."""
 
-    @patch("prompt_siren.sandbox_managers.docker.manager.aiodocker.Docker")
+    @patch("prompt_siren.sandbox_managers.docker.manager.create_docker_client_from_config")
     async def test_clone_invalid_execution_id_raises_error(
-        self, mock_docker_cls: Docker, manager: DockerSandboxManager, task_setup: TaskSetup
+        self, mock_get_client, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that cloning with invalid execution_id raises ValueError."""
         mock_docker = AsyncMock()
         mock_docker.close = AsyncMock()
-        mock_docker.images = MagicMock()
-        mock_docker.images.inspect = AsyncMock()
-        mock_docker_cls.return_value = mock_docker  # type: ignore -- mock class
+        mock_docker.inspect_image = AsyncMock()
+        mock_get_client.return_value = mock_docker
 
         mock_state = SandboxState(
             agent_container_id="test-id",
@@ -145,24 +140,22 @@ class TestDockerSandboxManagerContextLookup:
 class TestDockerSandboxManagerConcurrency:
     """Tests for concurrent task execution."""
 
-    @patch("prompt_siren.sandbox_managers.docker.manager.aiodocker.Docker")
+    @patch("prompt_siren.sandbox_managers.docker.manager.create_docker_client_from_config")
     async def test_parallel_tasks_with_same_task_id(
-        self, mock_docker_cls: Docker, manager: DockerSandboxManager, task_setup: TaskSetup
+        self, mock_get_client, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that parallel tasks with same task_id get unique execution_ids."""
         mock_docker = AsyncMock()
         mock_docker.close = AsyncMock()
-        mock_docker.images = MagicMock()
-        mock_docker.images.inspect = AsyncMock()
-        mock_docker.containers = MagicMock()
+        mock_docker.inspect_image = AsyncMock()
 
         # Track execution IDs
         execution_ids = []
 
-        # Create multiple mock containers
+        # Create multiple mock containers (AbstractContainer interface)
         containers = []
         for i in range(3):
-            mock_container = MagicMock()
+            mock_container = AsyncMock()
             mock_container.show = AsyncMock(
                 return_value={"Id": f"container-{i}", "State": {"Running": True}}
             )
@@ -171,8 +164,8 @@ class TestDockerSandboxManagerConcurrency:
             mock_container.delete = AsyncMock()
             containers.append(mock_container)
 
-        mock_docker.containers.create = AsyncMock(side_effect=containers)
-        mock_docker_cls.return_value = mock_docker  # type: ignore -- mock class
+        mock_docker.create_container = AsyncMock(side_effect=containers)
+        mock_get_client.return_value = mock_docker
 
         async def run_task():
             async with manager.setup_task(task_setup) as sandbox_state:
@@ -193,25 +186,23 @@ class TestDockerSandboxManagerConcurrency:
 class TestDockerSandboxManagerCloning:
     """Tests for container cloning functionality."""
 
-    @patch("prompt_siren.sandbox_managers.docker.manager.aiodocker.Docker")
+    @patch("prompt_siren.sandbox_managers.docker.manager.create_docker_client_from_config")
     async def test_clone_preserves_custom_command(
-        self, mock_docker_cls: Docker, manager: DockerSandboxManager, task_setup: TaskSetup
+        self, mock_get_client, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that cloning a container preserves custom command."""
-        # Setup mock Docker client
+        # Setup mock Docker client (AbstractDockerClient interface)
         mock_docker = AsyncMock()
         mock_docker.close = AsyncMock()
-        mock_docker.images = MagicMock()
-        mock_docker.images.inspect = AsyncMock()
-        mock_docker.containers = MagicMock()
-        mock_docker.networks = MagicMock()
-        mock_docker_cls.return_value = mock_docker  # type: ignore -- mock class
+        mock_docker.inspect_image = AsyncMock()
+        mock_docker.delete_image = AsyncMock()
+        mock_get_client.return_value = mock_docker
 
         # Custom command to test
         custom_command = ["/bin/bash", "-c", "while true; do echo 'test'; sleep 1; done"]
 
-        # Mock source container with custom command
-        source_container = MagicMock()
+        # Mock source container (AbstractContainer interface)
+        source_container = AsyncMock()
         source_container.show = AsyncMock(
             return_value={
                 "Id": "source-container-id",
@@ -229,8 +220,8 @@ class TestDockerSandboxManagerCloning:
         source_container.delete = AsyncMock()
         source_container.commit = AsyncMock()
 
-        # Mock cloned container
-        cloned_container = MagicMock()
+        # Mock cloned container (AbstractContainer interface)
+        cloned_container = AsyncMock()
         cloned_container.show = AsyncMock(
             return_value={
                 "Id": "cloned-container-id",
@@ -248,8 +239,8 @@ class TestDockerSandboxManagerCloning:
         cloned_container.delete = AsyncMock()
 
         # Setup container creation sequence
-        mock_docker.containers.create = AsyncMock(side_effect=[source_container, cloned_container])
-        mock_docker.containers.get = AsyncMock(return_value=source_container)
+        mock_docker.create_container = AsyncMock(side_effect=[source_container, cloned_container])
+        mock_docker.get_container = AsyncMock(return_value=source_container)
 
         async with manager.setup_batch([task_setup]):
             async with manager.setup_task(task_setup) as source_state:
@@ -266,7 +257,7 @@ class TestDockerSandboxManagerCloning:
                 assert "temp-clone-" in commit_call.kwargs["repository"]
 
                 # Verify new container was created with custom command preserved
-                create_calls = mock_docker.containers.create.call_args_list
+                create_calls = mock_docker.create_container.call_args_list
                 assert len(create_calls) == 2  # Source + clone
 
                 clone_create_call = create_calls[1]  # Second call is the clone
