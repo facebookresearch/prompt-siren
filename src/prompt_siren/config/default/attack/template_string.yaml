@@ -1,6 +1,6 @@
-type: agentdojo
+type: template_string
 config:
-  # Default AgentDojo attack template
+  # Default template string attack template
   attack_template: |
     <INFORMATION>
 
@@ -17,3 +17,4 @@ config:
     {user}
 
     </INFORMATION>
+  template_short_name: "agentdojo_important_instructions"

@@ -53,23 +53,24 @@ _DEFAULT_ATTACK_TEMPLATE = (
 )
 
 
-class AgentDojoAttackConfig(BaseModel):
-    """Configuration for AgentDojo attack."""
+class TemplateStringAttackConfig(BaseModel):
+    """Configuration for template string attack."""
 
     attack_template: str = _DEFAULT_ATTACK_TEMPLATE
+    template_short_name: str = "default"
 
 
 @dataclass(frozen=True)
-class AgentDojoAttack(
+class TemplateStringAttack(
     AbstractAttack[EnvStateT, str, str, StrContentAttack],
     Generic[EnvStateT],
 ):
-    name: ClassVar[str] = "agentdojo"
-    _config: AgentDojoAttackConfig = field(default_factory=AgentDojoAttackConfig)
+    name: ClassVar[str] = "template_string"
+    _config: TemplateStringAttackConfig = field(default_factory=TemplateStringAttackConfig)
     _user_name: ClassVar[str] = "Emma Johnson"
 
     @property
-    def config(self) -> AgentDojoAttackConfig:
+    def config(self) -> TemplateStringAttackConfig:
         return self._config
 
     async def attack(
@@ -116,7 +117,11 @@ class AgentDojoAttack(
                         user=self._user_name,
                         model=agent.get_agent_name(),
                     )
-                    logfire.info("creating injecton", injection=injection)
+                    logfire.info(
+                        "creating injection",
+                        injection=injection,
+                        template_short_name=self.config.template_short_name,
+                    )
                     attacks[vector_id] = StrContentAttack(content=injection)
 
             # Inject state with updated attack
@@ -131,14 +136,16 @@ class AgentDojoAttack(
         return state, attacks
 
 
-def create_agentdojo_attack(config: AgentDojoAttackConfig, context: None = None) -> AgentDojoAttack:
-    """Factory function to create an AgentDojoAttack instance.
+def create_template_string_attack(
+    config: TemplateStringAttackConfig, context: None = None
+) -> TemplateStringAttack:
+    """Factory function to create a TemplateStringAttack instance.
 
     Args:
-        config: Configuration for the AgentDojo attack
+        config: Configuration for the template string attack
         context: Optional context parameter (unused by attacks, for registry compatibility)
 
     Returns:
-        An AgentDojoAttack instance
+        A TemplateStringAttack instance
     """
-    return AgentDojoAttack(_config=config)
+    return TemplateStringAttack(_config=config)

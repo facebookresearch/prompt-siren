@@ -95,6 +95,13 @@ def _parse_index_entry(line: str) -> dict[str, Any]:
     # Replace None with default values for aggregation
     if row["attack_type"] is None:
         row["attack_type"] = "benign"
+    else:
+        # For template_string attacks, append the template_short_name to attack_type
+        if row["attack_type"] == "template_string" and row.get("attack_config"):
+            template_short_name = row["attack_config"].get("template_short_name")
+            if template_short_name:
+                row["attack_type"] = f"template_string_{template_short_name}"
+
     if row["attack_score"] is None:
         row["attack_score"] = float("nan")
 

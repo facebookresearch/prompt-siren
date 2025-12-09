@@ -87,7 +87,7 @@ def validate_config(cfg: DictConfig, execution_mode: ExecutionMode) -> Experimen
         raise ValueError(
             "Attack configuration is required for attack mode. "
             "Specify it in your config file or use +attack=<attack_name> override.\n"
-            "Example: prompt-siren run attack +dataset=agentdojo-workspace +attack=agentdojo"
+            "Example: prompt-siren run attack +dataset=agentdojo-workspace +attack=template_string"
         )
 
     if experiment_config.attack is None:

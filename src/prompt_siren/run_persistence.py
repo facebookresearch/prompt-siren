@@ -68,6 +68,7 @@ class IndexEntry(BaseModel):
     agent_type: str
     agent_name: str
     attack_type: str | None
+    attack_config: dict[str, Any] | None
     config_hash: str
     benign_score: float
     attack_score: float | None
@@ -416,6 +417,7 @@ class ExecutionPersistence:
             agent_type=self.agent_config.type,
             agent_name=agent_name,
             attack_type=self.attack_config.type if self.attack_config else None,
+            attack_config=self.attack_config.config if self.attack_config else None,
             config_hash=self.config_hash,
             benign_score=results.benign_score,
             attack_score=results.attack_score,
