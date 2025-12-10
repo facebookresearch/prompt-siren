@@ -10,7 +10,6 @@ Skip with: pytest -vx -m "not docker_integration"
 
 import asyncio
 from collections.abc import AsyncIterator
-from importlib import resources
 from pathlib import Path
 from uuid import uuid4
 
