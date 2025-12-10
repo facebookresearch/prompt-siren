@@ -127,7 +127,7 @@ uv run prompt-siren run attack --config-dir=./my_config
    - `registry.py` - Attack plugin registration system
    - Attack implementations:
      - `nanogcg/gcg.py` - GCG (Greedy Coordinate Gradient) attack
-     - `agentdojo_attack.py` - AgentDojo-specific attacks
+     - `template_string_attack.py` - Template string-based attacks
      - `dict_attack.py` - Dictionary-based attacks from config or files
      - `mini_goat_attack.py` - Mini-GOAT attack implementation
      - `target_string_attack.py` - Target string-based attacks

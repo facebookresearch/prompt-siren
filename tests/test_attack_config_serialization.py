@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from prompt_siren.attacks.agentdojo_attack import TemplateStringAttackConfig
+from prompt_siren.attacks.template_string_attack import TemplateStringAttackConfig
 from prompt_siren.types import (
     AttackFile,
     InjectionAttack,

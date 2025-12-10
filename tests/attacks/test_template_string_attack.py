@@ -2,15 +2,14 @@
 
 from prompt_siren.attacks import (
     create_attack,
-    get_attack_config_class,
     get_registered_attacks,
 )
-from prompt_siren.attacks.agentdojo_attack import (
+from prompt_siren.attacks.registry import attack_registry
+from prompt_siren.attacks.template_string_attack import (
     create_template_string_attack,
     TemplateStringAttack,
     TemplateStringAttackConfig,
 )
-from prompt_siren.attacks.registry import attack_registry
 
 
 class TestTemplateStringAttackConfig:
@@ -97,17 +96,6 @@ class TestTemplateStringAttackRegistry:
         registered_attacks = get_registered_attacks()
         assert "template_string" in registered_attacks
 
-    def test_agentdojo_backwards_compatibility(self):
-        """Test that agentdojo entry point still exists for backwards compatibility."""
-        registered_attacks = get_registered_attacks()
-        assert "agentdojo" in registered_attacks
-
-        # Both should resolve to the same config class
-        template_config_class = get_attack_config_class("template_string")
-        agentdojo_config_class = get_attack_config_class("agentdojo")
-        assert template_config_class is agentdojo_config_class
-        assert template_config_class is TemplateStringAttackConfig
-
     def test_create_via_template_string_type(self):
         """Test creating attack using template_string type."""
         config = TemplateStringAttackConfig(
@@ -117,16 +105,6 @@ class TestTemplateStringAttackRegistry:
 
         assert isinstance(attack, TemplateStringAttack)
         assert attack.config.template_short_name == "test"
-
-    def test_create_via_agentdojo_type(self):
-        """Test creating attack using agentdojo type (backwards compatibility)."""
-        config = TemplateStringAttackConfig(
-            attack_template="Test {goal}", template_short_name="legacy"
-        )
-        attack = create_attack("agentdojo", config)
-
-        assert isinstance(attack, TemplateStringAttack)
-        assert attack.config.template_short_name == "legacy"
 
 
 class TestTemplateShortNameInAttackType:
