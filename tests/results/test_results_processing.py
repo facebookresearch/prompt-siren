@@ -72,7 +72,10 @@ class TestResultsProcessingWithTemplateShortName:
             agent_type="plain",
             agent_name="test_agent",
             attack_type="template_string",
-            attack_config={"template_short_name": "urgent", "attack_template": "URGENT: {goal}"},
+            attack_config={
+                "template_short_name": "urgent",
+                "attack_template": "URGENT: {{ goal }}",
+            },
             config_hash="abc123",
             benign_score=0.5,
             attack_score=0.9,
