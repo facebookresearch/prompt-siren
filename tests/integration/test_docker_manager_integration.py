@@ -10,6 +10,7 @@ Skip with: pytest -vx -m "not docker_integration"
 
 import asyncio
 from collections.abc import AsyncIterator
+from importlib import resources
 from pathlib import Path
 from uuid import uuid4
 
@@ -37,7 +38,7 @@ from prompt_siren.sandbox_managers.sandbox_task_setup import (
 pytestmark = pytest.mark.anyio
 
 # Path to test fixtures
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
+FIXTURES_DIR = resources.files("tests.integration.fixtures")
 
 
 # ==================== Shared Fixtures for Container Reuse ====================
@@ -47,7 +48,6 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 async def basic_sandbox_manager(
     test_image: str,
     docker_client_type: str,
-    skip_if_des_unavailable,
     create_manager_config,
 ) -> AsyncIterator[tuple[AbstractSandboxManager, TaskSetup]]:
     """Create a sandbox manager with batch context for basic tests.
@@ -228,7 +228,6 @@ class TestMultiContainerNetworking:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test that containers on the same network can resolve each other by hostname."""
@@ -303,7 +302,6 @@ class TestMultiContainerNetworking:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         docker_client: AbstractDockerClient | None,
         create_manager_config,
     ):
@@ -333,11 +331,10 @@ class TestMultiContainerNetworking:
                 assert sandbox_state.network_id is not None
 
                 # Verify network is internal by inspecting it
-                if docker_client_type == "local":
-                    assert docker_client is not None
-                    network = await docker_client.get_network(sandbox_state.network_id)
-                    network_info = await network.show()
-                    assert network_info["Internal"] is True
+                assert docker_client is not None
+                network = await docker_client.get_network(sandbox_state.network_id)
+                network_info = await network.show()
+                assert network_info["Internal"] is True
 
 
 # ==================== Container Cloning Tests ====================
@@ -351,7 +348,6 @@ class TestContainerCloning:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test cloning a single container creates snapshot."""
@@ -411,7 +407,6 @@ class TestContainerCloning:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         docker_client: AbstractDockerClient | None,
         create_manager_config,
     ):
@@ -443,14 +438,12 @@ class TestContainerCloning:
             async with manager.setup_task(task_setup) as source_state:
                 source_id = source_state.agent_container_id
 
-                # Only inspect Docker API for local docker
-                if docker_client_type == "local":
-                    assert docker_client is not None
-                    # Verify source container's command via Docker API
-                    source_container = await docker_client.get_container(source_id)
-                    source_info = await source_container.show()
-                    source_cmd = source_info["Config"]["Cmd"]
-                    assert source_cmd == custom_command
+                # Verify source container's command via Docker API
+                assert docker_client is not None
+                source_container = await docker_client.get_container(source_id)
+                source_info = await source_container.show()
+                source_cmd = source_info["Config"]["Cmd"]
+                assert source_cmd == custom_command
 
                 # Verify command is actually running in source container
                 # Use /proc filesystem which is available in all Linux containers
@@ -470,20 +463,18 @@ class TestContainerCloning:
                 # Verify clone has different container ID
                 assert cloned_id != source_id
 
-                # Only inspect Docker API for local docker
-                if docker_client_type == "local":
-                    assert docker_client is not None
-                    # Verify cloned container's command via Docker API
-                    cloned_container = await docker_client.get_container(cloned_id)
-                    cloned_info = await cloned_container.show()
-                    cloned_cmd = cloned_info["Config"]["Cmd"]
-                    assert cloned_cmd == custom_command
+                # Verify cloned container's command via Docker API
+                assert docker_client is not None
+                cloned_container = await docker_client.get_container(cloned_id)
+                cloned_info = await cloned_container.show()
+                cloned_cmd = cloned_info["Config"]["Cmd"]
+                assert cloned_cmd == custom_command
 
-                    # Re-fetch source_info to verify both containers are running
-                    source_container = await docker_client.get_container(source_id)
-                    source_info_check = await source_container.show()
-                    assert source_info_check["State"]["Running"] is True
-                    assert cloned_info["State"]["Running"] is True
+                # Re-fetch source_info to verify both containers are running
+                source_container = await docker_client.get_container(source_id)
+                source_info_check = await source_container.show()
+                assert source_info_check["State"]["Running"] is True
+                assert cloned_info["State"]["Running"] is True
 
                 # Verify command is actually running in cloned container
                 cloned_cmdline_result = await manager.exec(
@@ -498,7 +489,6 @@ class TestContainerCloning:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         docker_client: AbstractDockerClient | None,
         create_manager_config,
     ):
@@ -539,19 +529,17 @@ class TestContainerCloning:
                 assert cloned_state.network_id is not None
 
                 # Verify cloned containers can communicate on new network
-                # (Use Docker API to verify network attachment - only for local)
-                if docker_client_type == "local":
-                    assert docker_client is not None
-                    clone_agent = await docker_client.get_container(cloned_state.agent_container_id)
-                    clone_info = await clone_agent.show()
-                    networks = clone_info["NetworkSettings"]["Networks"]
-                    assert len(networks) > 0
+                # (Use Docker API to verify network attachment)
+                assert docker_client is not None
+                clone_agent = await docker_client.get_container(cloned_state.agent_container_id)
+                clone_info = await clone_agent.show()
+                networks = clone_info["NetworkSettings"]["Networks"]
+                assert len(networks) > 0
 
     async def test_clone_cleanup_removes_temp_images(
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         docker_client: AbstractDockerClient | None,
         create_manager_config,
     ):
@@ -578,31 +566,28 @@ class TestContainerCloning:
                     cloned_state = await manager.clone_sandbox_state(source_state)
                     cloned_states.append(cloned_state)
 
-                # Only verify temp images for local docker
-                if docker_client_type == "local":
-                    assert docker_client is not None
-                    # Verify temp images exist
-                    local_client = docker_client
-                    assert isinstance(local_client, LocalDockerClient)
-                    images = await local_client._docker.images.list()
-                    image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
-                    temp_images_count = sum(1 for tag in image_tags if tag and "temp-clone-" in tag)
-                    assert temp_images_count >= 3
-
-            # After task cleanup, temp images should be gone (only check for local)
-            if docker_client_type == "local":
+                # Verify temp images exist
                 assert docker_client is not None
                 local_client = docker_client
                 assert isinstance(local_client, LocalDockerClient)
                 images = await local_client._docker.images.list()
                 image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+                temp_images_count = sum(1 for tag in image_tags if tag and "temp-clone-" in tag)
+                assert temp_images_count >= 3
 
-                # Filter for temp images from this specific execution
-                # (may have temp images from other tests)
-                for cloned_state in cloned_states:
-                    # Verify this specific clone's temp image is gone
-                    temp_image_pattern = f"temp-clone-{cloned_state.execution_id}"
-                    assert not any(temp_image_pattern in (tag or "") for tag in image_tags)
+            # After task cleanup, temp images should be gone
+            assert docker_client is not None
+            local_client = docker_client
+            assert isinstance(local_client, LocalDockerClient)
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+
+            # Filter for temp images from this specific execution
+            # (may have temp images from other tests)
+            for cloned_state in cloned_states:
+                # Verify this specific clone's temp image is gone
+                temp_image_pattern = f"temp-clone-{cloned_state.execution_id}"
+                assert not any(temp_image_pattern in (tag or "") for tag in image_tags)
 
 
 # ==================== Concurrent Execution Tests ====================
@@ -616,7 +601,6 @@ class TestConcurrentExecution:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test that parallel tasks with same task_id are independent."""
@@ -666,7 +650,6 @@ class TestConcurrentExecution:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test that concurrent cloning operations are safe."""
@@ -717,7 +700,6 @@ class TestImageBuilding:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         docker_client: AbstractDockerClient | None,
         create_manager_config,
     ):
@@ -741,27 +723,23 @@ class TestImageBuilding:
             network_config=None,
         )
 
-        # Cleanup any existing test image (only for local)
-        if docker_client_type == "local":
+        # Cleanup any existing test image
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        try:
+            await local_client._docker.images.delete("prompt-siren-test-build:latest", force=True)
+        except Exception:
+            pass
+
+        async with manager.setup_batch([task_setup]):
+            # Verify image was built
             assert docker_client is not None
             local_client = docker_client
             assert isinstance(local_client, LocalDockerClient)
-            try:
-                await local_client._docker.images.delete(
-                    "prompt-siren-test-build:latest", force=True
-                )
-            except Exception:
-                pass
-
-        async with manager.setup_batch([task_setup]):
-            # Verify image was built (only for local)
-            if docker_client_type == "local":
-                assert docker_client is not None
-                local_client = docker_client
-                assert isinstance(local_client, LocalDockerClient)
-                images = await local_client._docker.images.list()
-                image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
-                assert any("prompt-siren-test-build:latest" in (tag or "") for tag in image_tags)
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+            assert any("prompt-siren-test-build:latest" in (tag or "") for tag in image_tags)
 
             # Create container and verify build marker
             async with manager.setup_task(task_setup) as sandbox_state:
@@ -773,23 +751,19 @@ class TestImageBuilding:
                 assert result.stdout is not None
                 assert "Test build successful" in result.stdout
 
-        # Cleanup (only for local)
-        if docker_client_type == "local":
-            assert docker_client is not None
-            local_client = docker_client
-            assert isinstance(local_client, LocalDockerClient)
-            try:
-                await local_client._docker.images.delete(
-                    "prompt-siren-test-build:latest", force=True
-                )
-            except Exception:
-                pass
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        try:
+            await local_client._docker.images.delete("prompt-siren-test-build:latest", force=True)
+        except Exception:
+            pass
 
     async def test_build_with_build_args(
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         docker_client: AbstractDockerClient | None,
         create_manager_config,
     ):
@@ -815,17 +789,16 @@ class TestImageBuilding:
             network_config=None,
         )
 
-        # Cleanup any existing test image (only for local)
-        if docker_client_type == "local":
-            assert docker_client is not None
-            local_client = docker_client
-            assert isinstance(local_client, LocalDockerClient)
-            try:
-                await local_client._docker.images.delete(
-                    "prompt-siren-test-build-args:latest", force=True
-                )
-            except Exception:
-                pass
+        # Cleanup any existing test image
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        try:
+            await local_client._docker.images.delete(
+                "prompt-siren-test-build-args:latest", force=True
+            )
+        except Exception:
+            pass
 
         async with manager.setup_batch([task_setup]):
             async with manager.setup_task(task_setup) as sandbox_state:
@@ -838,23 +811,21 @@ class TestImageBuilding:
                 assert result.stdout is not None
                 assert "custom_value" in result.stdout
 
-        # Cleanup (only for local)
-        if docker_client_type == "local":
-            assert docker_client is not None
-            local_client = docker_client
-            assert isinstance(local_client, LocalDockerClient)
-            try:
-                await local_client._docker.images.delete(
-                    "prompt-siren-test-build-args:latest", force=True
-                )
-            except Exception:
-                pass
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        try:
+            await local_client._docker.images.delete(
+                "prompt-siren-test-build-args:latest", force=True
+            )
+        except Exception:
+            pass
 
     async def test_mixed_pull_and_build_specs(
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         docker_client: AbstractDockerClient | None,
         create_manager_config,
     ):
@@ -888,17 +859,14 @@ class TestImageBuilding:
             ),
         ]
 
-        # Cleanup any existing test image (only for local)
-        if docker_client_type == "local":
-            assert docker_client is not None
-            local_client = docker_client
-            assert isinstance(local_client, LocalDockerClient)
-            try:
-                await local_client._docker.images.delete(
-                    "prompt-siren-test-mixed:latest", force=True
-                )
-            except Exception:
-                pass
+        # Cleanup any existing test image
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        try:
+            await local_client._docker.images.delete("prompt-siren-test-mixed:latest", force=True)
+        except Exception:
+            pass
 
         async with manager.setup_batch(task_setups):
             # Create containers from both images
@@ -918,17 +886,14 @@ class TestImageBuilding:
                 assert result2.stdout is not None
                 assert "Test build successful" in result2.stdout
 
-        # Cleanup (only for local)
-        if docker_client_type == "local":
-            assert docker_client is not None
-            local_client = docker_client
-            assert isinstance(local_client, LocalDockerClient)
-            try:
-                await local_client._docker.images.delete(
-                    "prompt-siren-test-mixed:latest", force=True
-                )
-            except Exception:
-                pass
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        try:
+            await local_client._docker.images.delete("prompt-siren-test-mixed:latest", force=True)
+        except Exception:
+            pass
 
 
 # ==================== Multi-Stage Build Tests ====================
@@ -942,7 +907,6 @@ class TestMultiStageBuild:
         self,
         multistage_test_images: list[str],
         docker_client_type: str,
-        skip_if_des_unavailable,
         docker_client: AbstractDockerClient | None,
         create_manager_config,
     ):
@@ -986,29 +950,27 @@ class TestMultiStageBuild:
             network_config=None,
         )
 
-        # Cleanup any existing images (only for local)
-        if docker_client_type == "local":
+        # Cleanup any existing images
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
+
+        async with manager.setup_batch([task_setup]):
+            # Verify all three images were created
             assert docker_client is not None
             local_client = docker_client
             assert isinstance(local_client, LocalDockerClient)
-            for tag in [base_tag, env_tag, instance_tag]:
-                try:
-                    await local_client._docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
 
-        async with manager.setup_batch([task_setup]):
-            # Verify all three images were created (only for local)
-            if docker_client_type == "local":
-                assert docker_client is not None
-                local_client = docker_client
-                assert isinstance(local_client, LocalDockerClient)
-                images = await local_client._docker.images.list()
-                image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
-
-                assert any(base_tag in (tag or "") for tag in image_tags)
-                assert any(env_tag in (tag or "") for tag in image_tags)
-                assert any(instance_tag in (tag or "") for tag in image_tags)
+            assert any(base_tag in (tag or "") for tag in image_tags)
+            assert any(env_tag in (tag or "") for tag in image_tags)
+            assert any(instance_tag in (tag or "") for tag in image_tags)
 
             # Create container and verify all stages executed
             async with manager.setup_task(task_setup) as sandbox_state:
@@ -1032,22 +994,20 @@ class TestMultiStageBuild:
                 assert result.stdout is not None
                 assert "Instance ready" in result.stdout
 
-        # Cleanup (only for local)
-        if docker_client_type == "local":
-            assert docker_client is not None
-            local_client = docker_client
-            assert isinstance(local_client, LocalDockerClient)
-            for tag in [base_tag, env_tag, instance_tag]:
-                try:
-                    await local_client._docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
 
     async def test_multi_stage_build_caching(
         self,
         multistage_test_images: list[str],
         docker_client_type: str,
-        skip_if_des_unavailable,
         docker_client: AbstractDockerClient | None,
         create_manager_config,
     ):
@@ -1085,16 +1045,15 @@ class TestMultiStageBuild:
         container_spec = ContainerSpec(image_spec=multi_stage_spec)
         agent_container = ContainerSetup(name="agent", spec=container_spec)
 
-        # Cleanup any existing images (only for local)
-        if docker_client_type == "local":
-            assert docker_client is not None
-            local_client = docker_client
-            assert isinstance(local_client, LocalDockerClient)
-            for tag in [base_tag, env_tag, instance_tag]:
-                try:
-                    await local_client._docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
+        # Cleanup any existing images
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
 
         # First build - all stages should be built
         task_setup1 = TaskSetup(
@@ -1105,24 +1064,22 @@ class TestMultiStageBuild:
         )
 
         async with manager.setup_batch([task_setup1]):
-            # Verify all images created (only for local)
-            if docker_client_type == "local":
-                assert docker_client is not None
-                local_client = docker_client
-                assert isinstance(local_client, LocalDockerClient)
-                images = await local_client._docker.images.list()
-                image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
-
-                assert any(base_tag in (tag or "") for tag in image_tags)
-                assert any(env_tag in (tag or "") for tag in image_tags)
-                assert any(instance_tag in (tag or "") for tag in image_tags)
-
-        # Delete only instance image (only for local)
-        if docker_client_type == "local":
+            # Verify all images created
             assert docker_client is not None
             local_client = docker_client
             assert isinstance(local_client, LocalDockerClient)
-            await local_client._docker.images.delete(instance_tag, force=True)
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+
+            assert any(base_tag in (tag or "") for tag in image_tags)
+            assert any(env_tag in (tag or "") for tag in image_tags)
+            assert any(instance_tag in (tag or "") for tag in image_tags)
+
+        # Delete only instance image
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        await local_client._docker.images.delete(instance_tag, force=True)
 
         # Second build - base and env should be cached
         task_setup2 = TaskSetup(
@@ -1133,17 +1090,16 @@ class TestMultiStageBuild:
         )
 
         async with manager.setup_batch([task_setup2]):
-            # Verify all images exist again (only for local)
-            if docker_client_type == "local":
-                assert docker_client is not None
-                local_client = docker_client
-                assert isinstance(local_client, LocalDockerClient)
-                images = await local_client._docker.images.list()
-                image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+            # Verify all images exist again
+            assert docker_client is not None
+            local_client = docker_client
+            assert isinstance(local_client, LocalDockerClient)
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
 
-                assert any(base_tag in (tag or "") for tag in image_tags)
-                assert any(env_tag in (tag or "") for tag in image_tags)
-                assert any(instance_tag in (tag or "") for tag in image_tags)
+            assert any(base_tag in (tag or "") for tag in image_tags)
+            assert any(env_tag in (tag or "") for tag in image_tags)
+            assert any(instance_tag in (tag or "") for tag in image_tags)
 
             # Verify functionality
             async with manager.setup_task(task_setup2) as sandbox_state:
@@ -1155,22 +1111,20 @@ class TestMultiStageBuild:
                 assert result.stdout is not None
                 assert "Instance ready" in result.stdout
 
-        # Cleanup (only for local)
-        if docker_client_type == "local":
-            assert docker_client is not None
-            local_client = docker_client
-            assert isinstance(local_client, LocalDockerClient)
-            for tag in [base_tag, env_tag, instance_tag]:
-                try:
-                    await local_client._docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
 
     async def test_shared_base_and_env_stages(
         self,
         multistage_test_images: list[str],
         docker_client_type: str,
-        skip_if_des_unavailable,
         docker_client: AbstractDockerClient | None,
         create_manager_config,
     ):
@@ -1251,33 +1205,31 @@ class TestMultiStageBuild:
             ),
         ]
 
-        # Cleanup (only for local)
-        if docker_client_type == "local":
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance1_tag, instance2_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
+
+        async with manager.setup_batch(task_setups):
+            # Verify all images created
             assert docker_client is not None
             local_client = docker_client
             assert isinstance(local_client, LocalDockerClient)
-            for tag in [base_tag, env_tag, instance1_tag, instance2_tag]:
-                try:
-                    await local_client._docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
 
-        async with manager.setup_batch(task_setups):
-            # Verify all images created (only for local)
-            if docker_client_type == "local":
-                assert docker_client is not None
-                local_client = docker_client
-                assert isinstance(local_client, LocalDockerClient)
-                images = await local_client._docker.images.list()
-                image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+            # Base and env should exist (built once)
+            assert any(base_tag in (tag or "") for tag in image_tags)
+            assert any(env_tag in (tag or "") for tag in image_tags)
 
-                # Base and env should exist (built once)
-                assert any(base_tag in (tag or "") for tag in image_tags)
-                assert any(env_tag in (tag or "") for tag in image_tags)
-
-                # Both instances should exist
-                assert any(instance1_tag in (tag or "") for tag in image_tags)
-                assert any(instance2_tag in (tag or "") for tag in image_tags)
+            # Both instances should exist
+            assert any(instance1_tag in (tag or "") for tag in image_tags)
+            assert any(instance2_tag in (tag or "") for tag in image_tags)
 
             # Verify both work
             async with manager.setup_task(task_setups[0]) as state1:
@@ -1294,16 +1246,15 @@ class TestMultiStageBuild:
                 )
                 assert result.exit_code == 0
 
-        # Cleanup (only for local)
-        if docker_client_type == "local":
-            assert docker_client is not None
-            local_client = docker_client
-            assert isinstance(local_client, LocalDockerClient)
-            for tag in [base_tag, env_tag, instance1_tag, instance2_tag]:
-                try:
-                    await local_client._docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance1_tag, instance2_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
 
 
 # ==================== Stdin Handling Tests ====================
@@ -1317,7 +1268,6 @@ class TestStdinHandling:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test executing a command with stdin as string."""
@@ -1353,7 +1303,6 @@ class TestStdinHandling:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test executing a command with stdin as bytes."""
@@ -1390,7 +1339,6 @@ class TestStdinHandling:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test executing a command with stdin containing special characters."""
@@ -1431,7 +1379,6 @@ class TestStdinHandling:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test executing a command with multiline stdin."""
@@ -1471,7 +1418,6 @@ class TestStdinHandling:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test stdin being properly piped to a command that processes it."""
@@ -1509,7 +1455,6 @@ class TestStdinHandling:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test executing a command with empty stdin."""
@@ -1544,7 +1489,6 @@ class TestStdinHandling:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test executing a command with large stdin input."""
@@ -1581,7 +1525,6 @@ class TestStdinHandling:
         self,
         test_image: str,
         docker_client_type: str,
-        skip_if_des_unavailable,
         create_manager_config,
     ):
         """Test executing a command with both stdin and environment variables."""
