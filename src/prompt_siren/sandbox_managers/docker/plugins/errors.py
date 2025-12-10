@@ -10,7 +10,7 @@ class DockerClientError(Exception):
     operation fails.
     """
 
-    def __init__(self, message: str, stdout: str = "", stderr: str = ""):
+    def __init__(self, message: str, stdout: str | None = None, stderr: str | None = None):
         self.stdout = stdout
         self.stderr = stderr
         super().__init__(f"{message}\nstdout: {stdout}\nstderr: {stderr}")

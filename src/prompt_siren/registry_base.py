@@ -212,7 +212,6 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
         component_type: str,
         config: BaseModel | None,
         context: ContextT | None = None,
-        **kwargs: Any,
     ) -> ComponentT:
         """Create a component instance for a given component type and config.
 
@@ -220,7 +219,6 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
             component_type: String identifier for the component type
             config: Configuration object for the component, or None
             context: Optional context object passed to factory (e.g., sandbox_manager for datasets)
-            **kwargs: Additional keyword arguments passed to the factory function.
 
         Returns:
             An instance of the component type
@@ -245,14 +243,13 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
 
         config_class, factory = self._registry[component_type]
 
-        # Component doesn't use config - call factory with only kwargs
         if config_class is None:
             if config is not None:
                 raise ValueError(
                     f"{self._component_name.title()} type '{component_type}' doesn't accept config, "
                     f"but config was provided"
                 )
-            return factory(**kwargs)
+            return factory()
 
         # Component uses config - validate and call with config and context
         if config is None:
@@ -262,7 +259,7 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
                 f"Config must be an instance of {config_class.__name__}, got {type(config).__name__}"
             )
 
-        return factory(config, context, **kwargs)
+        return factory(config, context)
 
     def get_registered_components(self) -> list[str]:
         """Get a list of all registered component types.

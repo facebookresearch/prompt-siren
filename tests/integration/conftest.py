@@ -48,15 +48,6 @@ def docker_client_type() -> str:
 
 
 @pytest.fixture(scope="module")
-def skip_if_des_unavailable(docker_client_type: str):
-    """Skip test if requested Docker client is unavailable.
-
-    This is a no-op for external tests (always local).
-    Kept for compatibility with shared test code.
-    """
-
-
-@pytest.fixture(scope="module")
 def create_manager_config() -> ManagerConfigFactory:
     """Factory fixture for creating DockerSandboxConfig.
 

@@ -6,32 +6,27 @@ by different backends.
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Protocol
 
 from ...abstract import ExecOutput
 
 
-class AbstractContainer(ABC):
+class AbstractContainer(Protocol):
     """Abstract interface for Docker containers."""
 
-    @abstractmethod
     async def start(self) -> None:
         """Start the container."""
         ...
 
-    @abstractmethod
     async def stop(self) -> None:
         """Stop the container."""
         ...
 
-    @abstractmethod
     async def delete(self) -> None:
         """Delete the container."""
         ...
 
-    @abstractmethod
     async def show(self) -> dict[str, Any]:
         """Get container details.
 
@@ -40,7 +35,6 @@ class AbstractContainer(ABC):
         """
         ...
 
-    @abstractmethod
     async def exec(
         self,
         cmd: list[str],
@@ -65,7 +59,6 @@ class AbstractContainer(ABC):
         """
         ...
 
-    @abstractmethod
     async def log(self, stdout: bool, stderr: bool) -> list[str]:
         """Get container logs.
 
@@ -78,7 +71,6 @@ class AbstractContainer(ABC):
         """
         ...
 
-    @abstractmethod
     async def commit(self, repository: str, tag: str) -> None:
         """Commit container to an image.
 
@@ -89,10 +81,9 @@ class AbstractContainer(ABC):
         ...
 
 
-class AbstractNetwork(ABC):
+class AbstractNetwork(Protocol):
     """Abstract interface for Docker networks."""
 
-    @abstractmethod
     async def show(self) -> dict[str, Any]:
         """Get network details.
 
@@ -101,27 +92,24 @@ class AbstractNetwork(ABC):
         """
         ...
 
-    @abstractmethod
     async def delete(self) -> None:
         """Delete the network."""
         ...
 
 
-class AbstractDockerClient(ABC):
+class AbstractDockerClient(Protocol):
     """Abstract Docker client interface.
 
     This interface provides all Docker operations needed by the workbench,
     abstracting away the underlying implementation.
     """
 
-    @abstractmethod
     async def close(self) -> None:
         """Close the client and clean up resources."""
         ...
 
     # Image operations
 
-    @abstractmethod
     async def inspect_image(self, tag: str) -> dict[str, Any]:
         """Inspect an image.
 
@@ -136,7 +124,6 @@ class AbstractDockerClient(ABC):
         """
         ...
 
-    @abstractmethod
     async def pull_image(self, tag: str) -> None:
         """Pull an image from registry.
 
@@ -145,7 +132,6 @@ class AbstractDockerClient(ABC):
         """
         ...
 
-    @abstractmethod
     async def build_image(
         self,
         context_path: str,
@@ -171,7 +157,6 @@ class AbstractDockerClient(ABC):
         yield {}  # type: ignore[unreachable]
         ...
 
-    @abstractmethod
     async def delete_image(self, tag: str, force: bool = False) -> None:
         """Delete an image.
 
@@ -183,7 +168,6 @@ class AbstractDockerClient(ABC):
 
     # Container operations
 
-    @abstractmethod
     async def create_container(self, config: dict[str, Any], name: str) -> AbstractContainer:
         """Create a container.
 
@@ -196,7 +180,6 @@ class AbstractDockerClient(ABC):
         """
         ...
 
-    @abstractmethod
     async def get_container(self, container_id: str) -> AbstractContainer:
         """Get a container by ID.
 
@@ -210,7 +193,6 @@ class AbstractDockerClient(ABC):
 
     # Network operations
 
-    @abstractmethod
     async def create_network(self, config: dict[str, Any]) -> AbstractNetwork:
         """Create a network.
 
@@ -222,7 +204,6 @@ class AbstractDockerClient(ABC):
         """
         ...
 
-    @abstractmethod
     async def get_network(self, network_id: str) -> AbstractNetwork:
         """Get a network by ID.
 

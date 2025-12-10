@@ -43,7 +43,6 @@ pytestmark = pytest.mark.anyio
 async def sandbox_manager(
     test_image: str,
     docker_client_type: str,
-    skip_if_des_unavailable,
     create_manager_config,
 ) -> AsyncIterator[tuple[AbstractSandboxManager, str, TaskSetup]]:
     """Create a sandbox manager for tool testing.

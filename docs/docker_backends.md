@@ -147,12 +147,6 @@ Local Docker is implemented as a plugin using the Docker client registry system.
 
 See [custom_components.md](custom_components.md) for details on creating custom plugins.
 
-## Performance Considerations
-
-### Local Docker
-- **Startup time**: Fast (~1-2 seconds per container)
-- **Execution**: No network latency
-- **Best for**: Development, testing, small datasets
 
 ## See Also
 
