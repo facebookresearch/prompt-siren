@@ -1,10 +1,9 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
 """Test that attack configs are properly serialized when saving attacks to JSON."""
 
 import json
 from pathlib import Path
 
-from prompt_siren.attacks.agentdojo_attack import AgentDojoAttackConfig
+from prompt_siren.attacks.template_string_attack import TemplateStringAttackConfig
 from prompt_siren.types import (
     AttackFile,
     InjectionAttack,
@@ -19,7 +18,9 @@ class TestAttackConfigSerialization:
     def test_attack_file_with_config(self):
         """Test creating an AttackFile with attack configuration."""
         # Create a custom config
-        config = AgentDojoAttackConfig(attack_template="Test template {goal}")
+        config = TemplateStringAttackConfig(
+            attack_template="Test template {goal}", template_short_name="test"
+        )
 
         # Create some sample attacks
         attacks: dict[str, InjectionAttacksDict[InjectionAttack]] = {
@@ -39,8 +40,9 @@ class TestAttackConfigSerialization:
 
         # Verify metadata contains config as the proper type
         assert attack_file.metadata.config is not None
-        assert isinstance(attack_file.metadata.config, AgentDojoAttackConfig)
+        assert isinstance(attack_file.metadata.config, TemplateStringAttackConfig)
         assert attack_file.metadata.config.attack_template == "Test template {goal}"
+        assert attack_file.metadata.config.template_short_name == "test"
 
     def test_attack_file_without_config(self):
         """Test creating an AttackFile without configuration."""
@@ -58,7 +60,9 @@ class TestAttackConfigSerialization:
     def test_attack_file_json_serialization_with_config(self):
         """Test that AttackFile with config can be serialized to/from JSON."""
         # Create AttackFile with config
-        config = AgentDojoAttackConfig(attack_template="Custom {goal}")
+        config = TemplateStringAttackConfig(
+            attack_template="Custom {goal}", template_short_name="custom"
+        )
 
         attacks: dict[str, InjectionAttacksDict[InjectionAttack]] = {
             "task1": {
@@ -74,16 +78,19 @@ class TestAttackConfigSerialization:
 
         # Deserialize from JSON
         loaded_data = json.loads(json_str)
-        loaded_file = AttackFile[AgentDojoAttackConfig].model_validate(loaded_data)
+        loaded_file = AttackFile[TemplateStringAttackConfig].model_validate(loaded_data)
 
         # Verify config is preserved with proper type
         assert loaded_file.metadata.config is not None
-        assert isinstance(loaded_file.metadata.config, AgentDojoAttackConfig)
+        assert isinstance(loaded_file.metadata.config, TemplateStringAttackConfig)
         assert loaded_file.metadata.config.attack_template == "Custom {goal}"
+        assert loaded_file.metadata.config.template_short_name == "custom"
 
     def test_attack_file_save_and_load_with_config(self, tmp_path: Path):
         """Test saving and loading AttackFile with config to/from a file."""
-        config = AgentDojoAttackConfig(attack_template="Urgent: {goal}")
+        config = TemplateStringAttackConfig(
+            attack_template="Urgent: {goal}", template_short_name="urgent"
+        )
 
         attacks: dict[str, InjectionAttacksDict[InjectionAttack]] = {
             "task1": {
@@ -102,9 +109,10 @@ class TestAttackConfigSerialization:
         with open(attack_path) as f:
             loaded_data = json.load(f)
 
-        loaded_file = AttackFile[AgentDojoAttackConfig].model_validate(loaded_data)
+        loaded_file = AttackFile[TemplateStringAttackConfig].model_validate(loaded_data)
 
         # Verify config is preserved with proper type
         assert loaded_file.metadata.config is not None
-        assert isinstance(loaded_file.metadata.config, AgentDojoAttackConfig)
+        assert isinstance(loaded_file.metadata.config, TemplateStringAttackConfig)
         assert loaded_file.metadata.config.attack_template == "Urgent: {goal}"
+        assert loaded_file.metadata.config.template_short_name == "urgent"

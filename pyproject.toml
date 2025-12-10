@@ -49,7 +49,7 @@ prompt-siren = "prompt_siren.cli:main"
 plain = "prompt_siren.agents.plain:create_plain_agent"
 
 [project.entry-points."prompt_siren.attacks"]
-agentdojo = "prompt_siren.attacks.agentdojo_attack:create_agentdojo_attack"
+template_string = "prompt_siren.attacks.template_string_attack:create_template_string_attack"
 dict = "prompt_siren.attacks.dict_attack:create_dict_attack"
 file = "prompt_siren.attacks.dict_attack:create_dict_attack_from_file"
 mini-goat = "prompt_siren.attacks.mini_goat_attack:create_mini_goat_attack"

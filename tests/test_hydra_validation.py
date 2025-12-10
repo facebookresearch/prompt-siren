@@ -126,7 +126,7 @@ class TestValidateConfig:
                     "config": {"suite_name": "workspace", "version": "v1.2.2"},
                 },
                 "attack": {
-                    "type": "agentdojo",
+                    "type": "template_string",
                     "config": {"attack_template": 123},
                 },  # Invalid type (int instead of str)
                 "execution": {"concurrency": 1},
@@ -137,12 +137,12 @@ class TestValidateConfig:
             }
         )
 
-        with pytest.raises(ConfigValidationError, match=r"attack 'agentdojo'") as exc_info:
+        with pytest.raises(ConfigValidationError, match=r"attack 'template_string'") as exc_info:
             validate_config(cfg, execution_mode="attack")
 
         # Verify the structured exception attributes
         assert exc_info.value.component_type == "attack"
-        assert exc_info.value.component_name == "agentdojo"
+        assert exc_info.value.component_name == "template_string"
 
     def test_attack_mode_without_attack_raises(self):
         """execution_mode='attack' without attack should raise clear error."""
@@ -263,11 +263,14 @@ class TestCliValidationIntegration:
             # Compose configuration with attack
             cfg = compose(
                 config_name="config",
-                overrides=["+dataset=agentdojo-workspace", "+attack=agentdojo"],
+                overrides=[
+                    "+dataset=agentdojo-workspace",
+                    "+attack=agentdojo_important_instructions",
+                ],
             )
 
             # Validate in attack mode
             result = validate_config(cfg, execution_mode="attack")
             assert result is not None
             assert result.attack is not None
-            assert result.attack.type == "agentdojo"
+            assert result.attack.type == "template_string"

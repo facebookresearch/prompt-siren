@@ -62,7 +62,7 @@ Run experiments:
 uv run prompt-siren run benign +dataset=agentdojo-workspace
 
 # Run with attack
-uv run prompt-siren run attack +dataset=agentdojo-workspace +attack=agentdojo
+uv run prompt-siren run attack +dataset=agentdojo-workspace +attack=template_string
 
 # Run SWE-bench evaluation (requires Docker)
 uv run prompt-siren run benign +dataset=swebench

@@ -27,6 +27,7 @@ def _add_index_entry(
     config_hash: str,
     benign_score: float,
     attack_score: float | None,
+    attack_config: dict[str, str] | None = None,
 ) -> None:
     """Helper to add an entry to index.jsonl."""
     index_file = output_dir / "index.jsonl"
@@ -40,6 +41,7 @@ def _add_index_entry(
         "agent_type": agent_type,
         "agent_name": agent_name,
         "attack_type": attack_type,
+        "attack_config": attack_config,
         "config_hash": config_hash,
         "benign_score": benign_score,
         "attack_score": attack_score,
@@ -69,6 +71,7 @@ def temp_output_dir(tmp_path: Path) -> Path:
         config_hash="abc123",
         benign_score=1.0,
         attack_score=0.0,
+        attack_config={},
     )
     _add_index_entry(
         output_dir,
@@ -82,6 +85,7 @@ def temp_output_dir(tmp_path: Path) -> Path:
         config_hash="abc123",
         benign_score=0.0,
         attack_score=0.0,
+        attack_config={},
     )
 
     return output_dir
@@ -107,6 +111,7 @@ def output_dir_multiple_timestamps(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=float(i),
             attack_score=float(i) * 0.1,
+            attack_config={},
         )
 
     return output_dir
@@ -132,6 +137,7 @@ def output_dir_pass_at_k(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=benign,
             attack_score=attack,
+            attack_config={},
         )
 
     return output_dir
@@ -157,6 +163,7 @@ def output_dir_exact_k_samples(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=benign,
             attack_score=attack,
+            attack_config={},
         )
 
     # Task 2: Has no success among 3 runs
@@ -173,6 +180,7 @@ def output_dir_exact_k_samples(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=benign,
             attack_score=attack,
+            attack_config={},
         )
 
     return output_dir
@@ -198,6 +206,7 @@ def output_dir_estimator_samples(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=benign,
             attack_score=0.0,
+            attack_config={},
         )
 
     return output_dir
@@ -223,6 +232,7 @@ def output_dir_estimator_samples_multiple_tasks(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=benign,
             attack_score=0.0,
+            attack_config={},
         )
 
     # Task 2: Has no success among 3 runs
@@ -239,6 +249,7 @@ def output_dir_estimator_samples_multiple_tasks(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=benign,
             attack_score=attack,
+            attack_config={},
         )
 
     return output_dir
@@ -269,6 +280,7 @@ def output_dir_estimator_samples_multiples_of_all_grouped_fields(
                         config_hash="hash",
                         benign_score=benign,
                         attack_score=0.0,
+                        attack_config={},
                     )
 
                 if dataset == "dataset1":
@@ -288,6 +300,7 @@ def output_dir_estimator_samples_multiples_of_all_grouped_fields(
                             config_hash="hash",
                             benign_score=benign,
                             attack_score=attack_score,
+                            attack_config={},
                         )
                 elif dataset == "dataset2":
                     # Task 2: Has no success among 3 runs
@@ -306,6 +319,7 @@ def output_dir_estimator_samples_multiples_of_all_grouped_fields(
                             config_hash="hash",
                             benign_score=benign,
                             attack_score=attack_score,
+                            attack_config={},
                         )
 
     return output_dir
@@ -331,6 +345,7 @@ def output_dir_insufficient_samples(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=1.0,
             attack_score=0.0,
+            attack_config={},
         )
 
     return output_dir
@@ -356,6 +371,7 @@ def output_dir_all_successes(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=1.0,
             attack_score=1.0,
+            attack_config={},
         )
 
     return output_dir
@@ -381,6 +397,7 @@ def output_dir_no_successes(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=0.0,
             attack_score=0.0,
+            attack_config={},
         )
 
     return output_dir
@@ -406,6 +423,7 @@ def output_dir_metadata_test(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=1.0 if i == 0 else 0.0,
             attack_score=0.0,
+            attack_config={},
         )
 
     for i in range(5):
@@ -421,6 +439,7 @@ def output_dir_metadata_test(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=1.0 if i < 2 else 0.0,
             attack_score=1.0,
+            attack_config={},
         )
 
     return output_dir
@@ -447,6 +466,7 @@ def output_dir_metadata_pass_at_k(tmp_path: Path) -> Path:
                 config_hash="hash",
                 benign_score=1.0 if i == 0 else 0.0,
                 attack_score=0.0,
+                attack_config={},
             )
 
     return output_dir
@@ -472,6 +492,7 @@ def output_dir_multiple_k_values(tmp_path: Path) -> Path:
             config_hash="hash",
             benign_score=1.0 if i < 2 else 0.0,
             attack_score=0.0,
+            attack_config={},
         )
 
     return output_dir
@@ -978,6 +999,7 @@ def test_grouping_by_dataset_suite(tmp_path: Path) -> None:
         config_hash="hash1",
         benign_score=1.0,
         attack_score=0.0,
+        attack_config={},
     )
     _add_index_entry(
         output_dir,
@@ -991,6 +1013,7 @@ def test_grouping_by_dataset_suite(tmp_path: Path) -> None:
         config_hash="hash1",
         benign_score=0.8,
         attack_score=0.2,
+        attack_config={},
     )
 
     # agentdojo banking suite (has task1 with different scores)
@@ -1006,6 +1029,7 @@ def test_grouping_by_dataset_suite(tmp_path: Path) -> None:
         config_hash="hash1",
         benign_score=0.6,
         attack_score=0.4,
+        attack_config={},
     )
     _add_index_entry(
         output_dir,
@@ -1019,6 +1043,7 @@ def test_grouping_by_dataset_suite(tmp_path: Path) -> None:
         config_hash="hash1",
         benign_score=0.4,
         attack_score=0.6,
+        attack_config={},
     )
 
     # Test groupby=DATASET - should show one row for all suites
@@ -1071,6 +1096,7 @@ def test_grouping_by_dataset_suite(tmp_path: Path) -> None:
         config_hash="hash2",
         benign_score=0.5,
         attack_score=0.5,
+        attack_config={},
     )
 
     _add_index_entry(
@@ -1085,6 +1111,7 @@ def test_grouping_by_dataset_suite(tmp_path: Path) -> None:
         config_hash="hash2",
         benign_score=0.0,
         attack_score=0.0,
+        attack_config={},
     )
 
     df_suite2 = aggregate_results(output_dir, group_by=GroupBy.DATASET_SUITE, k=1)

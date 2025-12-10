@@ -60,7 +60,7 @@ def validate(config_dir: Path | None, config_name: str, overrides: tuple[str, ..
 
     Examples:
         prompt-siren config validate +dataset=agentdojo-workspace
-        prompt-siren config validate --config-dir=./my_config +dataset=agentdojo-workspace +attack=agentdojo
+        prompt-siren config validate --config-dir=./my_config +dataset=agentdojo-workspace +attack=template_string
     """
     # Determine execution mode from overrides for validation
     # If +attack is specified, validate in attack mode; otherwise benign mode
@@ -170,10 +170,10 @@ def attack(
     Requires attack configuration (via +attack=<name> override or in config file).
 
     Examples:
-        prompt-siren run attack +dataset=agentdojo-workspace +attack=agentdojo
+        prompt-siren run attack +dataset=agentdojo-workspace +attack=template_string
         prompt-siren run attack +dataset=agentdojo-workspace +attack=mini-goat agent.config.model=azure:gpt-5
-        prompt-siren run attack --multirun +dataset=agentdojo-workspace +attack=agentdojo,mini-goat
-        prompt-siren run attack --print-config job +dataset=agentdojo-workspace +attack=agentdojo
+        prompt-siren run attack --multirun +dataset=agentdojo-workspace +attack=template_string,mini-goat
+        prompt-siren run attack --print-config job +dataset=agentdojo-workspace +attack=template_string
         prompt-siren run attack --info plugins
     """
     _run_hydra(

@@ -332,7 +332,7 @@ config:
 uv run prompt-siren run benign +dataset=my_custom
 
 # Run attack evaluation
-uv run prompt-siren run attack +dataset=my_custom +attack=agentdojo
+uv run prompt-siren run attack +dataset=my_custom +attack=template_string
 
 # Override parameters
 uv run prompt-siren run benign +dataset=my_custom dataset.config.version=v2.0

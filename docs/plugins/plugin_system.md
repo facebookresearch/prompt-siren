@@ -88,7 +88,7 @@ Components are automatically available once registered:
 ```bash
 # Use different component types
 uv run prompt-siren run benign +dataset=agentdojo agent.config.model=azure:gpt-5
-uv run prompt-siren run attack +dataset=agentdojo +attack=agentdojo
+uv run prompt-siren run attack +dataset=agentdojo +attack=template_string
 
 # Override specific component configurations
 uv run prompt-siren run benign +dataset=agentdojo agent.type=plain

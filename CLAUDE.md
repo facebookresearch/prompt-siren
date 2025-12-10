@@ -38,7 +38,7 @@ uv run prompt-siren config export
 uv run prompt-siren run benign +dataset=agentdojo-workspace
 
 # Run attack evaluation
-uv run prompt-siren run attack +dataset=agentdojo-workspace +attack=agentdojo
+uv run prompt-siren run attack +dataset=agentdojo-workspace +attack=template_string
 
 # Run SWE-bench evaluation
 uv run prompt-siren run benign +dataset=swebench
@@ -56,10 +56,10 @@ uv run prompt-siren run benign --multirun +dataset=agentdojo-workspace agent.con
 uv run prompt-siren run benign --multirun +dataset=agentdojo-workspace agent.config.model=azure:gpt-5,azure:gpt-5-nano execution.concurrency=1,4
 
 # Parameter sweep with attacks
-uv run prompt-siren run attack --multirun +dataset=agentdojo-workspace +attack=agentdojo,mini-goat
+uv run prompt-siren run attack --multirun +dataset=agentdojo-workspace +attack=template_string,mini-goat
 
 # Validate configuration
-uv run prompt-siren config validate +dataset=agentdojo-workspace +attack=agentdojo
+uv run prompt-siren config validate +dataset=agentdojo-workspace +attack=template_string
 
 # Run with config file that includes dataset/attack (no overrides needed)
 uv run prompt-siren run attack --config-dir=./my_config
@@ -127,7 +127,7 @@ uv run prompt-siren run attack --config-dir=./my_config
    - `registry.py` - Attack plugin registration system
    - Attack implementations:
      - `nanogcg/gcg.py` - GCG (Greedy Coordinate Gradient) attack
-     - `agentdojo_attack.py` - AgentDojo-specific attacks
+     - `template_string_attack.py` - Template string-based attacks
      - `dict_attack.py` - Dictionary-based attacks from config or files
      - `mini_goat_attack.py` - Mini-GOAT attack implementation
      - `target_string_attack.py` - Target string-based attacks
@@ -219,7 +219,8 @@ The workbench uses Python entry points for extensibility. Components are registe
   - `plain` - Plain agent implementation
 
 - **Attack plugins**: `prompt_siren.attacks` entry point
-  - `agentdojo` - AgentDojo attacks
+  - `template_string` - Template string attacks
+  - `agentdojo` - Alias for template_string (backwards compatibility)
   - `dict` - Dictionary-based attacks from config
   - `file` - Dictionary-based attacks from file
   - `mini-goat` - Mini-GOAT attacks

@@ -96,7 +96,7 @@ usage_limits:
 #    - Increase execution.concurrency to 4 for faster execution
 #
 # 2. ATTACK EXPERIMENT:
-#    - Use: prompt-siren run attack +dataset=agentdojo-workspace +attack=agentdojo
+#    - Use: prompt-siren run attack +dataset=agentdojo-workspace +attack=template_string
 #    - Set execution.concurrency to 1 for better reproducibility
 #
 # 3. EXPERIMENT WITH USAGE LIMITS:

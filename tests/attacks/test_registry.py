@@ -7,8 +7,8 @@ from prompt_siren.attacks import (
     get_attack_config_class,
     get_registered_attacks,
 )
-from prompt_siren.attacks.agentdojo_attack import AgentDojoAttackConfig
 from prompt_siren.attacks.registry import attack_registry
+from prompt_siren.attacks.template_string_attack import TemplateStringAttackConfig
 from prompt_siren.registry_base import UnknownComponentError
 
 from ..conftest import create_mock_attack, MockAttack, MockAttackConfig
@@ -45,11 +45,11 @@ class TestAttackRegistry:
 
         # Check that built-in attacks are discovered via entry points
         registered_attacks = get_registered_attacks()
-        assert "agentdojo" in registered_attacks
+        assert "template_string" in registered_attacks
 
-        # Test that we can get the config class
-        config_class = get_attack_config_class("agentdojo")
-        assert config_class is AgentDojoAttackConfig
+        # Test that we can get the config class (using template_string)
+        config_class = get_attack_config_class("template_string")
+        assert config_class is TemplateStringAttackConfig
 
     def test_create_attack(self):
         """Test creating an attack from config."""
