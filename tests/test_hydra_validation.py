@@ -263,7 +263,10 @@ class TestCliValidationIntegration:
             # Compose configuration with attack
             cfg = compose(
                 config_name="config",
-                overrides=["+dataset=agentdojo-workspace", "+attack=template_string"],
+                overrides=[
+                    "+dataset=agentdojo-workspace",
+                    "+attack=agentdojo_important_instructions",
+                ],
             )
 
             # Validate in attack mode
