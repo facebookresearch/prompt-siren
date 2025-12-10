@@ -102,7 +102,7 @@ The workbench provides a hierarchical configuration structure at `src/prompt_sir
 config/
 ├── config.yaml           # Main configuration file
 ├── attack/              # Attack configurations
-│   ├── template_string.yaml   # Default template string attack
+│   ├── agentdojo_important_instructions.yaml   # Default template string attack
 │   ├── file.yaml        # File-based attack template
 │   └── mini-goat.yaml   # Mini-GOAT attack
 ├── dataset/             # Dataset configurations
@@ -225,7 +225,7 @@ Examples:
 Attack configurations are in separate files under `attack/`:
 
 ```yaml
-# attack/template_string.yaml
+# attack/agentdojo_important_instructions.yaml
 type: template_string
 config:
   attack_template: |
