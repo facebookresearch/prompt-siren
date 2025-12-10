@@ -38,8 +38,7 @@ from prompt_siren.sandbox_managers.sandbox_task_setup import (
 pytestmark = pytest.mark.anyio
 
 # Path to test fixtures
-FIXTURES_DIR = resources.files("tests.integration.fixtures")
-
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 # ==================== Shared Fixtures for Container Reuse ====================
 
