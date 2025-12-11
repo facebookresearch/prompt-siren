@@ -2,7 +2,6 @@
 """Main Hydra application for the Siren."""
 
 import asyncio
-from pathlib import Path
 
 import click
 import hydra
@@ -357,53 +356,3 @@ def hydra_main_with_config_path(config_path: str, execution_mode: ExecutionMode)
 
     # Run the Hydra app
     hydra_app()
-
-
-def hydra_resume_app(
-    cfg: DictConfig,
-    job_path: Path,
-    execution_mode: ExecutionMode,
-    filter_error_types: list[str],
-) -> None:
-    """Run experiment in resume mode with pre-composed configuration.
-
-    Unlike hydra_main_with_config_path which uses Hydra's decorator, this function
-    takes a pre-composed configuration (merged from base + saved job config) and
-    runs the experiment directly with resume=True.
-
-    Args:
-        cfg: Merged configuration (base Hydra config + saved job config + overrides)
-        job_path: Path to job directory (for failure filtering)
-        execution_mode: Execution mode ('benign' or 'attack')
-        filter_error_types: Error types to delete before resuming
-    """
-    # Validate merged config
-    try:
-        experiment_config = validate_config(cfg, execution_mode=execution_mode)
-    except (
-        ValidationError,
-        UnknownComponentError,
-        ConfigValidationError,
-        ValueError,
-        UserError,
-    ) as e:
-        click.echo(f"Configuration validation failed: {e}", err=True)
-        raise SystemExit(1) from e
-
-    # Handle failure filtering if requested
-    if filter_error_types:
-        persistence = ExecutionPersistence.create(
-            base_dir=experiment_config.output.trace_dir,
-            dataset_config=experiment_config.dataset,
-            agent_config=experiment_config.agent,
-            attack_config=experiment_config.attack,
-        )
-        deleted = persistence.delete_failures_by_type(filter_error_types)
-        if deleted:
-            click.echo(f"Deleted {deleted} failure(s) matching: {', '.join(filter_error_types)}")
-
-    # Run experiment with resume=True
-    if execution_mode == "benign":
-        asyncio.run(run_benign_experiment(experiment_config, resume=True))
-    else:  # attack
-        asyncio.run(run_attack_experiment(experiment_config, resume=True))

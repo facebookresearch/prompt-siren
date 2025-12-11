@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Click-based CLI for Siren."""
 
+import asyncio
 import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -12,7 +13,12 @@ from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig, OmegaConf
 
 from .config.export import export_default_config
-from .hydra_app import hydra_main_with_config_path, hydra_resume_app, validate_config
+from .hydra_app import (
+    hydra_main_with_config_path,
+    run_attack_experiment,
+    run_benign_experiment,
+    validate_config,
+)
 from .results import (
     aggregate_results,
     Format,
@@ -20,6 +26,7 @@ from .results import (
     GroupBy,
 )
 from .resume import load_saved_job_config, merge_configs
+from .run_persistence import ExecutionPersistence
 from .types import ExecutionMode
 
 _F = TypeVar("_F", bound=Callable[..., object])
@@ -471,13 +478,28 @@ def _run_resume(
             if key and value:
                 OmegaConf.update(merged_cfg, key, value)
 
-        # Run with resume mode
-        hydra_resume_app(
-            cfg=merged_cfg,
-            job_path=job_path,
-            execution_mode=execution_mode,
-            filter_error_types=filter_error_types,
-        )
+        # Validate merged config
+        experiment_config = validate_config(merged_cfg, execution_mode=execution_mode)
+
+        # Handle failure filtering if requested
+        if filter_error_types:
+            persistence = ExecutionPersistence.create(
+                base_dir=job_path,
+                dataset_config=experiment_config.dataset,
+                agent_config=experiment_config.agent,
+                attack_config=experiment_config.attack,
+            )
+            deleted = persistence.delete_failures_by_type(filter_error_types)
+            if deleted:
+                click.echo(
+                    f"Deleted {deleted} failure(s) matching: {', '.join(filter_error_types)}"
+                )
+
+        # Run experiment with resume=True
+        if execution_mode == "benign":
+            asyncio.run(run_benign_experiment(experiment_config, resume=True))
+        else:
+            asyncio.run(run_attack_experiment(experiment_config, resume=True))
 
 
 if __name__ == "__main__":
