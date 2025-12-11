@@ -1,24 +1,35 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Click-based CLI for Siren."""
 
+import asyncio
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TypeVar
 
 import click
 from hydra import compose, initialize_config_dir
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from .config.export import export_default_config
-from .hydra_app import hydra_main_with_config_path, validate_config
+from .hydra_app import (
+    hydra_main_with_config_path,
+    run_attack_experiment,
+    run_benign_experiment,
+    validate_config,
+)
 from .results import (
     aggregate_results,
     Format,
     format_results,
     GroupBy,
 )
+from .resume import load_saved_job_config, merge_configs
+from .run_persistence import compute_config_hash, delete_failures_by_type_in_dir
 from .types import ExecutionMode
+
+_F = TypeVar("_F", bound=Callable[..., object])
 
 
 @click.group()
@@ -72,36 +83,110 @@ def validate(config_dir: Path | None, config_name: str, overrides: tuple[str, ..
 
 
 @main.group()
+def jobs():
+    """Manage experiment jobs."""
+
+
+@jobs.group()
+def start():
+    """Start a new experiment job. Alias for `run`."""
+
+
+# Common options for start commands
+_start_options = [
+    click.option(
+        "--config-dir",
+        type=click.Path(exists=True, path_type=Path),
+        help="Configuration directory path",
+    ),
+    click.option("--config-name", default="config", help="Configuration file name (without .yaml)"),
+    click.option(
+        "--multirun", is_flag=True, help="Enable Hydra multirun mode for parameter sweeps"
+    ),
+    click.option(
+        "--cfg",
+        "--print-config",
+        type=click.Choice(["job", "hydra", "all"]),
+        help="Print composed config and exit (job=app config, hydra=hydra config, all=both)",
+    ),
+    click.option(
+        "--resolve",
+        is_flag=True,
+        help="Resolve OmegaConf interpolations when printing config",
+    ),
+    click.option(
+        "--info",
+        type=click.Choice(["all", "config", "defaults", "defaults-tree", "plugins", "searchpath"]),
+        help="Print Hydra information and exit",
+    ),
+    click.argument("overrides", nargs=-1),
+]
+
+
+def _apply_options(options: list) -> Callable[[_F], _F]:
+    """Apply a list of click options to a command."""
+
+    def decorator(func: _F) -> _F:
+        for option in reversed(options):
+            func = option(func)
+        return func
+
+    return decorator
+
+
+@jobs.command()
+@click.argument("job_path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, path_type=Path),
+    help="Base configuration directory (for execution, telemetry settings)",
+)
+@click.option("--config-name", default="config", help="Configuration file name (without .yaml)")
+@click.option(
+    "--filter-error-types",
+    multiple=True,
+    help="Delete failures matching these error types before resuming (e.g., CancelledError)",
+)
+@click.argument("overrides", nargs=-1)
+def resume(
+    job_path: Path,
+    config_dir: Path | None,
+    config_name: str,
+    filter_error_types: tuple[str, ...],
+    overrides: tuple[str, ...],
+):
+    """Resume an incomplete job from JOB_PATH.
+
+    Loads experiment configuration (dataset, agent, attack) from
+    JOB_PATH/config.yaml and merges with base config from --config-dir.
+
+    Only tasks that haven't completed successfully will be re-run.
+
+    Use --filter-error-types to delete specific failures before resuming,
+    causing those tasks to be retried.
+
+    Examples:
+        prompt-siren jobs resume ./traces/agentdojo-workspace/plain/benign/abc12345
+        prompt-siren jobs resume ./traces/.../abc12345 execution.concurrency=8
+        prompt-siren jobs resume ./traces/.../abc12345 --filter-error-types=CancelledError
+    """
+    _run_resume(
+        job_path=job_path,
+        config_dir=config_dir,
+        config_name=config_name,
+        filter_error_types=list(filter_error_types),
+        overrides=list(overrides),
+    )
+
+
+@main.group()
 def run():
     """Run experiments."""
 
 
-@run.command()
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, path_type=Path),
-    help="Configuration directory path",
-)
-@click.option("--config-name", default="config", help="Configuration file name (without .yaml)")
-@click.option("--multirun", is_flag=True, help="Enable Hydra multirun mode for parameter sweeps")
-@click.option(
-    "--cfg",
-    "--print-config",
-    type=click.Choice(["job", "hydra", "all"]),
-    help="Print composed config and exit (job=app config, hydra=hydra config, all=both)",
-)
-@click.option(
-    "--resolve",
-    is_flag=True,
-    help="Resolve OmegaConf interpolations when printing config",
-)
-@click.option(
-    "--info",
-    type=click.Choice(["all", "config", "defaults", "defaults-tree", "plugins", "searchpath"]),
-    help="Print Hydra information and exit",
-)
-@click.argument("overrides", nargs=-1)
-def benign(
+@run.command(name="benign")
+@_apply_options(_start_options)
+def run_benign(
     config_dir: Path | None,
     config_name: str,
     multirun: bool,
@@ -131,32 +216,9 @@ def benign(
     )
 
 
-@run.command()
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, path_type=Path),
-    help="Configuration directory path",
-)
-@click.option("--config-name", default="config", help="Configuration file name (without .yaml)")
-@click.option("--multirun", is_flag=True, help="Enable Hydra multirun mode for parameter sweeps")
-@click.option(
-    "--cfg",
-    "--print-config",
-    type=click.Choice(["job", "hydra", "all"]),
-    help="Print composed config and exit (job=app config, hydra=hydra config, all=both)",
-)
-@click.option(
-    "--resolve",
-    is_flag=True,
-    help="Resolve OmegaConf interpolations when printing config",
-)
-@click.option(
-    "--info",
-    type=click.Choice(["all", "config", "defaults", "defaults-tree", "plugins", "searchpath"]),
-    help="Print Hydra information and exit",
-)
-@click.argument("overrides", nargs=-1)
-def attack(
+@run.command(name="attack")
+@_apply_options(_start_options)
+def run_attack(
     config_dir: Path | None,
     config_name: str,
     multirun: bool,
@@ -186,6 +248,11 @@ def attack(
         resolve=resolve,
         info=info,
     )
+
+
+# Add run commands to jobs start as aliases
+start.add_command(run_benign, name="benign")
+start.add_command(run_attack, name="attack")
 
 
 @main.command()
@@ -361,6 +428,77 @@ def _run_hydra(
     finally:
         # Restore original sys.argv
         sys.argv = original_argv
+
+
+def _run_resume(
+    job_path: Path,
+    config_dir: Path | None,
+    config_name: str,
+    filter_error_types: list[str],
+    overrides: list[str],
+) -> None:
+    """Run resume with layered configuration.
+
+    1. Load base config from Hydra (--config-dir)
+    2. Load saved config from job_path/config.yaml
+    3. Merge: saved dataset/agent/attack override base
+    4. Apply CLI overrides on top
+    5. Delete failures matching filter_error_types
+    6. Resume with incomplete tasks only
+
+    Args:
+        job_path: Path to job directory containing config.yaml
+        config_dir: Base configuration directory (for execution, telemetry settings)
+        config_name: Configuration file name (without .yaml)
+        filter_error_types: Error types to delete before resuming
+        overrides: Additional Hydra overrides to apply
+    """
+    # Load saved job config from job directory
+    try:
+        saved_config = load_saved_job_config(job_path)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
+    except ValueError as e:
+        click.echo(f"Error loading saved config: {e}", err=True)
+        raise SystemExit(1) from e
+
+    # Determine execution mode from saved config
+    execution_mode: ExecutionMode = "attack" if saved_config.attack else "benign"
+
+    # Compose base Hydra config (without overrides first, we'll apply them after merge)
+    config_dir_path = _resolve_config_dir(config_dir)
+    with _compose_config(config_dir_path, config_name, []) as base_cfg:
+        # Merge saved config on top of base
+        merged_cfg = merge_configs(base_cfg, saved_config)
+
+        # Apply CLI overrides on top of merged config
+        for override in overrides:
+            key, _, value = override.partition("=")
+            if key and value:
+                OmegaConf.update(merged_cfg, key, value)
+
+        # Validate merged config
+        experiment_config = validate_config(merged_cfg, execution_mode=execution_mode)
+
+        # Handle failure filtering if requested
+        if filter_error_types:
+            config_hash = compute_config_hash(
+                experiment_config.dataset,
+                experiment_config.agent,
+                experiment_config.attack,
+            )
+            deleted = delete_failures_by_type_in_dir(job_path, filter_error_types, config_hash)
+            if deleted:
+                click.echo(
+                    f"Deleted {deleted} failure(s) matching: {', '.join(filter_error_types)}"
+                )
+
+        # Run experiment with resume=True
+        if execution_mode == "benign":
+            asyncio.run(run_benign_experiment(experiment_config, resume=True))
+        else:
+            asyncio.run(run_attack_experiment(experiment_config, resume=True))
 
 
 if __name__ == "__main__":

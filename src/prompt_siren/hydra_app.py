@@ -3,6 +3,7 @@
 
 import asyncio
 
+import click
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from pydantic import ValidationError
@@ -20,6 +21,7 @@ from .config.registry_bridge import (
 )
 from .datasets.registry import get_dataset_config_class
 from .registry_base import UnknownComponentError
+from .resume import filter_incomplete_couples, filter_incomplete_tasks
 from .run import run_single_tasks_without_attack, run_task_couples_with_attack
 from .run_persistence import ExecutionPersistence
 from .telemetry import setup_telemetry
@@ -108,11 +110,13 @@ def validate_config(cfg: DictConfig, execution_mode: ExecutionMode) -> Experimen
 
 async def run_benign_experiment(
     experiment_config: ExperimentConfig,
+    resume: bool = False,
 ) -> dict[str, dict[str, float]]:
     """Run benign-only experiment.
 
     Args:
         experiment_config: Validated experiment configuration
+        resume: If True, skip tasks that have already completed
 
     Returns:
         Dictionary mapping task IDs to evaluation results
@@ -163,6 +167,22 @@ async def run_benign_experiment(
         attack_config=None,  # No attack in benign mode
     )
 
+    # Filter out completed tasks if resuming
+    if resume:
+        initial_count = len(selected_tasks)
+        selected_tasks = filter_incomplete_tasks(
+            selected_tasks,
+            trace_dir,
+            persistence.config_hash,
+        )
+        completed_count = initial_count - len(selected_tasks)
+
+        if not selected_tasks:
+            click.echo(f"All {completed_count} tasks already completed. Nothing to resume.")
+            return {}
+
+        click.echo(f"Resuming: {len(selected_tasks)} remaining ({completed_count} completed)")
+
     # Run benign experiment
     with formatted_span(
         "benign experiment with config {hash}",
@@ -187,11 +207,13 @@ async def run_benign_experiment(
 
 async def run_attack_experiment(
     experiment_config: ExperimentConfig,
+    resume: bool = False,
 ) -> dict[str, dict[str, float]]:
     """Run attack experiment.
 
     Args:
         experiment_config: Validated experiment configuration (must include attack config)
+        resume: If True, skip task couples that have already completed
 
     Returns:
         Dictionary mapping task IDs to evaluation results
@@ -245,6 +267,22 @@ async def run_attack_experiment(
         agent_config=experiment_config.agent,
         attack_config=experiment_config.attack,
     )
+
+    # Filter out completed couples if resuming
+    if resume:
+        initial_count = len(selected_couples)
+        selected_couples = filter_incomplete_couples(
+            selected_couples,
+            trace_dir,
+            persistence.config_hash,
+        )
+        completed_count = initial_count - len(selected_couples)
+
+        if not selected_couples:
+            click.echo(f"All {completed_count} couples already completed. Nothing to resume.")
+            return {}
+
+        click.echo(f"Resuming: {len(selected_couples)} remaining ({completed_count} completed)")
 
     # Run attack experiment
     with formatted_span(

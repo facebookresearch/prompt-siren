@@ -30,6 +30,7 @@ InjectionAttackT = TypeVar("InjectionAttackT", bound=InjectionAttack)
 
 CONFIG_FILENAME = "config.yaml"
 INDEX_FILENAME = "index.jsonl"
+FAILURES_FILENAME = "failures.jsonl"
 
 
 class ResultsData(BaseModel):
@@ -72,6 +73,45 @@ class IndexEntry(BaseModel):
     benign_score: float
     attack_score: float | None
     path: Path
+
+
+class FailureEntry(BaseModel):
+    """Entry in the failures.jsonl file for tracking failed task executions."""
+
+    task_id: str
+    timestamp: str
+    error_type: str  # Exception class name (e.g., "CancelledError", "TimeoutError")
+    error_message: str
+    config_hash: str
+
+
+def get_completed_task_ids(base_dir: Path, config_hash: str) -> set[str]:
+    """Get task IDs that have completed successfully for a given config hash.
+
+    Reads the index.jsonl file and returns task IDs that have been
+    successfully executed with the specified configuration.
+
+    Args:
+        base_dir: Base directory containing index.jsonl
+        config_hash: Configuration hash to filter by
+
+    Returns:
+        Set of task_id strings that have completed successfully
+    """
+    index_file = base_dir / INDEX_FILENAME
+    if not index_file.exists():
+        return set()
+
+    completed_ids: set[str] = set()
+    with open(index_file) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            entry = IndexEntry.model_validate_json(line)
+            if entry.config_hash == config_hash:
+                completed_ids.add(entry.task_id)
+
+    return completed_ids
 
 
 def compute_config_hash(
@@ -426,6 +466,139 @@ class ExecutionPersistence:
         with FileLock(lock_file):
             with open(index_file, "a") as f:
                 f.write(index_entry.model_dump_json() + "\n")
+
+    def save_failure(self, task_id: str, error: Exception) -> None:
+        """Save a task failure to failures.jsonl.
+
+        Records task failures so they can be filtered and retried during resume.
+        Uses file locking for multi-process safety.
+
+        Args:
+            task_id: ID of the task that failed
+            error: The exception that caused the failure
+        """
+        failures_file = self.output_dir / FAILURES_FILENAME
+        lock_file = self.output_dir / f"{FAILURES_FILENAME}.lock"
+
+        failure_entry = FailureEntry(
+            task_id=task_id,
+            timestamp=datetime.now().isoformat(),
+            error_type=type(error).__name__,
+            error_message=str(error),
+            config_hash=self.config_hash,
+        )
+
+        with FileLock(lock_file):
+            with open(failures_file, "a") as f:
+                f.write(failure_entry.model_dump_json() + "\n")
+
+    def get_failures(self) -> list[FailureEntry]:
+        """Get all recorded failures for this configuration.
+
+        Returns:
+            List of FailureEntry objects for this config hash
+        """
+        failures_file = self.output_dir / FAILURES_FILENAME
+        if not failures_file.exists():
+            return []
+
+        failures: list[FailureEntry] = []
+        with open(failures_file) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                entry = FailureEntry.model_validate_json(line)
+                if entry.config_hash == self.config_hash:
+                    failures.append(entry)
+
+        return failures
+
+    def delete_failures_by_type(self, error_types: list[str]) -> int:
+        """Delete failures matching the specified error types.
+
+        Removes failure entries that match any of the given error types,
+        allowing those tasks to be retried on resume.
+
+        Args:
+            error_types: List of error type names to delete (e.g., ["CancelledError"])
+
+        Returns:
+            Number of failures deleted
+        """
+        failures_file = self.output_dir / FAILURES_FILENAME
+        lock_file = self.output_dir / f"{FAILURES_FILENAME}.lock"
+
+        if not failures_file.exists():
+            return 0
+
+        error_type_set = set(error_types)
+        kept_entries: list[str] = []
+        deleted_count = 0
+
+        with FileLock(lock_file):
+            with open(failures_file) as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    entry = FailureEntry.model_validate_json(line)
+                    if entry.config_hash == self.config_hash and entry.error_type in error_type_set:
+                        deleted_count += 1
+                    else:
+                        kept_entries.append(line.rstrip("\n"))
+
+            # Rewrite the file with remaining entries
+            with open(failures_file, "w") as f:
+                for entry_line in kept_entries:
+                    f.write(entry_line + "\n")
+
+        return deleted_count
+
+
+def delete_failures_by_type_in_dir(
+    job_dir: Path,
+    error_types: list[str],
+    config_hash: str,
+) -> int:
+    """Delete failures matching the specified error types from a job directory.
+
+    Standalone function for use during resume when we only have the job directory path,
+    not a full ExecutionPersistence instance.
+
+    Args:
+        job_dir: Path to job directory containing failures.jsonl
+        error_types: List of error type names to delete (e.g., ["CancelledError"])
+        config_hash: Configuration hash to filter by
+
+    Returns:
+        Number of failures deleted
+    """
+    failures_file = job_dir / FAILURES_FILENAME
+    lock_file = job_dir / f"{FAILURES_FILENAME}.lock"
+
+    if not failures_file.exists():
+        return 0
+
+    error_type_set = set(error_types)
+    kept_entries: list[str] = []
+    deleted_count = 0
+
+    with FileLock(lock_file):
+        with open(failures_file) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                entry = FailureEntry.model_validate_json(line)
+                if entry.config_hash == config_hash and entry.error_type in error_type_set:
+                    deleted_count += 1
+                else:
+                    kept_entries.append(line.rstrip("\n"))
+
+        # Rewrite the file with remaining entries
+        with open(failures_file, "w") as f:
+            for entry_line in kept_entries:
+                f.write(entry_line + "\n")
+
+    return deleted_count
 
 
 def _save_config_yaml(

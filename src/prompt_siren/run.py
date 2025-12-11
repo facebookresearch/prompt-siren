@@ -289,6 +289,9 @@ async def run_single_tasks_without_attack(
             )
             return ExecutionOk(task, result)
         except Exception as e:
+            # Save failure for potential resume
+            if persistence:
+                persistence.save_failure(task.id, e)
             return ExecutionError(task, e)
 
     # TODO(py3.10): Replace with asyncio.TaskGroup once Python 3.10 support is dropped
@@ -479,6 +482,9 @@ async def run_task_couples_with_attack(
             )
             return ExecutionOk(couple, result)
         except Exception as e:
+            # Save failure for potential resume
+            if persistence:
+                persistence.save_failure(couple.id, e)
             return ExecutionError(couple, e)
 
     # TODO(py3.10): Replace with asyncio.TaskGroup once Python 3.10 support is dropped

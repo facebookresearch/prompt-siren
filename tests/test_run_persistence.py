@@ -21,8 +21,12 @@ from prompt_siren.run_persistence import (
     _save_config_yaml,
     compute_config_hash,
     CONFIG_FILENAME,
+    delete_failures_by_type_in_dir,
     ExecutionData,
     ExecutionPersistence,
+    FailureEntry,
+    FAILURES_FILENAME,
+    get_completed_task_ids,
     INDEX_FILENAME,
     IndexEntry,
 )
@@ -1044,3 +1048,319 @@ class TestSaveConfigYaml:
             # Verify we have all unique task IDs (no duplicates or missing entries)
             expected_task_ids = {f"test_task_{i}" for i in range(num_tasks)}
             assert task_ids == expected_task_ids
+
+
+class TestGetCompletedTaskIds:
+    """Tests for get_completed_task_ids function."""
+
+    def test_returns_empty_set_when_no_index(self, tmp_path: Path):
+        """Test that empty set is returned when index.jsonl doesn't exist."""
+        result = get_completed_task_ids(tmp_path, "abc12345")
+        assert result == set()
+
+    def test_returns_task_ids_for_matching_config_hash(self, tmp_path: Path):
+        """Test that correct task IDs are returned for matching config hash."""
+        # Create index file with entries for different config hashes
+        index_file = tmp_path / INDEX_FILENAME
+        entries = [
+            IndexEntry(
+                execution_id="exec1",
+                task_id="task_1",
+                timestamp="2025-01-01T00:00:00",
+                dataset="test",
+                dataset_config={},
+                agent_type="plain",
+                agent_name="test",
+                attack_type=None,
+                config_hash="abc12345",
+                benign_score=1.0,
+                attack_score=None,
+                path=Path("test1.json"),
+            ),
+            IndexEntry(
+                execution_id="exec2",
+                task_id="task_2",
+                timestamp="2025-01-01T00:00:00",
+                dataset="test",
+                dataset_config={},
+                agent_type="plain",
+                agent_name="test",
+                attack_type=None,
+                config_hash="abc12345",
+                benign_score=1.0,
+                attack_score=None,
+                path=Path("test2.json"),
+            ),
+            IndexEntry(
+                execution_id="exec3",
+                task_id="task_3",
+                timestamp="2025-01-01T00:00:00",
+                dataset="test",
+                dataset_config={},
+                agent_type="plain",
+                agent_name="test",
+                attack_type=None,
+                config_hash="different",
+                benign_score=1.0,
+                attack_score=None,
+                path=Path("test3.json"),
+            ),
+        ]
+
+        with open(index_file, "w") as f:
+            for entry in entries:
+                f.write(entry.model_dump_json() + "\n")
+
+        # Get completed tasks for config_hash "abc12345"
+        result = get_completed_task_ids(tmp_path, "abc12345")
+        assert result == {"task_1", "task_2"}
+
+        # Get completed tasks for config_hash "different"
+        result = get_completed_task_ids(tmp_path, "different")
+        assert result == {"task_3"}
+
+        # Get completed tasks for non-existent config_hash
+        result = get_completed_task_ids(tmp_path, "nonexistent")
+        assert result == set()
+
+
+class TestFailureTracking:
+    """Tests for failure tracking functionality."""
+
+    def test_save_failure_creates_file(self, tmp_path: Path):
+        """Test that save_failure creates failures.jsonl file."""
+        persistence = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(
+                type="agentdojo",
+                config={"suite_name": "workspace"},
+            ),
+            agent_config=AgentConfig(
+                type="plain",
+                config={"model": "test"},
+            ),
+            attack_config=None,
+        )
+
+        # Save a failure
+        error = ValueError("Test error message")
+        persistence.save_failure("task_1", error)
+
+        # Verify file was created
+        failures_file = persistence.output_dir / FAILURES_FILENAME
+        assert failures_file.exists()
+
+        # Verify content
+        with open(failures_file) as f:
+            entry = FailureEntry.model_validate_json(f.read().strip())
+            assert entry.task_id == "task_1"
+            assert entry.error_type == "ValueError"
+            assert entry.error_message == "Test error message"
+            assert entry.config_hash == persistence.config_hash
+
+    def test_save_multiple_failures(self, tmp_path: Path):
+        """Test saving multiple failures."""
+        persistence = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+
+        # Save multiple failures
+        persistence.save_failure("task_1", ValueError("Error 1"))
+        persistence.save_failure("task_2", TimeoutError("Error 2"))
+        persistence.save_failure("task_3", ValueError("Error 3"))
+
+        # Verify all failures are recorded
+        failures = persistence.get_failures()
+        assert len(failures) == 3
+        assert {f.task_id for f in failures} == {"task_1", "task_2", "task_3"}
+
+    def test_get_failures_empty(self, tmp_path: Path):
+        """Test get_failures returns empty list when no failures exist."""
+        persistence = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+
+        failures = persistence.get_failures()
+        assert failures == []
+
+    def test_get_failures_filters_by_config_hash(self, tmp_path: Path):
+        """Test that get_failures only returns failures for current config hash."""
+        # Create persistence with one config
+        persistence1 = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test1", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+        persistence1.save_failure("task_1", ValueError("Error 1"))
+
+        # Create persistence with different config
+        persistence2 = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test2", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+        persistence2.save_failure("task_2", ValueError("Error 2"))
+
+        # Each should only see its own failures
+        failures1 = persistence1.get_failures()
+        assert len(failures1) == 1
+        assert failures1[0].task_id == "task_1"
+
+        failures2 = persistence2.get_failures()
+        assert len(failures2) == 1
+        assert failures2[0].task_id == "task_2"
+
+    def test_delete_failures_by_type(self, tmp_path: Path):
+        """Test deleting failures by error type."""
+        persistence = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+
+        # Save failures of different types
+        persistence.save_failure("task_1", ValueError("Error 1"))
+        persistence.save_failure("task_2", TimeoutError("Error 2"))
+        persistence.save_failure("task_3", ValueError("Error 3"))
+
+        # Delete ValueError failures
+        deleted = persistence.delete_failures_by_type(["ValueError"])
+        assert deleted == 2
+
+        # Verify only TimeoutError remains
+        failures = persistence.get_failures()
+        assert len(failures) == 1
+        assert failures[0].task_id == "task_2"
+        assert failures[0].error_type == "TimeoutError"
+
+    def test_delete_failures_by_multiple_types(self, tmp_path: Path):
+        """Test deleting failures by multiple error types."""
+        persistence = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+
+        # Save failures of different types
+        persistence.save_failure("task_1", ValueError("Error 1"))
+        persistence.save_failure("task_2", TimeoutError("Error 2"))
+        persistence.save_failure("task_3", RuntimeError("Error 3"))
+
+        # Delete both ValueError and TimeoutError
+        deleted = persistence.delete_failures_by_type(["ValueError", "TimeoutError"])
+        assert deleted == 2
+
+        # Verify only RuntimeError remains
+        failures = persistence.get_failures()
+        assert len(failures) == 1
+        assert failures[0].error_type == "RuntimeError"
+
+    def test_delete_failures_no_matches(self, tmp_path: Path):
+        """Test delete_failures_by_type returns 0 when no matches."""
+        persistence = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+
+        persistence.save_failure("task_1", ValueError("Error 1"))
+
+        # Try to delete non-existent error type
+        deleted = persistence.delete_failures_by_type(["NonExistentError"])
+        assert deleted == 0
+
+        # Original failure should still exist
+        failures = persistence.get_failures()
+        assert len(failures) == 1
+
+
+class TestDeleteFailuresByTypeInDir:
+    """Tests for the standalone delete_failures_by_type_in_dir function."""
+
+    def test_deletes_failures_from_job_dir(self, tmp_path: Path):
+        """Test deleting failures directly from a job directory."""
+        # Create a persistence to save some failures
+        persistence = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+
+        # Save failures of different types
+        persistence.save_failure("task_1", ValueError("Error 1"))
+        persistence.save_failure("task_2", TimeoutError("Error 2"))
+        persistence.save_failure("task_3", ValueError("Error 3"))
+
+        # Use standalone function to delete from the output_dir (the job directory)
+        deleted = delete_failures_by_type_in_dir(
+            persistence.output_dir, ["ValueError"], persistence.config_hash
+        )
+        assert deleted == 2
+
+        # Verify only TimeoutError remains
+        failures = persistence.get_failures()
+        assert len(failures) == 1
+        assert failures[0].error_type == "TimeoutError"
+
+    def test_returns_zero_when_no_failures_file(self, tmp_path: Path):
+        """Test that function returns 0 when failures.jsonl doesn't exist."""
+        deleted = delete_failures_by_type_in_dir(tmp_path, ["ValueError"], "somehash")
+        assert deleted == 0
+
+    def test_filters_by_config_hash(self, tmp_path: Path):
+        """Test that only failures matching config_hash are deleted."""
+        # Create two persistence instances with different configs
+        persistence1 = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test1", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+        persistence2 = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test2", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+
+        # Save failures to persistence1's directory
+        persistence1.save_failure("task_1", ValueError("Error 1"))
+
+        # Manually write a failure with persistence2's hash to same file
+        from datetime import datetime
+
+        failures_file = persistence1.output_dir / FAILURES_FILENAME
+        entry = FailureEntry(
+            task_id="task_2",
+            timestamp=datetime.now().isoformat(),
+            error_type="ValueError",
+            error_message="Error 2",
+            config_hash=persistence2.config_hash,
+        )
+        with open(failures_file, "a") as f:
+            f.write(entry.model_dump_json() + "\n")
+
+        # Delete only persistence1's failures
+        deleted = delete_failures_by_type_in_dir(
+            persistence1.output_dir, ["ValueError"], persistence1.config_hash
+        )
+        assert deleted == 1
+
+        # Verify persistence2's failure still exists
+        with open(failures_file) as f:
+            lines = [line for line in f if line.strip()]
+            assert len(lines) == 1
+            remaining = FailureEntry.model_validate_json(lines[0])
+            assert remaining.config_hash == persistence2.config_hash

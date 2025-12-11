@@ -874,3 +874,122 @@ class TestMaliciousTaskCustomPrompt:
         # Verify task completed successfully
         assert len(results) == 1
         assert results[0].task_id == "test_malicious"
+
+
+class TestFailurePersistence:
+    """Tests for failure tracking when tasks fail."""
+
+    async def test_single_task_failure_saves_to_persistence(
+        self, mock_environment: MockEnvironment, mock_dataset: MockDataset, tmp_path: Path
+    ):
+        """Test that failed single tasks are saved to persistence."""
+        agent = PlainAgent(PlainAgentConfig(model=TestModel(), model_settings=ModelSettings()))
+
+        def failing_evaluator(task_result):
+            raise RuntimeError("Task evaluation failed")
+
+        failing_task = BenignTask(
+            id="failing_task",
+            prompt="This will fail",
+            evaluators={"eval1": failing_evaluator},
+        )
+
+        persistence = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="mock", config={}),
+            agent_config=AgentConfig(type="plain", config={"model": "test"}),
+            attack_config=None,
+        )
+
+        with pytest.raises(ExceptionGroup):
+            await run_single_tasks_without_attack(
+                tasks=[failing_task],
+                agent=agent,
+                env=mock_environment,
+                system_prompt=None,
+                toolsets=mock_dataset.default_toolsets,
+                persistence=persistence,
+                instrument=False,
+            )
+
+        # Verify failure was saved
+        failures = persistence.get_failures()
+        assert len(failures) == 1
+        assert failures[0].task_id == "failing_task"
+        assert failures[0].error_type == "RuntimeError"
+        assert "Task evaluation failed" in failures[0].error_message
+
+    async def test_couple_failure_saves_to_persistence(
+        self,
+        mock_environment: MockEnvironment,
+        mock_dataset: MockDataset,
+        mock_attack: MockAttack,
+        tmp_path: Path,
+    ):
+        """Test that failed couples are saved to persistence."""
+        agent = PlainAgent(PlainAgentConfig(model=TestModel(), model_settings=ModelSettings()))
+
+        def failing_evaluator(task_result):
+            raise TimeoutError("Couple evaluation timed out")
+
+        benign_task = create_mock_benign_task("benign", {"eval1": 1.0})
+        malicious_task = MaliciousTask(
+            id="malicious",
+            goal="Fails",
+            evaluators={"eval1": failing_evaluator},
+        )
+        failing_couple = TaskCouple(benign=benign_task, malicious=malicious_task)
+
+        persistence = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="mock", config={}),
+            agent_config=AgentConfig(type="plain", config={"model": "test"}),
+            attack_config=AttackConfig(type="mock", config={}),
+        )
+
+        with pytest.raises(ExceptionGroup):
+            await run_task_couples_with_attack(
+                couples=[failing_couple],
+                agent=agent,
+                env=mock_environment,
+                system_prompt=None,
+                toolsets=mock_dataset.default_toolsets,
+                attack=mock_attack,
+                persistence=persistence,
+                instrument=False,
+            )
+
+        # Verify failure was saved with couple ID
+        failures = persistence.get_failures()
+        assert len(failures) == 1
+        assert failures[0].task_id == "benign:malicious"
+        assert failures[0].error_type == "TimeoutError"
+        assert "timed out" in failures[0].error_message
+
+    async def test_no_failure_saved_on_success(
+        self, mock_environment: MockEnvironment, mock_dataset: MockDataset, tmp_path: Path
+    ):
+        """Test that successful tasks don't create failure entries."""
+        agent = PlainAgent(PlainAgentConfig(model=TestModel(), model_settings=ModelSettings()))
+        task = create_mock_benign_task("success_task", {"eval1": 1.0})
+
+        persistence = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="mock", config={}),
+            agent_config=AgentConfig(type="plain", config={"model": "test"}),
+            attack_config=None,
+        )
+
+        results = await run_single_tasks_without_attack(
+            tasks=[task],
+            agent=agent,
+            env=mock_environment,
+            system_prompt=None,
+            toolsets=mock_dataset.default_toolsets,
+            persistence=persistence,
+            instrument=False,
+        )
+
+        assert len(results) == 1
+        failures = persistence.get_failures()
+        assert len(failures) == 0
