@@ -24,10 +24,7 @@ from prompt_siren.datasets.swebench_dataset.tools import (
 )
 from prompt_siren.environments.bash_env import BashEnvState
 from prompt_siren.sandbox_managers.abstract import AbstractSandboxManager
-from prompt_siren.sandbox_managers.docker.manager import (
-    DockerSandboxConfig,
-    DockerSandboxManager,
-)
+from prompt_siren.sandbox_managers.docker.manager import DockerSandboxManager
 from prompt_siren.sandbox_managers.image_spec import PullImageSpec
 from prompt_siren.sandbox_managers.sandbox_state import SandboxState
 from prompt_siren.sandbox_managers.sandbox_task_setup import (
@@ -45,12 +42,16 @@ pytestmark = pytest.mark.anyio
 @pytest.fixture(scope="module")
 async def sandbox_manager(
     test_image: str,
+    docker_client_type: str,
+    create_manager_config,
 ) -> AsyncIterator[tuple[AbstractSandboxManager, str, TaskSetup]]:
     """Create a sandbox manager for tool testing.
 
     Returns tuple of (sandbox_manager, test_image, task_setup) for use by dependent fixtures.
     """
-    config = DockerSandboxConfig(network_enabled=False)
+    config = create_manager_config(
+        docker_client_type, network_enabled=False, test_images=test_image
+    )
     manager = DockerSandboxManager(config)
 
     # Create TaskSetup for API

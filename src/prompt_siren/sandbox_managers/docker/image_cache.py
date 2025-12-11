@@ -4,21 +4,11 @@
 from __future__ import annotations
 
 import hashlib
-import io
-import tarfile
+import logging
 import tempfile
 from pathlib import Path
 
 from typing_extensions import assert_never
-
-try:
-    import aiodocker
-    from aiodocker import DockerError
-except ImportError as e:
-    raise ImportError(
-        "Docker sandbox manager requires the 'docker' optional dependency. "
-        "Install with: pip install 'prompt-siren[docker]'"
-    ) from e
 
 from ..image_spec import (
     BuildImageSpec,
@@ -28,6 +18,9 @@ from ..image_spec import (
     PullImageSpec,
 )
 from ..sandbox_task_setup import ContainerSetup
+from .plugins import AbstractDockerClient, DockerClientError
+
+logger = logging.getLogger(__name__)
 
 
 class ImageBuildError(Exception):
@@ -46,11 +39,11 @@ class ImageCache:
     concurrent Docker build race conditions.
     """
 
-    def __init__(self, docker: aiodocker.Docker, batch_id: str):
+    def __init__(self, docker: AbstractDockerClient, batch_id: str):
         """Initialize image cache.
 
         Args:
-            docker: Docker client for all operations
+            docker: Abstract Docker client for all operations
             batch_id: Unique identifier for this batch
         """
         self._docker = docker
@@ -68,13 +61,22 @@ class ImageCache:
         Args:
             container_setups: All container setups from all tasks in the batch
         """
+        logger.debug(
+            f"[ImageCache] ensure_all_base_images called with {len(container_setups)} container setups"
+        )
         # Collect unique image specs using cache key
         seen_specs: set[str] = set()
         for setup in container_setups:
             cache_key = self._get_cache_key(setup.spec.image_spec)
+            logger.debug(
+                f"[ImageCache] Processing setup '{setup.name}' with cache_key: {cache_key}"
+            )
             if cache_key not in seen_specs:
                 seen_specs.add(cache_key)
+                logger.debug(f"[ImageCache] Preparing base image for cache_key: {cache_key}")
                 await self._prepare_base_image(setup.spec.image_spec)
+            else:
+                logger.debug(f"[ImageCache] Skipping duplicate cache_key: {cache_key}")
 
     async def get_image_for_container(
         self,
@@ -115,23 +117,37 @@ class ImageCache:
             Image tag
         """
         cache_key = self._get_cache_key(spec)
+        logger.debug(f"[ImageCache] _prepare_base_image called for cache_key: {cache_key}")
 
         # Check cache first
         if cache_key in self._base_image_cache:
+            logger.debug(f"[ImageCache] Found cached image for cache_key: {cache_key}")
             return self._base_image_cache[cache_key]
+
+        logger.debug(
+            f"[ImageCache] No cached image found, preparing new image for spec type: {type(spec).__name__}"
+        )
+
+        tag: ImageTag = ""
 
         # Prepare image based on type
         match spec:
             case PullImageSpec():
+                logger.debug(f"[ImageCache] Pulling image: {spec.tag}")
                 tag = await self._pull_image(spec)
             case BuildImageSpec():
+                logger.debug(
+                    f"[ImageCache] Building image from spec: tag={spec.tag}, context={spec.context_path}, dockerfile={spec.dockerfile_path}"
+                )
                 tag = await self._build_image(spec)
             case MultiStageBuildImageSpec():
+                logger.debug(f"[ImageCache] Building multi-stage image: {spec.final_tag}")
                 tag = await self._build_multi_stage_image(spec)
             case _:
                 assert_never(spec)
 
         # Cache result
+        logger.debug(f"[ImageCache] Caching result for cache_key: {cache_key}, tag: {tag}")
         self._base_image_cache[cache_key] = tag
         return tag
 
@@ -209,12 +225,18 @@ class ImageCache:
         Returns:
             Image tag
         """
+        logger.debug(f"[ImageCache] _pull_image: Checking if image exists locally: {spec.tag}")
         try:
             # Check if image exists locally
-            await self._docker.images.inspect(spec.tag)
-        except DockerError:
+            await self._docker.inspect_image(spec.tag)
+            logger.debug(f"[ImageCache] _pull_image: Image {spec.tag} already exists locally")
+        except DockerClientError as e:
             # Image doesn't exist, pull it
-            await self._docker.images.pull(from_image=spec.tag)
+            logger.debug(
+                f"[ImageCache] _pull_image: Image {spec.tag} not found locally (error: {e}), pulling..."
+            )
+            await self._docker.pull_image(spec.tag)
+            logger.debug(f"[ImageCache] _pull_image: Successfully pulled image {spec.tag}")
         return spec.tag
 
     async def _build_image(self, spec: BuildImageSpec) -> ImageTag:
@@ -226,19 +248,33 @@ class ImageCache:
         Returns:
             Image tag
         """
+        logger.debug(f"[ImageCache] _build_image: Checking if image exists: {spec.tag}")
+        logger.debug(f"[ImageCache] _build_image: Build context path: {spec.context_path}")
+        logger.debug(f"[ImageCache] _build_image: Dockerfile path: {spec.dockerfile_path}")
+        logger.debug(f"[ImageCache] _build_image: Build args: {spec.build_args}")
+
         # Check if image exists
         try:
-            await self._docker.images.inspect(spec.tag)
+            logger.debug(f"[ImageCache] _build_image: Attempting to inspect image {spec.tag}")
+            await self._docker.inspect_image(spec.tag)
+            logger.debug(
+                f"[ImageCache] _build_image: Image {spec.tag} already exists, skipping build"
+            )
             return spec.tag
-        except DockerError:
-            pass  # Image doesn't exist, build it
+        except DockerClientError as e:
+            logger.debug(
+                f"[ImageCache] _build_image: Image {spec.tag} not found (error: {e}), proceeding with build"
+            )
+            # Image doesn't exist, build it
 
+        logger.debug(f"[ImageCache] _build_image: Starting build for image {spec.tag}")
         await self._build_from_context(
             context_path=spec.context_path,
             tag=spec.tag,
             dockerfile_path=spec.dockerfile_path,
             build_args=spec.build_args,
         )
+        logger.debug(f"[ImageCache] _build_image: Successfully built image {spec.tag}")
         return spec.tag
 
     async def _build_multi_stage_image(self, spec: MultiStageBuildImageSpec) -> ImageTag:
@@ -253,9 +289,9 @@ class ImageCache:
         for stage in spec.stages:
             # Check if stage image exists
             try:
-                await self._docker.images.inspect(stage.tag)
+                await self._docker.inspect_image(stage.tag)
                 continue  # Stage already built
-            except DockerError:
+            except DockerClientError:
                 pass  # Need to build this stage
 
             # Prepare build args
@@ -284,6 +320,9 @@ class ImageCache:
     ) -> None:
         """Build a Docker image from a build context.
 
+        The tar archive creation and file transfer is handled by the
+        Docker client implementation.
+
         Args:
             context_path: Path to the build context directory
             tag: Tag for the built image
@@ -293,29 +332,34 @@ class ImageCache:
         Raises:
             ImageBuildError: If build fails
         """
-        # Create tar archive of build context
-        tar_stream = io.BytesIO()
-        with tarfile.open(fileobj=tar_stream, mode="w") as tar:
-            tar.add(context_path, arcname=".")
-        tar_stream.seek(0)
+        logger.debug(
+            f"[ImageCache] _build_from_context: Building image {tag} from context {context_path}"
+        )
+        logger.debug(f"[ImageCache] _build_from_context: Dockerfile path: {dockerfile_path}")
+        logger.debug(f"[ImageCache] _build_from_context: Build args: {build_args}")
 
         errors = []
 
-        # Stream build output
-        async for log_line in self._docker.images.build(
-            fileobj=tar_stream,
+        # Stream build output from client
+        async for log_line in self._docker.build_image(
+            context_path=context_path,
             tag=tag,
-            encoding="application/x-tar",
-            stream=True,
-            path_dockerfile=dockerfile_path or "Dockerfile",
+            dockerfile_path=dockerfile_path,
             buildargs=build_args,
         ):
+            logger.debug(f"[ImageCache] _build_from_context: Build log: {log_line}")
             if "error" in log_line:
                 error = log_line["error"]
+                logger.error(f"[ImageCache] _build_from_context: Build error: {error}")
                 errors.append(error)
 
         if errors:
+            logger.error(
+                f"[ImageCache] _build_from_context: Build failed with {len(errors)} errors"
+            )
             raise ImageBuildError(tag, errors)
+
+        logger.debug(f"[ImageCache] _build_from_context: Build completed successfully for {tag}")
 
     @staticmethod
     def _get_cache_key(spec: ImageSpec) -> str:

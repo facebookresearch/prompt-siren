@@ -243,7 +243,6 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
 
         config_class, factory = self._registry[component_type]
 
-        # Component doesn't use config - call factory with no args
         if config_class is None:
             if config is not None:
                 raise ValueError(
