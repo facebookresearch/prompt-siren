@@ -21,6 +21,7 @@ from prompt_siren.run_persistence import (
     _save_config_yaml,
     compute_config_hash,
     CONFIG_FILENAME,
+    delete_failures_by_type_in_dir,
     ExecutionData,
     ExecutionPersistence,
     FailureEntry,
@@ -1282,3 +1283,84 @@ class TestFailureTracking:
         # Original failure should still exist
         failures = persistence.get_failures()
         assert len(failures) == 1
+
+
+class TestDeleteFailuresByTypeInDir:
+    """Tests for the standalone delete_failures_by_type_in_dir function."""
+
+    def test_deletes_failures_from_job_dir(self, tmp_path: Path):
+        """Test deleting failures directly from a job directory."""
+        # Create a persistence to save some failures
+        persistence = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+
+        # Save failures of different types
+        persistence.save_failure("task_1", ValueError("Error 1"))
+        persistence.save_failure("task_2", TimeoutError("Error 2"))
+        persistence.save_failure("task_3", ValueError("Error 3"))
+
+        # Use standalone function to delete from the output_dir (the job directory)
+        deleted = delete_failures_by_type_in_dir(
+            persistence.output_dir, ["ValueError"], persistence.config_hash
+        )
+        assert deleted == 2
+
+        # Verify only TimeoutError remains
+        failures = persistence.get_failures()
+        assert len(failures) == 1
+        assert failures[0].error_type == "TimeoutError"
+
+    def test_returns_zero_when_no_failures_file(self, tmp_path: Path):
+        """Test that function returns 0 when failures.jsonl doesn't exist."""
+        deleted = delete_failures_by_type_in_dir(tmp_path, ["ValueError"], "somehash")
+        assert deleted == 0
+
+    def test_filters_by_config_hash(self, tmp_path: Path):
+        """Test that only failures matching config_hash are deleted."""
+        # Create two persistence instances with different configs
+        persistence1 = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test1", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+        persistence2 = ExecutionPersistence.create(
+            base_dir=tmp_path,
+            dataset_config=DatasetConfig(type="test2", config={}),
+            agent_config=AgentConfig(type="plain", config={}),
+            attack_config=None,
+        )
+
+        # Save failures to persistence1's directory
+        persistence1.save_failure("task_1", ValueError("Error 1"))
+
+        # Manually write a failure with persistence2's hash to same file
+        from datetime import datetime
+
+        failures_file = persistence1.output_dir / FAILURES_FILENAME
+        entry = FailureEntry(
+            task_id="task_2",
+            timestamp=datetime.now().isoformat(),
+            error_type="ValueError",
+            error_message="Error 2",
+            config_hash=persistence2.config_hash,
+        )
+        with open(failures_file, "a") as f:
+            f.write(entry.model_dump_json() + "\n")
+
+        # Delete only persistence1's failures
+        deleted = delete_failures_by_type_in_dir(
+            persistence1.output_dir, ["ValueError"], persistence1.config_hash
+        )
+        assert deleted == 1
+
+        # Verify persistence2's failure still exists
+        with open(failures_file) as f:
+            lines = [line for line in f if line.strip()]
+            assert len(lines) == 1
+            remaining = FailureEntry.model_validate_json(lines[0])
+            assert remaining.config_hash == persistence2.config_hash

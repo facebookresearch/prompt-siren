@@ -26,7 +26,7 @@ from .results import (
     GroupBy,
 )
 from .resume import load_saved_job_config, merge_configs
-from .run_persistence import ExecutionPersistence
+from .run_persistence import compute_config_hash, delete_failures_by_type_in_dir
 from .types import ExecutionMode
 
 _F = TypeVar("_F", bound=Callable[..., object])
@@ -483,13 +483,12 @@ def _run_resume(
 
         # Handle failure filtering if requested
         if filter_error_types:
-            persistence = ExecutionPersistence.create(
-                base_dir=job_path,
-                dataset_config=experiment_config.dataset,
-                agent_config=experiment_config.agent,
-                attack_config=experiment_config.attack,
+            config_hash = compute_config_hash(
+                experiment_config.dataset,
+                experiment_config.agent,
+                experiment_config.attack,
             )
-            deleted = persistence.delete_failures_by_type(filter_error_types)
+            deleted = delete_failures_by_type_in_dir(job_path, filter_error_types, config_hash)
             if deleted:
                 click.echo(
                     f"Deleted {deleted} failure(s) matching: {', '.join(filter_error_types)}"

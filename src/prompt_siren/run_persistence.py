@@ -554,6 +554,53 @@ class ExecutionPersistence:
         return deleted_count
 
 
+def delete_failures_by_type_in_dir(
+    job_dir: Path,
+    error_types: list[str],
+    config_hash: str,
+) -> int:
+    """Delete failures matching the specified error types from a job directory.
+
+    Standalone function for use during resume when we only have the job directory path,
+    not a full ExecutionPersistence instance.
+
+    Args:
+        job_dir: Path to job directory containing failures.jsonl
+        error_types: List of error type names to delete (e.g., ["CancelledError"])
+        config_hash: Configuration hash to filter by
+
+    Returns:
+        Number of failures deleted
+    """
+    failures_file = job_dir / FAILURES_FILENAME
+    lock_file = job_dir / f"{FAILURES_FILENAME}.lock"
+
+    if not failures_file.exists():
+        return 0
+
+    error_type_set = set(error_types)
+    kept_entries: list[str] = []
+    deleted_count = 0
+
+    with FileLock(lock_file):
+        with open(failures_file) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                entry = FailureEntry.model_validate_json(line)
+                if entry.config_hash == config_hash and entry.error_type in error_type_set:
+                    deleted_count += 1
+                else:
+                    kept_entries.append(line.rstrip("\n"))
+
+        # Rewrite the file with remaining entries
+        with open(failures_file, "w") as f:
+            for entry_line in kept_entries:
+                f.write(entry_line + "\n")
+
+    return deleted_count
+
+
 def _save_config_yaml(
     config_file: Path,
     config_hash: str,
