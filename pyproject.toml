@@ -65,6 +65,9 @@ local-docker = "prompt_siren.sandbox_managers.docker:create_docker_sandbox_manag
 bedrock = "prompt_siren.providers.bedrock:BedrockProvider"
 llama = "prompt_siren.providers.llama:LlamaProvider"
 
+[project.entry-points."prompt_siren.docker_clients"]
+local = "prompt_siren.sandbox_managers.docker.local_client:create_local_docker_client"
+
 [project.optional-dependencies]
 agentdojo = ["agentdojo>=0.1.35"]
 swebench = ["swebench", "jinja2>=3.1.6"]

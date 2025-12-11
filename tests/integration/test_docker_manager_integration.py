@@ -8,21 +8,18 @@ Run with: pytest -vx -m docker_integration tests/integration/test_docker_manager
 Skip with: pytest -vx -m "not docker_integration"
 """
 
-from __future__ import annotations
-
 import asyncio
-import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from aiodocker import Docker
 from prompt_siren.sandbox_managers.abstract import AbstractSandboxManager
+from prompt_siren.sandbox_managers.docker.local_client import LocalDockerClient
 from prompt_siren.sandbox_managers.docker.manager import (
-    DockerSandboxConfig,
     DockerSandboxManager,
 )
+from prompt_siren.sandbox_managers.docker.plugins import AbstractDockerClient
 from prompt_siren.sandbox_managers.image_spec import (
     BuildImageSpec,
     BuildStage,
@@ -39,6 +36,8 @@ from prompt_siren.sandbox_managers.sandbox_task_setup import (
 
 pytestmark = pytest.mark.anyio
 
+# Path to test fixtures
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 # ==================== Shared Fixtures for Container Reuse ====================
 
@@ -46,12 +45,16 @@ pytestmark = pytest.mark.anyio
 @pytest.fixture(scope="module")
 async def basic_sandbox_manager(
     test_image: str,
+    docker_client_type: str,
+    create_manager_config,
 ) -> AsyncIterator[tuple[AbstractSandboxManager, TaskSetup]]:
     """Create a sandbox manager with batch context for basic tests.
 
     Module-scoped to reuse across tests for performance.
     """
-    config = DockerSandboxConfig(network_enabled=False)
+    config = create_manager_config(
+        docker_client_type, network_enabled=False, test_images=test_image
+    )
     manager = DockerSandboxManager(config)
 
     container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
@@ -219,15 +222,21 @@ class TestBasicContainerOperations:
 class TestMultiContainerNetworking:
     """Tests for multi-container setups with networking."""
 
-    async def test_multi_container_dns_resolution_and_communication(self, test_image: str):
+    async def test_multi_container_dns_resolution_and_communication(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
         """Test that containers on the same network can resolve each other by hostname."""
-        config = DockerSandboxConfig(network_enabled=True)
+        config = create_manager_config(
+            docker_client_type, network_enabled=True, test_images=test_image
+        )
         manager = DockerSandboxManager(config)
 
         # Use custom test image with netcat pre-installed
-        fixtures_dir = os.path.join(os.path.dirname(__file__), "fixtures")
         network_image_spec = BuildImageSpec(
-            context_path=fixtures_dir,
+            context_path=str(FIXTURES_DIR),
             dockerfile_path="Dockerfile.network",
             tag="prompt-siren-network-test:latest",
         )
@@ -287,9 +296,17 @@ class TestMultiContainerNetworking:
                 assert result.stdout is not None
                 assert "test-message" in result.stdout
 
-    async def test_network_disabled_creates_internal_network(self, test_image: str):
+    async def test_network_disabled_creates_internal_network(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        docker_client: AbstractDockerClient | None,
+        create_manager_config,
+    ):
         """Test that network_enabled=False creates internal-only network for multi-container."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
         manager = DockerSandboxManager(config)
 
         container_spec = ContainerSpec(
@@ -312,13 +329,10 @@ class TestMultiContainerNetworking:
                 assert sandbox_state.network_id is not None
 
                 # Verify network is internal by inspecting it
-                docker = Docker()
-                try:
-                    network = await docker.networks.get(sandbox_state.network_id)
-                    network_info = await network.show()
-                    assert network_info["Internal"] is True
-                finally:
-                    await docker.close()
+                assert docker_client is not None
+                network = await docker_client.get_network(sandbox_state.network_id)
+                network_info = await network.show()
+                assert network_info["Internal"] is True
 
 
 # ==================== Container Cloning Tests ====================
@@ -328,9 +342,16 @@ class TestMultiContainerNetworking:
 class TestContainerCloning:
     """Tests for container cloning functionality."""
 
-    async def test_clone_single_container(self, test_image: str):
+    async def test_clone_single_container(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
         """Test cloning a single container creates snapshot."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
         manager = DockerSandboxManager(config)
 
         container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
@@ -380,9 +401,17 @@ class TestContainerCloning:
                 assert "source content" in result.stdout
                 assert "modified" not in result.stdout
 
-    async def test_clone_container_with_custom_command(self, test_image: str):
+    async def test_clone_container_with_custom_command(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        docker_client: AbstractDockerClient | None,
+        create_manager_config,
+    ):
         """Test cloning a container with custom command preserves and runs the command."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
         manager = DockerSandboxManager(config)
 
         # Create container with custom command that keeps running
@@ -403,60 +432,68 @@ class TestContainerCloning:
             network_config=None,
         )
 
-        docker = Docker()
-        try:
-            async with manager.setup_batch([task_setup]):
-                async with manager.setup_task(task_setup) as source_state:
-                    source_id = source_state.agent_container_id
+        async with manager.setup_batch([task_setup]):
+            async with manager.setup_task(task_setup) as source_state:
+                source_id = source_state.agent_container_id
 
-                    # Verify source container's command via Docker API
-                    source_container = await docker.containers.get(source_id)
-                    source_info = await source_container.show()
-                    source_cmd = source_info["Config"]["Cmd"]
-                    assert source_cmd == custom_command
+                # Verify source container's command via Docker API
+                assert docker_client is not None
+                source_container = await docker_client.get_container(source_id)
+                source_info = await source_container.show()
+                source_cmd = source_info["Config"]["Cmd"]
+                assert source_cmd == custom_command
 
-                    # Verify command is actually running in source container
-                    # Use /proc filesystem which is available in all Linux containers
-                    await asyncio.sleep(0.5)  # Give process time to start
-                    cmdline_result = await manager.exec(
-                        source_id,
-                        ["sh", "-c", "cat /proc/*/cmdline | tr '\\0' '\\n'"],
-                    )
-                    assert cmdline_result.exit_code == 0
-                    assert cmdline_result.stdout is not None
-                    assert "custom-process-marker" in cmdline_result.stdout
+                # Verify command is actually running in source container
+                # Use /proc filesystem which is available in all Linux containers
+                await asyncio.sleep(0.5)  # Give process time to start
+                cmdline_result = await manager.exec(
+                    source_id,
+                    ["sh", "-c", "cat /proc/*/cmdline | tr '\\0' '\\n'"],
+                )
+                assert cmdline_result.exit_code == 0
+                assert cmdline_result.stdout is not None
+                assert "custom-process-marker" in cmdline_result.stdout
 
-                    # Clone the container
-                    cloned_state = await manager.clone_sandbox_state(source_state)
-                    cloned_id = cloned_state.agent_container_id
+                # Clone the container
+                cloned_state = await manager.clone_sandbox_state(source_state)
+                cloned_id = cloned_state.agent_container_id
 
-                    # Verify clone has different container ID
-                    assert cloned_id != source_id
+                # Verify clone has different container ID
+                assert cloned_id != source_id
 
-                    # Verify cloned container's command via Docker API
-                    cloned_container = await docker.containers.get(cloned_id)
-                    cloned_info = await cloned_container.show()
-                    cloned_cmd = cloned_info["Config"]["Cmd"]
-                    assert cloned_cmd == custom_command
+                # Verify cloned container's command via Docker API
+                assert docker_client is not None
+                cloned_container = await docker_client.get_container(cloned_id)
+                cloned_info = await cloned_container.show()
+                cloned_cmd = cloned_info["Config"]["Cmd"]
+                assert cloned_cmd == custom_command
 
-                    # Verify both containers are running
-                    assert source_info["State"]["Running"] is True
-                    assert cloned_info["State"]["Running"] is True
+                # Re-fetch source_info to verify both containers are running
+                source_container = await docker_client.get_container(source_id)
+                source_info_check = await source_container.show()
+                assert source_info_check["State"]["Running"] is True
+                assert cloned_info["State"]["Running"] is True
 
-                    # Verify command is actually running in cloned container
-                    cloned_cmdline_result = await manager.exec(
-                        cloned_id,
-                        ["sh", "-c", "cat /proc/*/cmdline | tr '\\0' '\\n'"],
-                    )
-                    assert cloned_cmdline_result.exit_code == 0
-                    assert cloned_cmdline_result.stdout is not None
-                    assert "custom-process-marker" in cloned_cmdline_result.stdout
-        finally:
-            await docker.close()
+                # Verify command is actually running in cloned container
+                cloned_cmdline_result = await manager.exec(
+                    cloned_id,
+                    ["sh", "-c", "cat /proc/*/cmdline | tr '\\0' '\\n'"],
+                )
+                assert cloned_cmdline_result.exit_code == 0
+                assert cloned_cmdline_result.stdout is not None
+                assert "custom-process-marker" in cloned_cmdline_result.stdout
 
-    async def test_clone_multi_container_with_network(self, test_image: str):
+    async def test_clone_multi_container_with_network(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        docker_client: AbstractDockerClient | None,
+        create_manager_config,
+    ):
         """Test cloning multi-container setup clones network too."""
-        config = DockerSandboxConfig(network_enabled=True)
+        config = create_manager_config(
+            docker_client_type, network_enabled=True, test_images=test_image
+        )
         manager = DockerSandboxManager(config)
 
         container_spec = ContainerSpec(
@@ -491,18 +528,23 @@ class TestContainerCloning:
 
                 # Verify cloned containers can communicate on new network
                 # (Use Docker API to verify network attachment)
-                docker = Docker()
-                try:
-                    clone_agent = await docker.containers.get(cloned_state.agent_container_id)
-                    clone_info = await clone_agent.show()
-                    networks = clone_info["NetworkSettings"]["Networks"]
-                    assert len(networks) > 0
-                finally:
-                    await docker.close()
+                assert docker_client is not None
+                clone_agent = await docker_client.get_container(cloned_state.agent_container_id)
+                clone_info = await clone_agent.show()
+                networks = clone_info["NetworkSettings"]["Networks"]
+                assert len(networks) > 0
 
-    async def test_clone_cleanup_removes_temp_images(self, test_image: str):
+    async def test_clone_cleanup_removes_temp_images(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        docker_client: AbstractDockerClient | None,
+        create_manager_config,
+    ):
         """Test that cloning cleanup removes temporary images."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
         manager = DockerSandboxManager(config)
 
         container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
@@ -514,34 +556,36 @@ class TestContainerCloning:
             network_config=None,
         )
 
-        docker = Docker()
-        try:
-            async with manager.setup_batch([task_setup]):
-                async with manager.setup_task(task_setup) as source_state:
-                    # Clone multiple times
-                    cloned_states = []
-                    for _ in range(3):
-                        cloned_state = await manager.clone_sandbox_state(source_state)
-                        cloned_states.append(cloned_state)
+        async with manager.setup_batch([task_setup]):
+            async with manager.setup_task(task_setup) as source_state:
+                # Clone multiple times
+                cloned_states = []
+                for _ in range(3):
+                    cloned_state = await manager.clone_sandbox_state(source_state)
+                    cloned_states.append(cloned_state)
 
-                    # Verify temp images exist
-                    images = await docker.images.list()
-                    image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
-                    temp_images_count = sum(1 for tag in image_tags if tag and "temp-clone-" in tag)
-                    assert temp_images_count >= 3
-
-                # After task cleanup, temp images should be gone
-                images = await docker.images.list()
+                # Verify temp images exist
+                assert docker_client is not None
+                local_client = docker_client
+                assert isinstance(local_client, LocalDockerClient)
+                images = await local_client._docker.images.list()
                 image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+                temp_images_count = sum(1 for tag in image_tags if tag and "temp-clone-" in tag)
+                assert temp_images_count >= 3
 
-                # Filter for temp images from this specific execution
-                # (may have temp images from other tests)
-                for cloned_state in cloned_states:
-                    # Verify this specific clone's temp image is gone
-                    temp_image_pattern = f"temp-clone-{cloned_state.execution_id}"
-                    assert not any(temp_image_pattern in (tag or "") for tag in image_tags)
-        finally:
-            await docker.close()
+            # After task cleanup, temp images should be gone
+            assert docker_client is not None
+            local_client = docker_client
+            assert isinstance(local_client, LocalDockerClient)
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+
+            # Filter for temp images from this specific execution
+            # (may have temp images from other tests)
+            for cloned_state in cloned_states:
+                # Verify this specific clone's temp image is gone
+                temp_image_pattern = f"temp-clone-{cloned_state.execution_id}"
+                assert not any(temp_image_pattern in (tag or "") for tag in image_tags)
 
 
 # ==================== Concurrent Execution Tests ====================
@@ -551,9 +595,16 @@ class TestContainerCloning:
 class TestConcurrentExecution:
     """Tests for concurrent task execution."""
 
-    async def test_parallel_tasks_with_same_task_id(self, test_image: str):
+    async def test_parallel_tasks_with_same_task_id(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
         """Test that parallel tasks with same task_id are independent."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
         manager = DockerSandboxManager(config)
 
         container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
@@ -593,9 +644,16 @@ class TestConcurrentExecution:
             assert len(container_ids) == 5
             assert len(set(container_ids)) == 5
 
-    async def test_concurrent_cloning(self, test_image: str):
+    async def test_concurrent_cloning(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
         """Test that concurrent cloning operations are safe."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
         manager = DockerSandboxManager(config)
 
         container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
@@ -636,13 +694,21 @@ class TestConcurrentExecution:
 class TestImageBuilding:
     """Tests for building Docker images from Dockerfiles."""
 
-    async def test_build_image_from_dockerfile(self, test_image: str):
+    async def test_build_image_from_dockerfile(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        docker_client: AbstractDockerClient | None,
+        create_manager_config,
+    ):
         """Test building an image from a Dockerfile using BuildImageSpec."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
         manager = DockerSandboxManager(config)
 
         build_spec = BuildImageSpec(
-            context_path="tests/integration/fixtures",
+            context_path=str(FIXTURES_DIR),
             tag="prompt-siren-test-build:latest",
         )
 
@@ -655,44 +721,58 @@ class TestImageBuilding:
             network_config=None,
         )
 
-        docker = Docker()
+        # Cleanup any existing test image
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
         try:
-            # Cleanup any existing test image
-            try:
-                await docker.images.delete("prompt-siren-test-build:latest", force=True)
-            except Exception:
-                pass
+            await local_client._docker.images.delete("prompt-siren-test-build:latest", force=True)
+        except Exception:
+            pass
 
-            async with manager.setup_batch([task_setup]):
-                # Verify image was built
-                images = await docker.images.list()
-                image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
-                assert any("prompt-siren-test-build:latest" in (tag or "") for tag in image_tags)
+        async with manager.setup_batch([task_setup]):
+            # Verify image was built
+            assert docker_client is not None
+            local_client = docker_client
+            assert isinstance(local_client, LocalDockerClient)
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+            assert any("prompt-siren-test-build:latest" in (tag or "") for tag in image_tags)
 
-                # Create container and verify build marker
-                async with manager.setup_task(task_setup) as sandbox_state:
-                    result = await manager.exec(
-                        sandbox_state.agent_container_id,
-                        ["cat", "/test-marker.txt"],
-                    )
-                    assert result.exit_code == 0
-                    assert result.stdout is not None
-                    assert "Test build successful" in result.stdout
-        finally:
-            # Cleanup
-            try:
-                await docker.images.delete("prompt-siren-test-build:latest", force=True)
-            except Exception:
-                pass
-            await docker.close()
+            # Create container and verify build marker
+            async with manager.setup_task(task_setup) as sandbox_state:
+                result = await manager.exec(
+                    sandbox_state.agent_container_id,
+                    ["cat", "/test-marker.txt"],
+                )
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                assert "Test build successful" in result.stdout
 
-    async def test_build_with_build_args(self):
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        try:
+            await local_client._docker.images.delete("prompt-siren-test-build:latest", force=True)
+        except Exception:
+            pass
+
+    async def test_build_with_build_args(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        docker_client: AbstractDockerClient | None,
+        create_manager_config,
+    ):
         """Test building an image with build_args and custom dockerfile_path."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
         manager = DockerSandboxManager(config)
 
         build_spec = BuildImageSpec(
-            context_path="tests/integration/fixtures",
+            context_path=str(FIXTURES_DIR),
             dockerfile_path="Dockerfile.dev",
             tag="prompt-siren-test-build-args:latest",
             build_args={"TEST_ARG": "custom_value"},
@@ -707,40 +787,55 @@ class TestImageBuilding:
             network_config=None,
         )
 
-        docker = Docker()
+        # Cleanup any existing test image
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
         try:
-            # Cleanup any existing test image
-            try:
-                await docker.images.delete("prompt-siren-test-build-args:latest", force=True)
-            except Exception:
-                pass
+            await local_client._docker.images.delete(
+                "prompt-siren-test-build-args:latest", force=True
+            )
+        except Exception:
+            pass
 
-            async with manager.setup_batch([task_setup]):
-                async with manager.setup_task(task_setup) as sandbox_state:
-                    # Verify build arg was used
-                    result = await manager.exec(
-                        sandbox_state.agent_container_id,
-                        ["cat", "/build-arg-test.txt"],
-                    )
-                    assert result.exit_code == 0
-                    assert result.stdout is not None
-                    assert "custom_value" in result.stdout
-        finally:
-            # Cleanup
-            try:
-                await docker.images.delete("prompt-siren-test-build-args:latest", force=True)
-            except Exception:
-                pass
-            await docker.close()
+        async with manager.setup_batch([task_setup]):
+            async with manager.setup_task(task_setup) as sandbox_state:
+                # Verify build arg was used
+                result = await manager.exec(
+                    sandbox_state.agent_container_id,
+                    ["cat", "/build-arg-test.txt"],
+                )
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                assert "custom_value" in result.stdout
 
-    async def test_mixed_pull_and_build_specs(self, test_image: str):
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        try:
+            await local_client._docker.images.delete(
+                "prompt-siren-test-build-args:latest", force=True
+            )
+        except Exception:
+            pass
+
+    async def test_mixed_pull_and_build_specs(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        docker_client: AbstractDockerClient | None,
+        create_manager_config,
+    ):
         """Test using both PullImageSpec and BuildImageSpec in the same batch."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
         manager = DockerSandboxManager(config)
 
         pull_spec = PullImageSpec(tag=test_image)
         build_spec = BuildImageSpec(
-            context_path="tests/integration/fixtures",
+            context_path=str(FIXTURES_DIR),
             tag="prompt-siren-test-mixed:latest",
         )
 
@@ -762,38 +857,41 @@ class TestImageBuilding:
             ),
         ]
 
-        docker = Docker()
+        # Cleanup any existing test image
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
         try:
-            # Cleanup any existing test image
-            try:
-                await docker.images.delete("prompt-siren-test-mixed:latest", force=True)
-            except Exception:
-                pass
+            await local_client._docker.images.delete("prompt-siren-test-mixed:latest", force=True)
+        except Exception:
+            pass
 
-            async with manager.setup_batch(task_setups):
-                # Create containers from both images
-                async with manager.setup_task(task_setups[0]) as pulled_state:
-                    result1 = await manager.exec(
-                        pulled_state.agent_container_id,
-                        ["echo", "pulled"],
-                    )
-                    assert result1.exit_code == 0
+        async with manager.setup_batch(task_setups):
+            # Create containers from both images
+            async with manager.setup_task(task_setups[0]) as pulled_state:
+                result1 = await manager.exec(
+                    pulled_state.agent_container_id,
+                    ["echo", "pulled"],
+                )
+                assert result1.exit_code == 0
 
-                async with manager.setup_task(task_setups[1]) as built_state:
-                    result2 = await manager.exec(
-                        built_state.agent_container_id,
-                        ["cat", "/test-marker.txt"],
-                    )
-                    assert result2.exit_code == 0
-                    assert result2.stdout is not None
-                    assert "Test build successful" in result2.stdout
-        finally:
-            # Cleanup
-            try:
-                await docker.images.delete("prompt-siren-test-mixed:latest", force=True)
-            except Exception:
-                pass
-            await docker.close()
+            async with manager.setup_task(task_setups[1]) as built_state:
+                result2 = await manager.exec(
+                    built_state.agent_container_id,
+                    ["cat", "/test-marker.txt"],
+                )
+                assert result2.exit_code == 0
+                assert result2.stdout is not None
+                assert "Test build successful" in result2.stdout
+
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        try:
+            await local_client._docker.images.delete("prompt-siren-test-mixed:latest", force=True)
+        except Exception:
+            pass
 
 
 # ==================== Multi-Stage Build Tests ====================
@@ -803,9 +901,17 @@ class TestImageBuilding:
 class TestMultiStageBuild:
     """Tests for multi-stage Docker builds with caching."""
 
-    async def test_multi_stage_build_creates_all_stages(self):
+    async def test_multi_stage_build_creates_all_stages(
+        self,
+        multistage_test_images: list[str],
+        docker_client_type: str,
+        docker_client: AbstractDockerClient | None,
+        create_manager_config,
+    ):
         """Test that multi-stage build creates all three stages correctly."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=multistage_test_images
+        )
         manager = DockerSandboxManager(config)
 
         base_tag = "test-multistage-base:latest"
@@ -815,18 +921,18 @@ class TestMultiStageBuild:
         stages = [
             BuildStage(
                 tag=base_tag,
-                context_path="tests/integration/fixtures/multistage/base",
+                context_path=str(FIXTURES_DIR / "multistage" / "base"),
                 cache_key=base_tag,
             ),
             BuildStage(
                 tag=env_tag,
-                context_path="tests/integration/fixtures/multistage/env",
+                context_path=str(FIXTURES_DIR / "multistage" / "env"),
                 parent_tag=base_tag,
                 cache_key=env_tag,
             ),
             BuildStage(
                 tag=instance_tag,
-                context_path="tests/integration/fixtures/multistage/instance",
+                context_path=str(FIXTURES_DIR / "multistage" / "instance"),
                 parent_tag=env_tag,
             ),
         ]
@@ -842,57 +948,71 @@ class TestMultiStageBuild:
             network_config=None,
         )
 
-        docker = Docker()
-        try:
-            # Cleanup any existing images
-            for tag in [base_tag, env_tag, instance_tag]:
-                try:
-                    await docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
+        # Cleanup any existing images
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
 
-            async with manager.setup_batch([task_setup]):
-                # Verify all three images were created
-                images = await docker.images.list()
-                image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+        async with manager.setup_batch([task_setup]):
+            # Verify all three images were created
+            assert docker_client is not None
+            local_client = docker_client
+            assert isinstance(local_client, LocalDockerClient)
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
 
-                assert any(base_tag in (tag or "") for tag in image_tags)
-                assert any(env_tag in (tag or "") for tag in image_tags)
-                assert any(instance_tag in (tag or "") for tag in image_tags)
+            assert any(base_tag in (tag or "") for tag in image_tags)
+            assert any(env_tag in (tag or "") for tag in image_tags)
+            assert any(instance_tag in (tag or "") for tag in image_tags)
 
-                # Create container and verify all stages executed
-                async with manager.setup_task(task_setup) as sandbox_state:
-                    container_id = sandbox_state.agent_container_id
+            # Create container and verify all stages executed
+            async with manager.setup_task(task_setup) as sandbox_state:
+                container_id = sandbox_state.agent_container_id
 
-                    # Verify base stage
-                    result = await manager.exec(container_id, ["cat", "/base-marker.txt"])
-                    assert result.exit_code == 0
-                    assert result.stdout is not None
-                    assert "Base stage built" in result.stdout
+                # Verify base stage
+                result = await manager.exec(container_id, ["cat", "/base-marker.txt"])
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                assert "Base stage built" in result.stdout
 
-                    # Verify env stage
-                    result = await manager.exec(container_id, ["cat", "/env-marker.txt"])
-                    assert result.exit_code == 0
-                    assert result.stdout is not None
-                    assert "Environment ready" in result.stdout
+                # Verify env stage
+                result = await manager.exec(container_id, ["cat", "/env-marker.txt"])
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                assert "Environment ready" in result.stdout
 
-                    # Verify instance stage
-                    result = await manager.exec(container_id, ["cat", "/instance-marker.txt"])
-                    assert result.exit_code == 0
-                    assert result.stdout is not None
-                    assert "Instance ready" in result.stdout
-        finally:
-            # Cleanup
-            for tag in [base_tag, env_tag, instance_tag]:
-                try:
-                    await docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
-            await docker.close()
+                # Verify instance stage
+                result = await manager.exec(container_id, ["cat", "/instance-marker.txt"])
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                assert "Instance ready" in result.stdout
 
-    async def test_multi_stage_build_caching(self):
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
+
+    async def test_multi_stage_build_caching(
+        self,
+        multistage_test_images: list[str],
+        docker_client_type: str,
+        docker_client: AbstractDockerClient | None,
+        create_manager_config,
+    ):
         """Test that multi-stage build properly caches intermediate stages."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=multistage_test_images
+        )
         manager = DockerSandboxManager(config)
 
         base_tag = "test-multistage-cache-base:latest"
@@ -902,18 +1022,18 @@ class TestMultiStageBuild:
         stages = [
             BuildStage(
                 tag=base_tag,
-                context_path="tests/integration/fixtures/multistage/base",
+                context_path=str(FIXTURES_DIR / "multistage" / "base"),
                 cache_key=base_tag,
             ),
             BuildStage(
                 tag=env_tag,
-                context_path="tests/integration/fixtures/multistage/env",
+                context_path=str(FIXTURES_DIR / "multistage" / "env"),
                 parent_tag=base_tag,
                 cache_key=env_tag,
             ),
             BuildStage(
                 tag=instance_tag,
-                context_path="tests/integration/fixtures/multistage/instance",
+                context_path=str(FIXTURES_DIR / "multistage" / "instance"),
                 parent_tag=env_tag,
             ),
         ]
@@ -923,72 +1043,93 @@ class TestMultiStageBuild:
         container_spec = ContainerSpec(image_spec=multi_stage_spec)
         agent_container = ContainerSetup(name="agent", spec=container_spec)
 
-        docker = Docker()
-        try:
-            # Cleanup any existing images
-            for tag in [base_tag, env_tag, instance_tag]:
-                try:
-                    await docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
+        # Cleanup any existing images
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
 
-            # First build - all stages should be built
-            task_setup1 = TaskSetup(
-                task_id="cache-test-1",
-                agent_container=agent_container,
-                service_containers={},
-                network_config=None,
-            )
+        # First build - all stages should be built
+        task_setup1 = TaskSetup(
+            task_id="cache-test-1",
+            agent_container=agent_container,
+            service_containers={},
+            network_config=None,
+        )
 
-            async with manager.setup_batch([task_setup1]):
-                images = await docker.images.list()
-                image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+        async with manager.setup_batch([task_setup1]):
+            # Verify all images created
+            assert docker_client is not None
+            local_client = docker_client
+            assert isinstance(local_client, LocalDockerClient)
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
 
-                assert any(base_tag in (tag or "") for tag in image_tags)
-                assert any(env_tag in (tag or "") for tag in image_tags)
-                assert any(instance_tag in (tag or "") for tag in image_tags)
+            assert any(base_tag in (tag or "") for tag in image_tags)
+            assert any(env_tag in (tag or "") for tag in image_tags)
+            assert any(instance_tag in (tag or "") for tag in image_tags)
 
-            # Delete only instance image
-            await docker.images.delete(instance_tag, force=True)
+        # Delete only instance image
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        await local_client._docker.images.delete(instance_tag, force=True)
 
-            # Second build - base and env should be cached
-            task_setup2 = TaskSetup(
-                task_id="cache-test-2",
-                agent_container=agent_container,
-                service_containers={},
-                network_config=None,
-            )
+        # Second build - base and env should be cached
+        task_setup2 = TaskSetup(
+            task_id="cache-test-2",
+            agent_container=agent_container,
+            service_containers={},
+            network_config=None,
+        )
 
-            async with manager.setup_batch([task_setup2]):
-                # Verify all images exist again
-                images = await docker.images.list()
-                image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+        async with manager.setup_batch([task_setup2]):
+            # Verify all images exist again
+            assert docker_client is not None
+            local_client = docker_client
+            assert isinstance(local_client, LocalDockerClient)
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
 
-                assert any(base_tag in (tag or "") for tag in image_tags)
-                assert any(env_tag in (tag or "") for tag in image_tags)
-                assert any(instance_tag in (tag or "") for tag in image_tags)
+            assert any(base_tag in (tag or "") for tag in image_tags)
+            assert any(env_tag in (tag or "") for tag in image_tags)
+            assert any(instance_tag in (tag or "") for tag in image_tags)
 
-                # Verify functionality
-                async with manager.setup_task(task_setup2) as sandbox_state:
-                    result = await manager.exec(
-                        sandbox_state.agent_container_id,
-                        ["cat", "/instance-marker.txt"],
-                    )
-                    assert result.exit_code == 0
-                    assert result.stdout is not None
-                    assert "Instance ready" in result.stdout
-        finally:
-            # Cleanup
-            for tag in [base_tag, env_tag, instance_tag]:
-                try:
-                    await docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
-            await docker.close()
+            # Verify functionality
+            async with manager.setup_task(task_setup2) as sandbox_state:
+                result = await manager.exec(
+                    sandbox_state.agent_container_id,
+                    ["cat", "/instance-marker.txt"],
+                )
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                assert "Instance ready" in result.stdout
 
-    async def test_shared_base_and_env_stages(self):
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
+
+    async def test_shared_base_and_env_stages(
+        self,
+        multistage_test_images: list[str],
+        docker_client_type: str,
+        docker_client: AbstractDockerClient | None,
+        create_manager_config,
+    ):
         """Test multiple instances sharing base and env stages."""
-        config = DockerSandboxConfig(network_enabled=False)
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=multistage_test_images
+        )
         manager = DockerSandboxManager(config)
 
         base_tag = "test-shared-base:latest"
@@ -1001,18 +1142,18 @@ class TestMultiStageBuild:
             stages=[
                 BuildStage(
                     tag=base_tag,
-                    context_path="tests/integration/fixtures/multistage/base",
+                    context_path=str(FIXTURES_DIR / "multistage" / "base"),
                     cache_key=base_tag,
                 ),
                 BuildStage(
                     tag=env_tag,
-                    context_path="tests/integration/fixtures/multistage/env",
+                    context_path=str(FIXTURES_DIR / "multistage" / "env"),
                     parent_tag=base_tag,
                     cache_key=env_tag,
                 ),
                 BuildStage(
                     tag=instance1_tag,
-                    context_path="tests/integration/fixtures/multistage/instance",
+                    context_path=str(FIXTURES_DIR / "multistage" / "instance"),
                     parent_tag=env_tag,
                 ),
             ],
@@ -1023,18 +1164,18 @@ class TestMultiStageBuild:
             stages=[
                 BuildStage(
                     tag=base_tag,
-                    context_path="tests/integration/fixtures/multistage/base",
+                    context_path=str(FIXTURES_DIR / "multistage" / "base"),
                     cache_key=base_tag,
                 ),
                 BuildStage(
                     tag=env_tag,
-                    context_path="tests/integration/fixtures/multistage/env",
+                    context_path=str(FIXTURES_DIR / "multistage" / "env"),
                     parent_tag=base_tag,
                     cache_key=env_tag,
                 ),
                 BuildStage(
                     tag=instance2_tag,
-                    context_path="tests/integration/fixtures/multistage/instance",
+                    context_path=str(FIXTURES_DIR / "multistage" / "instance"),
                     parent_tag=env_tag,
                 ),
             ],
@@ -1062,47 +1203,356 @@ class TestMultiStageBuild:
             ),
         ]
 
-        docker = Docker()
-        try:
-            # Cleanup
-            for tag in [base_tag, env_tag, instance1_tag, instance2_tag]:
-                try:
-                    await docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance1_tag, instance2_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
 
-            async with manager.setup_batch(task_setups):
-                # Verify all images created
-                images = await docker.images.list()
-                image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
+        async with manager.setup_batch(task_setups):
+            # Verify all images created
+            assert docker_client is not None
+            local_client = docker_client
+            assert isinstance(local_client, LocalDockerClient)
+            images = await local_client._docker.images.list()
+            image_tags = [tag for img in images for tag in img.get("RepoTags", [])]
 
-                # Base and env should exist (built once)
-                assert any(base_tag in (tag or "") for tag in image_tags)
-                assert any(env_tag in (tag or "") for tag in image_tags)
+            # Base and env should exist (built once)
+            assert any(base_tag in (tag or "") for tag in image_tags)
+            assert any(env_tag in (tag or "") for tag in image_tags)
 
-                # Both instances should exist
-                assert any(instance1_tag in (tag or "") for tag in image_tags)
-                assert any(instance2_tag in (tag or "") for tag in image_tags)
+            # Both instances should exist
+            assert any(instance1_tag in (tag or "") for tag in image_tags)
+            assert any(instance2_tag in (tag or "") for tag in image_tags)
 
-                # Verify both work
-                async with manager.setup_task(task_setups[0]) as state1:
-                    result = await manager.exec(
-                        state1.agent_container_id,
-                        ["cat", "/base-marker.txt"],
-                    )
-                    assert result.exit_code == 0
+            # Verify both work
+            async with manager.setup_task(task_setups[0]) as state1:
+                result = await manager.exec(
+                    state1.agent_container_id,
+                    ["cat", "/base-marker.txt"],
+                )
+                assert result.exit_code == 0
 
-                async with manager.setup_task(task_setups[1]) as state2:
-                    result = await manager.exec(
-                        state2.agent_container_id,
-                        ["cat", "/env-marker.txt"],
-                    )
-                    assert result.exit_code == 0
-        finally:
-            # Cleanup
-            for tag in [base_tag, env_tag, instance1_tag, instance2_tag]:
-                try:
-                    await docker.images.delete(tag, force=True)
-                except Exception:  # noqa: PERF203
-                    pass
-            await docker.close()
+            async with manager.setup_task(task_setups[1]) as state2:
+                result = await manager.exec(
+                    state2.agent_container_id,
+                    ["cat", "/env-marker.txt"],
+                )
+                assert result.exit_code == 0
+
+        # Cleanup
+        assert docker_client is not None
+        local_client = docker_client
+        assert isinstance(local_client, LocalDockerClient)
+        for tag in [base_tag, env_tag, instance1_tag, instance2_tag]:
+            try:
+                await local_client._docker.images.delete(tag, force=True)
+            except Exception:  # noqa: PERF203
+                pass
+
+
+# ==================== Stdin Handling Tests ====================
+
+
+@pytest.mark.docker_integration
+class TestStdinHandling:
+    """Integration tests for stdin handling in Docker exec operations."""
+
+    async def test_exec_with_stdin_string(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
+        """Test executing a command with stdin as string."""
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
+        manager = DockerSandboxManager(config)
+
+        container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
+        agent_container = ContainerSetup(name="agent", spec=container_spec)
+        task_setup = TaskSetup(
+            task_id="stdin-string-test",
+            agent_container=agent_container,
+            service_containers={},
+            network_config=None,
+        )
+
+        async with manager.setup_batch([task_setup]):
+            async with manager.setup_task(task_setup) as state:
+                # Execute cat command with stdin - should echo back the input
+                result = await manager.exec(
+                    state.agent_container_id,
+                    ["cat"],
+                    stdin="Hello, World!\nThis is a test.",
+                )
+
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                assert "Hello, World!" in result.stdout
+                assert "This is a test." in result.stdout
+
+    async def test_exec_with_stdin_bytes(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
+        """Test executing a command with stdin as bytes."""
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
+        manager = DockerSandboxManager(config)
+
+        container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
+        agent_container = ContainerSetup(name="agent", spec=container_spec)
+        task_setup = TaskSetup(
+            task_id="stdin-bytes-test",
+            agent_container=agent_container,
+            service_containers={},
+            network_config=None,
+        )
+
+        async with manager.setup_batch([task_setup]):
+            async with manager.setup_task(task_setup) as state:
+                # Execute cat command with bytes stdin
+                test_data = b"Binary test data\nWith multiple lines"
+                result = await manager.exec(
+                    state.agent_container_id,
+                    ["cat"],
+                    stdin=test_data,
+                )
+
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                assert "Binary test data" in result.stdout
+                assert "With multiple lines" in result.stdout
+
+    async def test_exec_with_stdin_special_characters(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
+        """Test executing a command with stdin containing special characters."""
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
+        manager = DockerSandboxManager(config)
+
+        container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
+        agent_container = ContainerSetup(name="agent", spec=container_spec)
+        task_setup = TaskSetup(
+            task_id="stdin-special-chars-test",
+            agent_container=agent_container,
+            service_containers={},
+            network_config=None,
+        )
+
+        async with manager.setup_batch([task_setup]):
+            async with manager.setup_task(task_setup) as state:
+                # Test with special characters including single quotes, double quotes, backticks
+                special_input = (
+                    "Line with 'single quotes'\nLine with \"double quotes\"\nLine with `backticks`"
+                )
+                result = await manager.exec(
+                    state.agent_container_id,
+                    ["cat"],
+                    stdin=special_input,
+                )
+
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                # Verify all special characters are preserved
+                assert "'single quotes'" in result.stdout or "single quotes" in result.stdout
+                assert '"double quotes"' in result.stdout or "double quotes" in result.stdout
+                assert "`backticks`" in result.stdout or "backticks" in result.stdout
+
+    async def test_exec_with_stdin_multiline(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
+        """Test executing a command with multiline stdin."""
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
+        manager = DockerSandboxManager(config)
+
+        container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
+        agent_container = ContainerSetup(name="agent", spec=container_spec)
+        task_setup = TaskSetup(
+            task_id="stdin-multiline-test",
+            agent_container=agent_container,
+            service_containers={},
+            network_config=None,
+        )
+
+        async with manager.setup_batch([task_setup]):
+            async with manager.setup_task(task_setup) as state:
+                # Test with multiline input
+                multiline_input = "line 1\nline 2\nline 3\nline 4\nline 5"
+                result = await manager.exec(
+                    state.agent_container_id,
+                    ["cat"],
+                    stdin=multiline_input,
+                )
+
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                assert "line 1" in result.stdout
+                assert "line 2" in result.stdout
+                assert "line 3" in result.stdout
+                assert "line 4" in result.stdout
+                assert "line 5" in result.stdout
+
+    async def test_exec_with_stdin_piped_to_command(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
+        """Test stdin being properly piped to a command that processes it."""
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
+        manager = DockerSandboxManager(config)
+
+        container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
+        agent_container = ContainerSetup(name="agent", spec=container_spec)
+        task_setup = TaskSetup(
+            task_id="stdin-piped-test",
+            agent_container=agent_container,
+            service_containers={},
+            network_config=None,
+        )
+
+        async with manager.setup_batch([task_setup]):
+            async with manager.setup_task(task_setup) as state:
+                # Use a command that processes stdin (word count)
+                # Note: wc -l counts newline characters, so input must end with \n
+                test_input = "line one\nline two\nline three\n"
+                result = await manager.exec(
+                    state.agent_container_id,
+                    ["wc", "-l"],
+                    stdin=test_input,
+                )
+
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                # Should count 3 lines (3 newline characters)
+                assert "3" in result.stdout
+
+    async def test_exec_with_stdin_empty_string(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
+        """Test executing a command with empty stdin."""
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
+        manager = DockerSandboxManager(config)
+
+        container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
+        agent_container = ContainerSetup(name="agent", spec=container_spec)
+        task_setup = TaskSetup(
+            task_id="stdin-empty-test",
+            agent_container=agent_container,
+            service_containers={},
+            network_config=None,
+        )
+
+        async with manager.setup_batch([task_setup]):
+            async with manager.setup_task(task_setup) as state:
+                # Execute cat command with empty stdin
+                result = await manager.exec(
+                    state.agent_container_id,
+                    ["cat"],
+                    stdin="",
+                )
+
+                assert result.exit_code == 0
+                # Empty stdin should result in empty output
+                assert result.stdout is None
+
+    async def test_exec_with_stdin_large_input(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
+        """Test executing a command with large stdin input."""
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
+        manager = DockerSandboxManager(config)
+
+        container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
+        agent_container = ContainerSetup(name="agent", spec=container_spec)
+        task_setup = TaskSetup(
+            task_id="stdin-large-test",
+            agent_container=agent_container,
+            service_containers={},
+            network_config=None,
+        )
+
+        async with manager.setup_batch([task_setup]):
+            async with manager.setup_task(task_setup) as state:
+                # Create a large input (10KB)
+                large_input = "A" * 10000 + "\n"
+                result = await manager.exec(
+                    state.agent_container_id,
+                    ["wc", "-c"],
+                    stdin=large_input,
+                )
+
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                # Should count ~10001 bytes (10000 A's + 1 newline)
+                assert "10001" in result.stdout
+
+    async def test_exec_with_stdin_and_environment(
+        self,
+        test_image: str,
+        docker_client_type: str,
+        create_manager_config,
+    ):
+        """Test executing a command with both stdin and environment variables."""
+        config = create_manager_config(
+            docker_client_type, network_enabled=False, test_images=test_image
+        )
+        manager = DockerSandboxManager(config)
+
+        container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
+        agent_container = ContainerSetup(name="agent", spec=container_spec)
+        task_setup = TaskSetup(
+            task_id="stdin-env-test",
+            agent_container=agent_container,
+            service_containers={},
+            network_config=None,
+        )
+
+        async with manager.setup_batch([task_setup]):
+            async with manager.setup_task(task_setup) as state:
+                # Execute a script that uses both stdin and env var
+                stdin_data = "input from stdin"
+                result = await manager.exec(
+                    state.agent_container_id,
+                    ["sh", "-c", "echo ENV: $TEST_VAR && cat"],
+                    stdin=stdin_data,
+                    env={"TEST_VAR": "test_value"},
+                )
+
+                assert result.exit_code == 0
+                assert result.stdout is not None
+                # Should see both the env var and stdin content
+                assert "ENV: test_value" in result.stdout
+                assert "input from stdin" in result.stdout
