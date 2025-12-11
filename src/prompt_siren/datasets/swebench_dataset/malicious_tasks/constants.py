@@ -42,6 +42,7 @@ openssl req -x509 -newkey rsa:2048 -nodes \\
    the Dockerfile commands that install and trust the certificate
 """
 
+import base64
 from importlib.resources import files
 
 from ....sandbox_managers.image_spec import BuildImageSpec
@@ -137,10 +138,13 @@ def get_certificate_install_dockerfile(hostname: str) -> str:
 
     Raises:
         KeyError: If hostname is not in _CERTIFICATES
+
+    Note:
+        Uses base64 encoding to avoid issues with heredocs in Dockerfiles.
+        Dockerfile RUN commands don't properly handle multi-line heredocs
+        because each line is parsed independently.
     """
     certificate = _CERTIFICATES[hostname]
+    cert_b64 = base64.b64encode(certificate.encode()).decode()
     return f"""# Install certificate for {hostname}
-RUN cat > /usr/local/share/ca-certificates/{hostname}.crt <<'EOF'
-{certificate}
-EOF
-RUN update-ca-certificates"""
+RUN echo '{cert_b64}' | base64 -d > /usr/local/share/ca-certificates/{hostname}.crt && update-ca-certificates"""
