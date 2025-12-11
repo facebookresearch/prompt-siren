@@ -4,7 +4,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
+from typing import Protocol, TypeVar
 
 import yaml
 from omegaconf import DictConfig, OmegaConf
@@ -14,6 +14,16 @@ from .run_persistence import CONFIG_FILENAME, get_completed_task_ids
 from .tasks import Task, TaskCouple
 
 EnvStateT = TypeVar("EnvStateT")
+
+
+class HasId(Protocol):
+    """Protocol for objects with an id attribute."""
+
+    @property
+    def id(self) -> str: ...
+
+
+_HasIdT = TypeVar("_HasIdT", bound=HasId)
 
 
 @dataclass(frozen=True)
@@ -43,7 +53,6 @@ def load_saved_job_config(job_path: Path) -> SavedJobConfig:
         raise FileNotFoundError(f"No {CONFIG_FILENAME} found in {job_path}")
 
     with open(config_file) as f:
-        # Skip comment lines at the top
         content = f.read()
 
     data = yaml.safe_load(content)
@@ -94,6 +103,25 @@ def merge_configs(
     return OmegaConf.create(merged)
 
 
+def _filter_incomplete(
+    items: Sequence[_HasIdT],
+    base_dir: Path,
+    config_hash: str,
+) -> list[_HasIdT]:
+    """Filter out items that have already completed.
+
+    Args:
+        items: Sequence of items with an `id` attribute to filter
+        base_dir: Base directory containing index.jsonl
+        config_hash: Configuration hash to filter by
+
+    Returns:
+        List of items that have not yet completed
+    """
+    completed_ids = get_completed_task_ids(base_dir, config_hash)
+    return [item for item in items if item.id not in completed_ids]
+
+
 def filter_incomplete_tasks(
     tasks: Sequence[Task[EnvStateT]],
     base_dir: Path,
@@ -109,8 +137,7 @@ def filter_incomplete_tasks(
     Returns:
         List of tasks that have not yet completed
     """
-    completed_ids = get_completed_task_ids(base_dir, config_hash)
-    return [t for t in tasks if t.id not in completed_ids]
+    return _filter_incomplete(tasks, base_dir, config_hash)
 
 
 def filter_incomplete_couples(
@@ -128,5 +155,4 @@ def filter_incomplete_couples(
     Returns:
         List of task couples that have not yet completed
     """
-    completed_ids = get_completed_task_ids(base_dir, config_hash)
-    return [c for c in couples if c.id not in completed_ids]
+    return _filter_incomplete(couples, base_dir, config_hash)

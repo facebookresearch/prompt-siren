@@ -82,53 +82,7 @@ def jobs():
 
 @jobs.group()
 def start():
-    """Start a new experiment job."""
-
-
-# Define the benign command implementation
-def _benign_impl(
-    config_dir: Path | None,
-    config_name: str,
-    multirun: bool,
-    cfg: str | None,
-    resolve: bool,
-    info: str | None,
-    overrides: tuple[str, ...],
-) -> None:
-    """Implementation for benign command."""
-    _run_hydra(
-        config_dir,
-        config_name,
-        list(overrides),
-        execution_mode="benign",
-        multirun=multirun,
-        print_config=cfg,
-        resolve=resolve,
-        info=info,
-    )
-
-
-# Define the attack command implementation
-def _attack_impl(
-    config_dir: Path | None,
-    config_name: str,
-    multirun: bool,
-    cfg: str | None,
-    resolve: bool,
-    info: str | None,
-    overrides: tuple[str, ...],
-) -> None:
-    """Implementation for attack command."""
-    _run_hydra(
-        config_dir,
-        config_name,
-        list(overrides),
-        execution_mode="attack",
-        multirun=multirun,
-        print_config=cfg,
-        resolve=resolve,
-        info=info,
-    )
+    """Start a new experiment job. Alias for `run`."""
 
 
 # Common options for start commands
@@ -171,48 +125,6 @@ def _apply_options(options: list) -> Callable[[_F], _F]:
         return func
 
     return decorator
-
-
-@start.command(name="benign")
-@_apply_options(_start_options)
-def start_benign(
-    config_dir: Path | None,
-    config_name: str,
-    multirun: bool,
-    cfg: str | None,
-    resolve: bool,
-    info: str | None,
-    overrides: tuple[str, ...],
-):
-    """Start a benign-only evaluation job (no attacks).
-
-    Examples:
-        prompt-siren jobs start benign +dataset=agentdojo-workspace
-        prompt-siren jobs start benign --multirun +dataset=agentdojo-workspace agent.config.model=azure:gpt-5,azure:gpt-5-nano
-    """
-    _benign_impl(config_dir, config_name, multirun, cfg, resolve, info, overrides)
-
-
-@start.command(name="attack")
-@_apply_options(_start_options)
-def start_attack(
-    config_dir: Path | None,
-    config_name: str,
-    multirun: bool,
-    cfg: str | None,
-    resolve: bool,
-    info: str | None,
-    overrides: tuple[str, ...],
-):
-    """Start an attack evaluation job.
-
-    Requires attack configuration (via +attack=<name> override or in config file).
-
-    Examples:
-        prompt-siren jobs start attack +dataset=agentdojo-workspace +attack=agentdojo
-        prompt-siren jobs start attack --multirun +dataset=agentdojo-workspace +attack=agentdojo,mini-goat
-    """
-    _attack_impl(config_dir, config_name, multirun, cfg, resolve, info, overrides)
 
 
 @jobs.command()
@@ -260,10 +172,9 @@ def resume(
     )
 
 
-# Create 'run' as an alias for 'jobs start'
 @main.group()
 def run():
-    """Run experiments. Alias for `jobs start`."""
+    """Run experiments."""
 
 
 @run.command(name="benign")
@@ -286,7 +197,16 @@ def run_benign(
         prompt-siren run benign --print-config job +dataset=agentdojo-workspace
         prompt-siren run benign --info plugins
     """
-    _benign_impl(config_dir, config_name, multirun, cfg, resolve, info, overrides)
+    _run_hydra(
+        config_dir,
+        config_name,
+        list(overrides),
+        execution_mode="benign",
+        multirun=multirun,
+        print_config=cfg,
+        resolve=resolve,
+        info=info,
+    )
 
 
 @run.command(name="attack")
@@ -311,7 +231,21 @@ def run_attack(
         prompt-siren run attack --print-config job +dataset=agentdojo-workspace +attack=agentdojo
         prompt-siren run attack --info plugins
     """
-    _attack_impl(config_dir, config_name, multirun, cfg, resolve, info, overrides)
+    _run_hydra(
+        config_dir,
+        config_name,
+        list(overrides),
+        execution_mode="attack",
+        multirun=multirun,
+        print_config=cfg,
+        resolve=resolve,
+        info=info,
+    )
+
+
+# Add run commands to jobs start as aliases
+start.add_command(run_benign, name="benign")
+start.add_command(run_attack, name="attack")
 
 
 @main.command()
