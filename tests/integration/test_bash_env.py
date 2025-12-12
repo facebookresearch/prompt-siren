@@ -94,7 +94,7 @@ class TestSingleContainerTask:
                 # Verify container is actually running
                 assert bash_env._sandbox_manager._batch_state is not None
                 docker = bash_env._sandbox_manager._batch_state.docker_client
-                container = await docker.containers.get(env_state.agent_container_id)
+                container = await docker.get_container(env_state.agent_container_id)
                 container_info = await container.show()
                 assert container_info["State"]["Running"] is True
 
@@ -133,8 +133,8 @@ class TestSingleContainerTask:
                 # Verify both containers are running
                 assert bash_env._sandbox_manager._batch_state is not None
                 docker = bash_env._sandbox_manager._batch_state.docker_client
-                original_container = await docker.containers.get(original_container_id)
-                cloned_container = await docker.containers.get(cloned_env_state.agent_container_id)
+                original_container = await docker.get_container(original_container_id)
+                cloned_container = await docker.get_container(cloned_env_state.agent_container_id)
 
                 original_info = await original_container.show()
                 cloned_info = await cloned_container.show()
@@ -197,8 +197,8 @@ class TestMultiContainerTaskCouple:
                 assert bash_env._sandbox_manager._batch_state is not None
                 docker = bash_env._sandbox_manager._batch_state.docker_client
 
-                benign_container = await docker.containers.get(env_state.agent_container_id)
-                attack_container = await docker.containers.get(attack_container_id)
+                benign_container = await docker.get_container(env_state.agent_container_id)
+                attack_container = await docker.get_container(attack_container_id)
 
                 benign_info = await benign_container.show()
                 attack_info = await attack_container.show()
@@ -285,8 +285,8 @@ class TestMultiContainerTaskCouple:
                 assert bash_env._sandbox_manager._batch_state is not None
                 docker = bash_env._sandbox_manager._batch_state.docker_client
 
-                cloned_benign = await docker.containers.get(cloned_env_state.agent_container_id)
-                cloned_attack = await docker.containers.get(cloned_attack_id)
+                cloned_benign = await docker.get_container(cloned_env_state.agent_container_id)
+                cloned_attack = await docker.get_container(cloned_attack_id)
 
                 cloned_benign_info = await cloned_benign.show()
                 cloned_attack_info = await cloned_attack.show()
@@ -356,7 +356,7 @@ class TestMultiContainerTaskCouple:
                 assert bash_env._sandbox_manager._batch_state is not None
                 docker = bash_env._sandbox_manager._batch_state.docker_client
 
-                agent_container = await docker.containers.get(env_state.agent_container_id)
+                agent_container = await docker.get_container(env_state.agent_container_id)
                 container_info = await agent_container.show()
                 image_name = container_info["Config"]["Image"]
 
@@ -419,14 +419,14 @@ class TestMultiContainerTaskCouple:
                 assert bash_env._sandbox_manager._batch_state is not None
                 docker = bash_env._sandbox_manager._batch_state.docker_client
 
-                agent_container = await docker.containers.get(env_state.agent_container_id)
-                attack_container = await docker.containers.get(
+                agent_container = await docker.get_container(env_state.agent_container_id)
+                attack_container = await docker.get_container(
                     env_state.sandbox_state.service_containers["attack_server"]
                 )
-                db_container = await docker.containers.get(
+                db_container = await docker.get_container(
                     env_state.sandbox_state.service_containers["database"]
                 )
-                cache_container = await docker.containers.get(
+                cache_container = await docker.get_container(
                     env_state.sandbox_state.service_containers["cache"]
                 )
 
@@ -633,7 +633,7 @@ class TestMultiContainerTaskCouple:
                 assert bash_env._sandbox_manager._batch_state is not None
                 docker = bash_env._sandbox_manager._batch_state.docker_client
                 service_id = env_state.sandbox_state.service_containers["http_server"]
-                service_container = await docker.containers.get(service_id)
+                service_container = await docker.get_container(service_id)
                 service_info = await service_container.show()
 
                 # If container crashed, get logs to understand why
