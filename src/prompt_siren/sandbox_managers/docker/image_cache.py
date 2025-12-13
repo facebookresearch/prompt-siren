@@ -39,15 +39,20 @@ class ImageCache:
     concurrent Docker build race conditions.
     """
 
-    def __init__(self, docker: AbstractDockerClient, batch_id: str):
+    def __init__(
+        self, docker: AbstractDockerClient, batch_id: str, built_images_file: Path | None = None
+    ):
         """Initialize image cache.
 
         Args:
             docker: Abstract Docker client for all operations
             batch_id: Unique identifier for this batch
+            built_images_file: Optional path to file where built image tags will be written
         """
         self._docker = docker
         self._batch_id = batch_id
+        self._built_images_file = built_images_file
+        self._built_images: set[ImageTag] = set()
         # Map from cache key to prepared image tag
         self._base_image_cache: dict[str, ImageTag] = {}
         # Map from (base_tag, dockerfile_extra_hash) to modified image tag
@@ -211,6 +216,7 @@ class ImageCache:
                 tag=modified_tag,
                 dockerfile_path="Dockerfile",
             )
+            self._track_built_image(modified_tag)
 
         # Cache result
         self._modified_image_cache[cache_key] = modified_tag
@@ -238,6 +244,26 @@ class ImageCache:
             await self._docker.pull_image(spec.tag)
             logger.debug(f"[ImageCache] _pull_image: Successfully pulled image {spec.tag}")
         return spec.tag
+
+    def _track_built_image(self, tag: ImageTag) -> None:
+        """Track a built image and write to file if configured.
+
+        Args:
+            tag: Image tag that was built
+        """
+        if tag in self._built_images:
+            return  # Already tracked
+
+        self._built_images.add(tag)
+
+        if self._built_images_file:
+            try:
+                # Append the tag to the file
+                with self._built_images_file.open("a") as f:
+                    f.write(f"{tag}\n")
+                logger.debug(f"[ImageCache] Recorded built image: {tag}")
+            except Exception as e:
+                logger.warning(f"[ImageCache] Failed to write built image {tag} to file: {e}")
 
     async def _build_image(self, spec: BuildImageSpec) -> ImageTag:
         """Build an image from a Dockerfile.
@@ -275,6 +301,7 @@ class ImageCache:
             build_args=spec.build_args,
         )
         logger.debug(f"[ImageCache] _build_image: Successfully built image {spec.tag}")
+        self._track_built_image(spec.tag)
         return spec.tag
 
     async def _build_multi_stage_image(self, spec: MultiStageBuildImageSpec) -> ImageTag:
@@ -308,6 +335,7 @@ class ImageCache:
                 dockerfile_path=stage.dockerfile_path,
                 build_args=build_args if build_args else None,
             )
+            self._track_built_image(stage.tag)
 
         return spec.final_tag
 

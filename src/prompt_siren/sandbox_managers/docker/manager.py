@@ -67,6 +67,10 @@ class DockerSandboxConfig(BaseModel):
         default_factory=dict,
         description="Configuration for the Docker client plugin",
     )
+    built_images_file: str | None = Field(
+        default=None,
+        description="Path to file where built image tags will be written (one per line)",
+    )
 
 
 class DockerSandboxManager:
@@ -125,7 +129,10 @@ class DockerSandboxManager:
         try:
             # Create image cache
             logger.debug("[DockerSandboxManager] setup_batch: Creating image cache")
-            image_cache = ImageCache(docker_client, batch_id)
+            built_images_file = (
+                Path(self._config.built_images_file) if self._config.built_images_file else None
+            )
+            image_cache = ImageCache(docker_client, batch_id, built_images_file)
 
             # Create batch state
             logger.debug("[DockerSandboxManager] setup_batch: Creating batch state")

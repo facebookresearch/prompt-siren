@@ -4,6 +4,7 @@
 import asyncio
 
 import hydra
+import logfire
 from omegaconf import DictConfig, OmegaConf
 from pydantic import ValidationError
 from pydantic_ai.exceptions import UserError
@@ -155,6 +156,28 @@ async def run_benign_experiment(
     else:
         selected_tasks = all_tasks
 
+    # Check if this is build_only mode (only applicable to datasets with execution_mode config)
+    # For datasets without execution_mode (e.g., AgentDojo), this will be None and skip the check
+    dataset_config = experiment_config.dataset.config
+    execution_mode = dataset_config.get("execution_mode") if dataset_config else None
+    if execution_mode == "build_only":
+        # In build_only mode, we need to trigger image builds but skip task execution
+        # Image building happens in create_batch_context -> setup_batch -> ensure_all_base_images
+        logfire.info(
+            "Running build_only mode: building Docker images without executing tasks",
+            dataset_type=experiment_config.dataset.type,
+            execution_mode=execution_mode,
+            num_tasks=len(selected_tasks),
+        )
+        # Trigger batch setup which builds all images
+        async with env_instance.create_batch_context(selected_tasks):
+            logfire.info(
+                "Build completed successfully in build_only mode",
+                num_tasks=len(selected_tasks),
+            )
+        # Return empty results since no tasks were executed
+        return {}
+
     # Create persistence instance
     persistence = ExecutionPersistence.create(
         base_dir=trace_dir,
@@ -237,6 +260,28 @@ async def run_attack_experiment(
             raise ValueError(f"Couple IDs not found: {', '.join(sorted(missing_ids))}")
     else:
         selected_couples = all_couples
+
+    # Check if this is build_only mode (only applicable to datasets with execution_mode config)
+    # For datasets without execution_mode (e.g., AgentDojo), this will be None and skip the check
+    dataset_config = experiment_config.dataset.config
+    execution_mode = dataset_config.get("execution_mode") if dataset_config else None
+    if execution_mode == "build_only":
+        # In build_only mode, we need to trigger image builds but skip task execution
+        # Image building happens in create_batch_context -> setup_batch -> ensure_all_base_images
+        logfire.info(
+            "Running build_only mode: building Docker images without executing tasks",
+            dataset_type=experiment_config.dataset.type,
+            execution_mode=execution_mode,
+            num_couples=len(selected_couples),
+        )
+        # Trigger batch setup which builds all images
+        async with env_instance.create_batch_context(selected_couples):
+            logfire.info(
+                "Build completed successfully in build_only mode",
+                num_couples=len(selected_couples),
+            )
+        # Return empty results since no tasks were executed
+        return {}
 
     # Create persistence instance
     persistence = ExecutionPersistence.create(
