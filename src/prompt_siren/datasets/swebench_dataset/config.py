@@ -1,7 +1,12 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Configuration for SWE-bench dataset."""
 
+from typing import Literal
+
 from pydantic import BaseModel
+
+# Execution modes for SWEBench dataset
+SwebenchExecutionMode = Literal["build_and_run", "build_only", "run_from_prebuilt"]
 
 
 class SwebenchDatasetConfig(BaseModel):
@@ -53,3 +58,16 @@ class SwebenchDatasetConfig(BaseModel):
     # Network configuration (passed to sandbox manager)
     enable_network: bool = False
     """Whether to enable network access in containers during task execution."""
+
+    # Execution mode
+    execution_mode: SwebenchExecutionMode = "build_and_run"
+    """Execution mode for SWEBench dataset:
+    - "build_and_run": Build images and execute tasks (default)
+    - "build_only": Build images but don't execute tasks
+    - "run_from_prebuilt": Pull prebuilt images from registry and execute tasks
+    """
+
+    registry_prefix: str | None = None
+    """Registry prefix for prebuilt images (required for run_from_prebuilt mode).
+    Example: "ghcr.io/myorg/swebench" will pull images like "ghcr.io/myorg/swebench:instance_id"
+    """

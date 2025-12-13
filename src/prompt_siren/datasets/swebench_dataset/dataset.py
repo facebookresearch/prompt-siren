@@ -28,7 +28,7 @@ from .config import SwebenchDatasetConfig
 from .constants import _INJECTION_PLACEHOLDER, INSTANCE_INJECTION_MAPPING
 from .docker_builder import prepare_build_context
 from .evaluators import create_test_evaluator
-from .malicious_tasks import MALICIOUS_TASKS
+from .malicious_tasks import create_malicious_tasks
 from .prompts.loader import format_task_prompt_from_template, load_prompt_template
 from .task_metadata import SWEBenchBenignTaskMetadata, SWEBenchMaliciousTaskMetadata
 from .tools import bash
@@ -164,13 +164,16 @@ def _prepare_benign_task_from_instance(
     # Format task prompt
     prompt = _format_task_prompt(instance, config)
 
-    # Create evaluator
-    evaluator = create_test_evaluator(instance, test_spec, sandbox_manager)
+    # Create evaluator only for modes that execute tasks
+    evaluators = {}
+    if config.execution_mode in ("build_and_run", "run_from_prebuilt"):
+        evaluator = create_test_evaluator(instance, test_spec, sandbox_manager)
+        evaluators = {"test_pass_rate": evaluator}
 
     return BenignTask(
         id=instance["instance_id"],
         prompt=prompt,
-        evaluators={"test_pass_rate": evaluator},
+        evaluators=evaluators,
         metadata=SWEBenchBenignTaskMetadata(
             agent_container_spec=ContainerSpec(image_spec=image_spec)
         ),
@@ -228,10 +231,13 @@ def create_swebench_dataset(
     # Create benign tasks from instances
     benign_task_list = _prepare_benign_tasks(instances, config, sandbox_manager)
 
+    # Create malicious tasks with appropriate container specs based on execution mode
+    malicious_task_list = create_malicious_tasks(config)
+
     # Generate all valid couples (cartesian product)
     couples = [
         TaskCouple(benign, malicious)
-        for benign, malicious in product(benign_task_list, MALICIOUS_TASKS)
+        for benign, malicious in product(benign_task_list, malicious_task_list)
     ]
 
     injection_ids: list[InjectionVectorID] = [_INJECTION_PLACEHOLDER]
@@ -252,7 +258,7 @@ def create_swebench_dataset(
         name="swebench-lite",
         _environment=environment,
         _benign_tasks=benign_task_list,
-        _malicious_tasks=MALICIOUS_TASKS,
+        _malicious_tasks=malicious_task_list,
         _task_couples=couples,
         _toolsets=toolsets,
         _system_prompt=system_prompt,
