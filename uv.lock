@@ -2700,7 +2700,7 @@ dependencies = [
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-sdk" },
     { name = "pandas" },
-    { name = "pydantic-ai-slim", extra = ["anthropic", "bedrock", "openai"] },
+    { name = "pydantic-ai-slim", extra = ["anthropic", "bedrock", "google", "openai"] },
     { name = "pyyaml" },
     { name = "tabulate" },
     { name = "typing-extensions" },
@@ -2767,7 +2767,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "playwright", marker = "extra == 'playwright'", specifier = ">=1.54.0" },
     { name = "prompt-siren", extras = ["agentdojo", "swebench", "docker", "playwright"], marker = "extra == 'all'" },
-    { name = "pydantic-ai-slim", extras = ["anthropic", "bedrock", "openai"], specifier = ">=1.1.0" },
+    { name = "pydantic-ai-slim", extras = ["anthropic", "bedrock", "google", "openai"], specifier = ">=1.1.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "ruff-api", marker = "extra == 'ufmt'", specifier = "==0.1.0" },
     { name = "stdlibs", marker = "extra == 'ufmt'", specifier = "==2024.1.28" },
@@ -3026,6 +3026,9 @@ anthropic = [
 ]
 bedrock = [
     { name = "boto3" },
+]
+google = [
+    { name = "google-genai" },
 ]
 openai = [
     { name = "openai" },
