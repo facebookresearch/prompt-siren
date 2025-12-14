@@ -4,29 +4,24 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-try:
-    import aiodocker
-    from aiodocker.containers import DockerContainer
-except ImportError as e:
-    raise ImportError(
-        "Docker sandbox manager requires the 'docker' optional dependency. "
-        "Install with: pip install 'prompt-siren[docker]'"
-    ) from e
-
 from ..sandbox_state import ContainerID, SandboxState
 from ..sandbox_task_setup import ContainerSetup, TaskSetup
 from .image_cache import ImageCache
+from .plugins import AbstractContainer, AbstractDockerClient
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class ContainerInfo:
     """Information about a tracked container."""
 
-    container: DockerContainer
+    container: AbstractContainer
     temp_image: str | None = None  # Temporary image created during cloning
 
 
@@ -43,7 +38,7 @@ class BatchState:
     """
 
     batch_id: str
-    docker_client: aiodocker.Docker
+    docker_client: AbstractDockerClient
     image_cache: ImageCache
     contexts: dict[str, TaskSandboxContext] = field(default_factory=dict)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -228,7 +223,7 @@ class TaskSandboxContext:
                 "Internal": False,
             }
 
-        network = await self.batch_state.docker_client.networks.create(config=network_config)
+        network = await self.batch_state.docker_client.create_network(config=network_config)
         network_info = await network.show()
         return network_info["Id"]
 
@@ -242,7 +237,7 @@ class TaskSandboxContext:
             New network ID
         """
         # Get source network config
-        source_network = await self.batch_state.docker_client.networks.get(source_network_id)
+        source_network = await self.batch_state.docker_client.get_network(source_network_id)
         source_info = await source_network.show()
 
         # Create new network with same config
@@ -253,7 +248,7 @@ class TaskSandboxContext:
             "Internal": source_info.get("Internal", False),
         }
 
-        network = await self.batch_state.docker_client.networks.create(config=network_config)
+        network = await self.batch_state.docker_client.create_network(config=network_config)
         network_info = await network.show()
         return network_info["Id"]
 
@@ -275,10 +270,16 @@ class TaskSandboxContext:
         Returns:
             Container ID
         """
+        logger.debug(
+            f"Creating container for task_id={task_id}, container_name={container_setup.name}, "
+            f"network_id={network_id}, network_enabled={network_enabled}"
+        )
+
         # Get image tag from cache
         image_tag = await self.batch_state.image_cache.get_image_for_container(
             container_setup, task_id
         )
+        logger.debug(f"Retrieved image tag from cache: {image_tag}")
 
         # Build container config
         config = self._build_container_config(
@@ -287,6 +288,7 @@ class TaskSandboxContext:
             network_id=network_id,
             network_enabled=network_enabled,
         )
+        logger.debug(f"Built container config: {config}")
 
         # Generate unique container name
         safe_task_id = task_id.replace(":", "-").replace("/", "-")
@@ -295,26 +297,56 @@ class TaskSandboxContext:
             f"{self.batch_state.batch_id}-{self.execution_id}-"
             f"{container_setup.name}-{safe_task_id}-{unique_suffix}"
         )
+        logger.debug(f"Generated container name: {container_name}")
 
         # Create and start container
-        container = await self.batch_state.docker_client.containers.create(
+        logger.debug(f"Creating container {container_name}...")
+        container = await self.batch_state.docker_client.create_container(
             config, name=container_name
         )
+        logger.debug(f"Starting container {container_name}...")
         await container.start()
         container_id: ContainerID = (await container.show())["Id"]
+        logger.debug(f"Container started with ID: {container_id}")
 
         # Check if container exited immediately after starting
         container_info = await container.show()
+        logger.debug(
+            f"Container info after start: State={container_info.get('State')}, "
+            f"Config={container_info.get('Config')}, "
+            f"NetworkSettings={container_info.get('NetworkSettings')}"
+        )
+
         if not container_info["State"]["Running"]:
             exit_code = container_info["State"].get("ExitCode", "unknown")
+            logger.debug(f"Container Info {container_info}")
+            error_msg = container_info["State"].get("Error", "")
+            started_at = container_info["State"].get("StartedAt", "")
+            finished_at = container_info["State"].get("FinishedAt", "")
+
+            logger.debug(
+                f"Container {container_name} exited immediately. "
+                f"Full container_info: {container_info}"
+            )
+
             # Get container logs to help diagnose the issue
             logs = await container.log(stdout=True, stderr=True)
             log_text = "".join(logs) if logs else "(no logs)"
+
+            logger.debug(
+                f"Container {container_name} details - "
+                f"exit_code={exit_code}, error={error_msg}, "
+                f"started_at={started_at}, finished_at={finished_at}, "
+                f"logs={log_text}"
+            )
+
             # Clean up the failed container
             try:
                 await container.delete()
-            except Exception:
-                pass  # Best effort cleanup
+                logger.debug(f"Cleaned up failed container {container_name}")
+            except Exception as cleanup_error:
+                logger.debug(f"Failed to clean up container {container_name}: {cleanup_error}")
+
             raise RuntimeError(
                 f"Container {container_name} exited immediately after starting "
                 f"with exit code {exit_code}. Logs:\n{log_text}"
@@ -324,6 +356,7 @@ class TaskSandboxContext:
         async with self._lock:
             self._containers[container_id] = ContainerInfo(container=container, temp_image=None)
 
+        logger.debug(f"Successfully created and tracked container {container_name}")
         return container_id
 
     async def _clone_container(
@@ -340,7 +373,7 @@ class TaskSandboxContext:
         Returns:
             Cloned container ID
         """
-        source_container = await self.batch_state.docker_client.containers.get(source_id)
+        source_container = await self.batch_state.docker_client.get_container(source_id)
 
         # Generate unique names
         clone_id = uuid.uuid4().hex[:8]
@@ -387,7 +420,7 @@ class TaskSandboxContext:
                     }
 
             # Create and start cloned container
-            cloned_container = await self.batch_state.docker_client.containers.create(
+            cloned_container = await self.batch_state.docker_client.create_container(
                 config=config, name=clone_name
             )
             await cloned_container.start()
@@ -412,7 +445,7 @@ class TaskSandboxContext:
                     pass  # Best effort
 
             try:
-                await self.batch_state.docker_client.images.delete(temp_image_full, force=True)
+                await self.batch_state.docker_client.delete_image(temp_image_full, force=True)
             except Exception:
                 pass  # Best effort
 
@@ -503,7 +536,7 @@ class TaskSandboxContext:
         # Remove temporary image if exists
         if info.temp_image:
             try:
-                await self.batch_state.docker_client.images.delete(info.temp_image, force=True)
+                await self.batch_state.docker_client.delete_image(info.temp_image, force=True)
             except Exception:
                 pass  # Best effort cleanup
 
@@ -514,7 +547,7 @@ class TaskSandboxContext:
             network_id: Network ID to clean up
         """
         try:
-            network = await self.batch_state.docker_client.networks.get(network_id)
+            network = await self.batch_state.docker_client.get_network(network_id)
             await network.delete()
         except Exception:
             pass  # Best effort cleanup
