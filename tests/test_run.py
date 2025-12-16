@@ -168,8 +168,12 @@ class TestRunBenignTasks:
         assert len(results) == 1
 
         # Verify files were created in job directory
-        task_dir = job.job_dir / "test_task" / "run_001"
-        assert task_dir.exists()
+        task_parent_dir = job.job_dir / "test_task"
+        assert task_parent_dir.exists()
+        # Find the run directory (8-char UUID)
+        run_dirs = list(task_parent_dir.iterdir())
+        assert len(run_dirs) == 1
+        task_dir = run_dirs[0]
         assert (task_dir / "result.json").exists()
         assert (task_dir / "execution.json").exists()
 
@@ -370,8 +374,12 @@ class TestRunAttackTasks:
         assert len(results) == 1
 
         # Verify files were created in job directory (couple ID is benign:malicious)
-        task_dir = job.job_dir / "test_couple_benign_test_couple_malicious" / "run_001"
-        assert task_dir.exists()
+        task_parent_dir = job.job_dir / "test_couple_benign_test_couple_malicious"
+        assert task_parent_dir.exists()
+        # Find the run directory (8-char UUID)
+        run_dirs = list(task_parent_dir.iterdir())
+        assert len(run_dirs) == 1
+        task_dir = run_dirs[0]
         assert (task_dir / "result.json").exists()
         assert (task_dir / "execution.json").exists()
 

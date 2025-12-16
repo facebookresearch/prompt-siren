@@ -166,21 +166,23 @@ class Job:
             self._persistence = JobPersistence(self.job_dir, self.job_config)
         return self._persistence
 
-    def get_remaining_runs(self, task_ids: list[str]) -> list[tuple[str, int]]:
-        """Get list of (task_id, run_index) pairs that need to be executed.
+    def get_remaining_runs(self, task_ids: list[str]) -> dict[str, int]:
+        """Get the number of runs still needed for each task.
 
         Args:
             task_ids: List of all task IDs to run
 
         Returns:
-            List of (task_id, run_index) tuples for runs that haven't completed
+            Dictionary mapping task_id to number of runs still needed.
+            Tasks with 0 remaining runs are not included.
         """
-        remaining = []
+        remaining: dict[str, int] = {}
         for task_id in task_ids:
-            for run_index in range(1, self.job_config.n_runs_per_task + 1):
-                status, _ = self.persistence.get_run_status(task_id, run_index)
-                if status in ("pending", "incomplete"):
-                    remaining.append((task_id, run_index))
+            completed_runs = self.persistence.get_completed_runs(task_id)
+            n_completed = len(completed_runs)
+            n_needed = self.job_config.n_runs_per_task - n_completed
+            if n_needed > 0:
+                remaining[task_id] = n_needed
         return remaining
 
     def get_job_stats(self, task_ids: list[str]) -> JobStats:
@@ -203,19 +205,20 @@ class Job:
         scores_benign: list[float] = []
         scores_attack: list[float] = []
 
-        for task_id in task_ids:
-            for run_index in range(1, n_runs_per_task + 1):
-                status, result = self.persistence.get_run_status(task_id, run_index)
-                if status == "completed":
-                    completed_runs += 1
-                    if result and result.benign_score is not None:
-                        scores_benign.append(result.benign_score)
-                    if result and result.attack_score is not None:
-                        scores_attack.append(result.attack_score)
-                elif status == "failed":
-                    failed_runs += 1
-                    if result and result.exception_info:
-                        exception_counts[result.exception_info.exception_type] += 1
+        # Load all index entries to get stats
+        index_entries = self.persistence.load_index()
+        for entry in index_entries:
+            if entry.exception_type is None:
+                # Completed successfully
+                completed_runs += 1
+                if entry.benign_score is not None:
+                    scores_benign.append(entry.benign_score)
+                if entry.attack_score is not None:
+                    scores_attack.append(entry.attack_score)
+            else:
+                # Failed with exception
+                failed_runs += 1
+                exception_counts[entry.exception_type] += 1
 
         remaining_runs = total_runs - completed_runs - failed_runs
 
@@ -258,15 +261,16 @@ class Job:
                     deleted_paths.add(entry.path)
 
         # Also clean up incomplete runs (directories without result.json)
+        # Skip special files (config.yaml, result.json, index.jsonl, etc.)
+        special_files = {"config.yaml", "result.json", "index.jsonl", "index.jsonl.lock"}
         for task_dir in self.job_dir.iterdir():
             if not task_dir.is_dir():
                 continue
-            # Skip lock directories (unlikely but possible)
-            if task_dir.name.endswith(".lock"):
+            if task_dir.name in special_files or task_dir.name.endswith(".lock"):
                 continue
 
             for run_dir in task_dir.iterdir():
-                if run_dir.is_dir() and run_dir.name.startswith("run_"):
+                if run_dir.is_dir():
                     result_path = run_dir / "result.json"
                     if not result_path.exists():
                         # Incomplete run, delete it
@@ -312,9 +316,23 @@ def _apply_resume_overrides(
     Raises:
         JobConfigMismatchError: If overrides attempt to modify immutable fields
     """
-    # Validate overrides don't touch immutable fields
+    # Validate overrides
     for override in overrides:
-        key = override.split("=")[0].lstrip("+~")
+        # Reject Hydra add/delete prefixes - only updates allowed on resume
+        if override.startswith("+"):
+            raise JobConfigMismatchError(
+                f"Cannot add new keys on resume: {override}\n"
+                "Only updates to existing keys are allowed."
+            )
+        if override.startswith("~"):
+            raise JobConfigMismatchError(
+                f"Cannot delete keys on resume: {override}\n"
+                "Only updates to existing keys are allowed."
+            )
+
+        key = override.split("=")[0]
+
+        # Check for immutable fields
         for prefix in IMMUTABLE_PREFIXES:
             if key.startswith(prefix):
                 raise JobConfigMismatchError(
@@ -323,7 +341,7 @@ def _apply_resume_overrides(
                     f"Only these prefixes can be modified: {', '.join(RESUMABLE_OVERRIDE_PREFIXES)}"
                 )
 
-        # Warn if override doesn't match any resumable prefix
+        # Check override is in allowed prefixes
         is_valid = any(key.startswith(prefix) for prefix in RESUMABLE_OVERRIDE_PREFIXES)
         if not is_valid:
             raise JobConfigMismatchError(
@@ -331,18 +349,16 @@ def _apply_resume_overrides(
                 f"Only these prefixes can be modified on resume: {', '.join(RESUMABLE_OVERRIDE_PREFIXES)}"
             )
 
-    # Convert job config to OmegaConf for override handling
+    # Convert job config to OmegaConf and apply overrides
     config_dict = job_config.model_dump(mode="json")
     cfg = OmegaConf.create(config_dict)
 
-    # Apply overrides using OmegaConf
-    for override in overrides:
-        key, value = override.split("=", 1)
-        key = key.lstrip("+~")  # Remove Hydra special prefixes
-        OmegaConf.update(cfg, key, _parse_value(value))
+    # Use OmegaConf's built-in parsing for overrides
+    override_cfg = OmegaConf.from_dotlist(overrides)
+    merged = OmegaConf.merge(cfg, override_cfg)
 
     # Convert back to JobConfig
-    updated_dict = OmegaConf.to_container(cfg, resolve=True)
+    updated_dict = OmegaConf.to_container(merged, resolve=True)
     updated_config = JobConfig.model_validate(updated_dict)
 
     # Save updated config back to file
@@ -351,39 +367,3 @@ def _apply_resume_overrides(
     _save_config_yaml(config_path, updated_config)
 
     return updated_config
-
-
-def _parse_value(value: str) -> str | int | float | bool:
-    """Parse a string value to the appropriate type.
-
-    Handles:
-    - true/false -> bool
-    - integers
-    - floats
-    - strings (with optional quotes)
-    """
-    # Boolean
-    if value.lower() == "true":
-        return True
-    if value.lower() == "false":
-        return False
-
-    # Try integer
-    try:
-        return int(value)
-    except ValueError:
-        pass
-
-    # Try float
-    try:
-        return float(value)
-    except ValueError:
-        pass
-
-    # String (strip quotes if present)
-    if (value.startswith('"') and value.endswith('"')) or (
-        value.startswith("'") and value.endswith("'")
-    ):
-        return value[1:-1]
-
-    return value

@@ -41,12 +41,12 @@ def _create_index_entry(
     """Create a RunIndexEntry for testing."""
     return RunIndexEntry(
         task_id="test_task",
-        run_index=1,
+        run_id="abc12345",
         timestamp=datetime.now(),
         benign_score=benign_score,
         attack_score=attack_score,
         exception_type=None,
-        path=Path("test_task/run_001"),
+        path=Path("test_task/abc12345"),
     )
 
 

@@ -24,7 +24,7 @@ import pandas as pd
 from tabulate import tabulate
 from typing_extensions import assert_never
 
-from .job.models import INDEX_FILENAME, JobConfig, RunIndexEntry
+from .job.models import CONFIG_FILENAME, INDEX_FILENAME, JobConfig, RunIndexEntry
 from .job.persistence import _load_config_yaml
 
 
@@ -97,7 +97,7 @@ def _parse_index_entry(line: str, job_config: JobConfig) -> dict[str, Any]:
     # Start with entry data
     row: dict[str, Any] = {
         "task_id": entry.task_id,
-        "run_index": entry.run_index,
+        "run_id": entry.run_id,
         "timestamp": entry.timestamp.isoformat(),
         "benign_score": entry.benign_score if entry.benign_score is not None else 0.0,
         "attack_score": entry.attack_score if entry.attack_score is not None else float("nan"),
@@ -152,8 +152,6 @@ def _read_job_index(job_dir: Path) -> list[dict[str, Any]]:
     Raises:
         FileNotFoundError: If config or index file does not exist
     """
-    from .job.models import CONFIG_FILENAME
-
     config_path = job_dir / CONFIG_FILENAME
     index_path = job_dir / INDEX_FILENAME
 
@@ -177,8 +175,6 @@ def _read_all_jobs(jobs_dir: Path) -> list[dict[str, Any]]:
     Returns:
         List of row dictionaries from all jobs
     """
-    from .job.models import CONFIG_FILENAME
-
     if not jobs_dir.exists():
         return []
 

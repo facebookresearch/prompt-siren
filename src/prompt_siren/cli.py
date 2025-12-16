@@ -1,6 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Click-based CLI for Siren."""
 
+# Run the experiment using the existing hydra_app functions, passing the existing job
+import asyncio
 import sys
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -12,7 +14,12 @@ from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig
 
 from .config.export import export_default_config
-from .hydra_app import hydra_main_with_config_path, validate_config
+from .hydra_app import (
+    hydra_main_with_config_path,
+    run_attack_experiment,
+    run_benign_experiment,
+    validate_config,
+)
 from .job import Job, JobConfigMismatchError
 from .results import (
     aggregate_results,
@@ -259,11 +266,6 @@ def resume(
 
     click.echo(f"Resuming job: {job.job_config.job_name}")
     click.echo(f"Mode: {execution_mode}")
-
-    # Run the experiment using the existing hydra_app functions, passing the existing job
-    import asyncio
-
-    from .hydra_app import run_attack_experiment, run_benign_experiment
 
     if execution_mode == "benign":
         asyncio.run(run_benign_experiment(experiment_config, job=job))

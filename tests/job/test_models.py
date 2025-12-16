@@ -60,7 +60,7 @@ class TestTaskRunResult:
         """Test is_successful returns True when finished without exception."""
         result = TaskRunResult(
             task_id="task1",
-            run_index=1,
+            run_id="abc12345",
             started_at=datetime.now(),
             finished_at=datetime.now(),
             benign_score=1.0,
@@ -71,7 +71,7 @@ class TestTaskRunResult:
         """Test is_successful returns False when exception occurred."""
         result = TaskRunResult(
             task_id="task1",
-            run_index=1,
+            run_id="abc12345",
             started_at=datetime.now(),
             finished_at=datetime.now(),
             benign_score=0.0,
@@ -88,7 +88,7 @@ class TestTaskRunResult:
         """Test is_successful returns False when task hasn't finished."""
         result = TaskRunResult(
             task_id="task1",
-            run_index=1,
+            run_id="abc12345",
             started_at=datetime.now(),
             finished_at=None,
         )

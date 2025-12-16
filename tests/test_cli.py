@@ -78,8 +78,8 @@ class TestJobsResumeCommand:
             captured_job = job
             return {}
 
-        # Patch at the source module where it's defined
-        with patch("prompt_siren.hydra_app.run_benign_experiment", mock_run_benign):
+        # Patch in the cli module where the function is called
+        with patch("prompt_siren.cli.run_benign_experiment", mock_run_benign):
             result = cli_runner.invoke(main, ["jobs", "resume", "-p", str(job_dir)])
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
@@ -104,8 +104,8 @@ class TestJobsResumeCommand:
             captured_job = job
             return {}
 
-        # Patch at the source module where it's defined
-        with patch("prompt_siren.hydra_app.run_attack_experiment", mock_run_attack):
+        # Patch in the cli module where the function is called
+        with patch("prompt_siren.cli.run_attack_experiment", mock_run_attack):
             result = cli_runner.invoke(main, ["jobs", "resume", "-p", str(job_dir)])
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
@@ -129,7 +129,7 @@ class TestJobsResumeCommand:
         job_dir.mkdir()
         _save_config_yaml(job_dir / "config.yaml", mock_job_config)
 
-        with patch("prompt_siren.hydra_app.run_benign_experiment", AsyncMock(return_value={})):
+        with patch("prompt_siren.cli.run_benign_experiment", AsyncMock(return_value={})):
             with patch.object(Job, "resume", wraps=Job.resume) as mock_resume:
                 result = cli_runner.invoke(
                     main,
@@ -149,7 +149,7 @@ class TestJobsResumeCommand:
         job_dir.mkdir()
         _save_config_yaml(job_dir / "config.yaml", mock_job_config)
 
-        with patch("prompt_siren.hydra_app.run_benign_experiment", AsyncMock(return_value={})):
+        with patch("prompt_siren.cli.run_benign_experiment", AsyncMock(return_value={})):
             with patch.object(Job, "resume", wraps=Job.resume) as mock_resume:
                 result = cli_runner.invoke(
                     main,
@@ -176,7 +176,7 @@ class TestJobsResumeCommand:
             captured_job = job
             return {}
 
-        with patch("prompt_siren.hydra_app.run_benign_experiment", mock_run_benign):
+        with patch("prompt_siren.cli.run_benign_experiment", mock_run_benign):
             result = cli_runner.invoke(
                 main, ["jobs", "resume", "-p", str(job_dir), "execution.concurrency=8"]
             )

@@ -106,25 +106,26 @@ class TestJobPersistenceLoad:
 class TestGetCompletedRuns:
     """Tests for JobPersistence.get_completed_runs method."""
 
-    def test_returns_only_completed_run_indices(self, job_persistence: JobPersistence):
+    def test_returns_only_completed_run_ids(self, job_persistence: JobPersistence):
         """Test that only runs with result.json are returned as completed."""
         # Create completed runs
-        for run_idx in [1, 3]:
-            run_dir = job_persistence.get_task_run_dir("task1", run_idx)
+        run_ids = ["abc11111", "def33333"]
+        for run_id in run_ids:
+            run_dir = job_persistence.get_task_run_dir("task1", run_id)
             run_dir.mkdir(parents=True)
             result = TaskRunResult(
                 task_id="task1",
-                run_index=run_idx,
+                run_id=run_id,
                 finished_at=datetime.now(),
             )
             (run_dir / TASK_RESULT_FILENAME).write_text(result.model_dump_json())
 
         # Create incomplete run (directory only, no result.json)
-        incomplete_dir = job_persistence.get_task_run_dir("task1", 2)
+        incomplete_dir = job_persistence.get_task_run_dir("task1", "xyz22222")
         incomplete_dir.mkdir(parents=True)
 
         completed = job_persistence.get_completed_runs("task1")
-        assert completed == [1, 3]  # run 2 excluded because incomplete
+        assert set(completed) == set(run_ids)  # incomplete run excluded
 
 
 class TestGetRunStatus:
@@ -133,33 +134,35 @@ class TestGetRunStatus:
     def test_returns_correct_status_for_each_state(self, job_persistence: JobPersistence):
         """Test that correct status is returned for pending, incomplete, completed, and failed."""
         # Pending (no directory)
-        status, _ = job_persistence.get_run_status("task1", 1)
+        status, _ = job_persistence.get_run_status("task1", "aaa11111")
         assert status == "pending"
 
         # Incomplete (directory exists, no result)
-        run_dir = job_persistence.get_task_run_dir("task1", 2)
+        run_dir = job_persistence.get_task_run_dir("task1", "bbb22222")
         run_dir.mkdir(parents=True)
-        status, _ = job_persistence.get_run_status("task1", 2)
+        status, _ = job_persistence.get_run_status("task1", "bbb22222")
         assert status == "incomplete"
 
         # Completed (directory + result without exception)
-        run_dir = job_persistence.get_task_run_dir("task1", 3)
+        run_id_completed = "ccc33333"
+        run_dir = job_persistence.get_task_run_dir("task1", run_id_completed)
         run_dir.mkdir(parents=True)
         result = TaskRunResult(
-            task_id="task1", run_index=3, finished_at=datetime.now(), benign_score=1.0
+            task_id="task1", run_id=run_id_completed, finished_at=datetime.now(), benign_score=1.0
         )
         (run_dir / TASK_RESULT_FILENAME).write_text(result.model_dump_json())
-        status, loaded = job_persistence.get_run_status("task1", 3)
+        status, loaded = job_persistence.get_run_status("task1", run_id_completed)
         assert status == "completed"
         assert loaded is not None
         assert loaded.benign_score == 1.0
 
         # Failed (directory + result with exception)
-        run_dir = job_persistence.get_task_run_dir("task1", 4)
+        run_id_failed = "ddd44444"
+        run_dir = job_persistence.get_task_run_dir("task1", run_id_failed)
         run_dir.mkdir(parents=True)
         result = TaskRunResult(
             task_id="task1",
-            run_index=4,
+            run_id=run_id_failed,
             finished_at=datetime.now(),
             exception_info=ExceptionInfo(
                 exception_type="RuntimeError",
@@ -169,7 +172,7 @@ class TestGetRunStatus:
             ),
         )
         (run_dir / TASK_RESULT_FILENAME).write_text(result.model_dump_json())
-        status, loaded = job_persistence.get_run_status("task1", 4)
+        status, loaded = job_persistence.get_run_status("task1", run_id_failed)
         assert status == "failed"
         assert loaded is not None
         assert loaded.exception_info is not None
@@ -193,7 +196,6 @@ class TestSaveTaskRun:
 
         run_dir = job_persistence.save_task_run(
             task=task,
-            run_index=1,
             evaluation=evaluation,
             messages=messages,
             usage=usage,
@@ -220,7 +222,6 @@ class TestSaveTaskRun:
 
         job_persistence.save_task_run(
             task=task,
-            run_index=1,
             evaluation=evaluation,
             messages=messages,
             usage=usage,
@@ -257,7 +258,6 @@ class TestSaveCoupleRun:
 
         run_dir = job_persistence.save_couple_run(
             couple=couple,
-            run_index=1,
             benign_eval=benign_eval_result,
             malicious_eval=malicious_eval_result,
             messages=messages,
@@ -291,7 +291,6 @@ class TestLoadIndex:
 
             job_persistence.save_task_run(
                 task=task,
-                run_index=1,
                 evaluation=evaluation,
                 messages=messages,
                 usage=usage,
@@ -308,17 +307,18 @@ class TestDeleteRun:
 
     def test_deletes_run_directory_and_returns_true(self, job_persistence: JobPersistence):
         """Test that delete_run removes the run directory."""
-        run_dir = job_persistence.get_task_run_dir("task1", 1)
+        run_id = "abc12345"
+        run_dir = job_persistence.get_task_run_dir("task1", run_id)
         run_dir.mkdir(parents=True)
         (run_dir / "result.json").write_text("{}")
 
-        result = job_persistence.delete_run("task1", 1)
+        result = job_persistence.delete_run("task1", run_id)
         assert result is True
         assert not run_dir.exists()
 
     def test_returns_false_for_nonexistent_run(self, job_persistence: JobPersistence):
         """Test that delete_run returns False if run doesn't exist."""
-        result = job_persistence.delete_run("nonexistent", 1)
+        result = job_persistence.delete_run("nonexistent", "xyz99999")
         assert result is False
 
 
@@ -353,33 +353,30 @@ class TestRemoveIndexEntriesByPaths:
         async def dummy_eval(task_result: TaskResult) -> float:
             return 1.0
 
-        # Create multiple task runs
-        tasks = []
+        # Create multiple task runs and track their paths
+        run_dirs: dict[str, Path] = {}
         for i in range(3):
             task = BenignTask(id=f"task{i}", prompt="test", evaluators={"eval1": dummy_eval})
-            tasks.append(task)
             evaluation = EvaluationResult(task_id=f"task{i}", results={"eval1": 1.0})
             messages: list[ModelMessage] = [ModelResponse(parts=[TextPart("response")])]
             usage = RunUsage()
 
-            job_persistence.save_task_run(
+            run_dir = job_persistence.save_task_run(
                 task=task,
-                run_index=1,
                 evaluation=evaluation,
                 messages=messages,
                 usage=usage,
                 task_span=mock_task_span,
                 started_at=datetime.now(),
             )
+            run_dirs[f"task{i}"] = run_dir
 
         # Verify all 3 entries exist
         entries = job_persistence.load_index()
         assert len(entries) == 3
 
-        # Remove task1's entry
-        task1_path = job_persistence.get_task_run_dir("task1", 1).relative_to(
-            job_persistence.job_dir
-        )
+        # Remove task1's entry using its actual path
+        task1_path = run_dirs["task1"].relative_to(job_persistence.job_dir)
         job_persistence.remove_index_entries_by_paths({task1_path})
 
         # Verify only 2 entries remain
@@ -391,15 +388,13 @@ class TestRemoveIndexEntriesByPaths:
 
     def test_does_nothing_if_index_doesnt_exist(self, job_persistence: JobPersistence):
         """Test that remove_index_entries_by_paths handles missing index gracefully."""
-        from pathlib import Path
-
         # Remove index file if it exists
         index_path = job_persistence.job_dir / INDEX_FILENAME
         if index_path.exists():
             index_path.unlink()
 
         # Should not raise an error
-        job_persistence.remove_index_entries_by_paths({Path("nonexistent/run_001")})
+        job_persistence.remove_index_entries_by_paths({Path("nonexistent/abc12345")})
 
     def test_handles_empty_paths_set(
         self, job_persistence: JobPersistence, mock_task_span: MagicMock
@@ -416,7 +411,6 @@ class TestRemoveIndexEntriesByPaths:
 
         job_persistence.save_task_run(
             task=task,
-            run_index=1,
             evaluation=evaluation,
             messages=messages,
             usage=usage,

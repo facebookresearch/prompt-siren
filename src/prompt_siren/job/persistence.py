@@ -6,13 +6,16 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TYPE_CHECKING, TypeVar
+from typing import Any, TypeVar
 
 import yaml
 from filelock import FileLock
+from logfire import LogfireSpan
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage
 
+from ..tasks import EvaluationResult, Task, TaskCouple
+from ..types import InjectionAttack
 from .models import (
     CONFIG_FILENAME,
     ExceptionInfo,
@@ -29,12 +32,6 @@ from .models import (
 )
 from .naming import sanitize_for_filename
 
-if TYPE_CHECKING:
-    from logfire import LogfireSpan
-
-    from ..tasks import EvaluationResult, Task, TaskCouple
-    from ..types import InjectionAttack
-
 EnvStateT = TypeVar("EnvStateT")
 InjectionAttackT = TypeVar("InjectionAttackT", bound="InjectionAttack")
 
@@ -48,10 +45,10 @@ class JobPersistence:
             result.json           # Aggregated job results
             index.jsonl           # Index of all task runs
             <task_id>/
-                run_001/
+                <run_id>/            # 8-char UUID
                     result.json      # Task run result
                     execution.json   # Full execution data
-                run_002/
+                <run_id>/
                     ...
     """
 
@@ -120,27 +117,27 @@ class JobPersistence:
         job_config = _load_config_yaml(config_path)
         return cls(job_dir, job_config)
 
-    def get_task_run_dir(self, task_id: str, run_index: int) -> Path:
+    def get_task_run_dir(self, task_id: str, run_id: str) -> Path:
         """Get the directory path for a specific task run.
 
         Args:
             task_id: Task identifier
-            run_index: Run index (1-based for pass@k)
+            run_id: Run identifier (8-char UUID)
 
         Returns:
             Path to the task run directory
         """
         task_id_safe = sanitize_for_filename(task_id)
-        return self.job_dir / task_id_safe / f"run_{run_index:03d}"
+        return self.job_dir / task_id_safe / run_id
 
-    def get_completed_runs(self, task_id: str) -> list[int]:
-        """Get list of completed run indices for a task.
+    def get_completed_runs(self, task_id: str) -> list[str]:
+        """Get list of completed run IDs for a task.
 
         Args:
             task_id: Task identifier
 
         Returns:
-            List of run indices that have result.json files
+            List of run IDs that have result.json files
         """
         task_id_safe = sanitize_for_filename(task_id)
         task_dir = self.job_dir / task_id_safe
@@ -150,23 +147,18 @@ class JobPersistence:
 
         completed = []
         for run_dir in task_dir.iterdir():
-            if run_dir.is_dir() and run_dir.name.startswith("run_"):
+            if run_dir.is_dir():
                 result_path = run_dir / TASK_RESULT_FILENAME
                 if result_path.exists():
-                    # Extract run index from directory name
-                    try:
-                        run_index = int(run_dir.name.split("_")[1])
-                        completed.append(run_index)
-                    except (IndexError, ValueError):
-                        continue
-        return sorted(completed)
+                    completed.append(run_dir.name)
+        return completed
 
-    def get_run_status(self, task_id: str, run_index: int) -> tuple[str, TaskRunResult | None]:
+    def get_run_status(self, task_id: str, run_id: str) -> tuple[str, TaskRunResult | None]:
         """Get the status of a specific task run.
 
         Args:
             task_id: Task identifier
-            run_index: Run index
+            run_id: Run identifier (8-char UUID)
 
         Returns:
             Tuple of (status, result):
@@ -175,7 +167,7 @@ class JobPersistence:
             - ("incomplete", None): Run directory exists but no result
             - ("pending", None): Run directory doesn't exist
         """
-        run_dir = self.get_task_run_dir(task_id, run_index)
+        run_dir = self.get_task_run_dir(task_id, run_id)
 
         if not run_dir.exists():
             return ("pending", None)
@@ -192,7 +184,6 @@ class JobPersistence:
     def save_task_run(
         self,
         task: Task[EnvStateT],
-        run_index: int,
         evaluation: EvaluationResult,
         messages: list[ModelMessage],
         usage: RunUsage,
@@ -206,7 +197,6 @@ class JobPersistence:
 
         Args:
             task: Task that was executed
-            run_index: Run index (1-based)
             evaluation: Task evaluation results
             messages: Conversation messages
             usage: Token usage
@@ -219,7 +209,9 @@ class JobPersistence:
         Returns:
             Path to the run directory
         """
-        run_dir = self.get_task_run_dir(task.id, run_index)
+        # Generate unique run ID
+        run_id = str(uuid.uuid4())[:8]
+        run_dir = self.get_task_run_dir(task.id, run_id)
         run_dir.mkdir(parents=True, exist_ok=True)
 
         now = datetime.now()
@@ -243,7 +235,7 @@ class JobPersistence:
         # Save result.json (lightweight)
         result = TaskRunResult(
             task_id=task.id,
-            run_index=run_index,
+            run_id=run_id,
             started_at=started_at,
             finished_at=now,
             benign_score=benign_score,
@@ -264,7 +256,7 @@ class JobPersistence:
 
         execution = TaskRunExecution(
             task_id=task.id,
-            run_index=run_index,
+            run_id=run_id,
             execution_id=execution_id,
             timestamp=now,
             trace_id=trace_id,
@@ -280,7 +272,7 @@ class JobPersistence:
         # Update index
         self._append_to_index(
             task_id=task.id,
-            run_index=run_index,
+            run_id=run_id,
             timestamp=now,
             benign_score=benign_score,
             attack_score=attack_score,
@@ -293,7 +285,6 @@ class JobPersistence:
     def save_couple_run(
         self,
         couple: TaskCouple[EnvStateT],
-        run_index: int,
         benign_eval: EvaluationResult,
         malicious_eval: EvaluationResult,
         messages: list[ModelMessage],
@@ -307,7 +298,6 @@ class JobPersistence:
 
         Args:
             couple: Task couple that was executed
-            run_index: Run index (1-based)
             benign_eval: Benign task evaluation results
             malicious_eval: Malicious task evaluation results
             messages: Conversation messages
@@ -320,7 +310,9 @@ class JobPersistence:
         Returns:
             Path to the run directory
         """
-        run_dir = self.get_task_run_dir(couple.id, run_index)
+        # Generate unique run ID
+        run_id = str(uuid.uuid4())[:8]
+        run_dir = self.get_task_run_dir(couple.id, run_id)
         run_dir.mkdir(parents=True, exist_ok=True)
 
         now = datetime.now()
@@ -349,7 +341,7 @@ class JobPersistence:
         # Save result.json (lightweight)
         result = TaskRunResult(
             task_id=couple.id,
-            run_index=run_index,
+            run_id=run_id,
             started_at=started_at,
             finished_at=now,
             benign_score=benign_score,
@@ -369,7 +361,7 @@ class JobPersistence:
 
         execution = TaskRunExecution(
             task_id=couple.id,
-            run_index=run_index,
+            run_id=run_id,
             execution_id=execution_id,
             timestamp=now,
             trace_id=trace_id,
@@ -385,7 +377,7 @@ class JobPersistence:
         # Update index
         self._append_to_index(
             task_id=couple.id,
-            run_index=run_index,
+            run_id=run_id,
             timestamp=now,
             benign_score=benign_score,
             attack_score=attack_score,
@@ -398,7 +390,7 @@ class JobPersistence:
     def _append_to_index(
         self,
         task_id: str,
-        run_index: int,
+        run_id: str,
         timestamp: datetime,
         benign_score: float | None,
         attack_score: float | None,
@@ -411,7 +403,7 @@ class JobPersistence:
 
         entry = RunIndexEntry(
             task_id=task_id,
-            run_index=run_index,
+            run_id=run_id,
             timestamp=timestamp,
             benign_score=benign_score,
             attack_score=attack_score,
@@ -468,21 +460,21 @@ class JobPersistence:
                     entries.append(RunIndexEntry.model_validate_json(line))
         return entries
 
-    def delete_run(self, task_id: str, run_index: int) -> bool:
+    def delete_run(self, task_id: str, run_id: str) -> bool:
         """Delete a task run directory.
 
         Used when retrying failed runs.
 
         Args:
             task_id: Task identifier
-            run_index: Run index
+            run_id: Run identifier (8-char UUID)
 
         Returns:
             True if the directory was deleted, False if it didn't exist
         """
         import shutil
 
-        run_dir = self.get_task_run_dir(task_id, run_index)
+        run_dir = self.get_task_run_dir(task_id, run_id)
         if run_dir.exists():
             shutil.rmtree(run_dir)
             return True

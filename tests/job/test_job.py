@@ -205,11 +205,12 @@ class TestJobCleanupForRetry:
         )
 
         # Create a failed run with TimeoutError
-        run_dir = job.job_dir / "task1" / "run_001"
+        run_id = "abc12345"
+        run_dir = job.job_dir / "task1" / run_id
         run_dir.mkdir(parents=True)
         result = TaskRunResult(
             task_id="task1",
-            run_index=1,
+            run_id=run_id,
             started_at=datetime.now(),
             finished_at=datetime.now(),
             exception_info=ExceptionInfo(
@@ -223,12 +224,12 @@ class TestJobCleanupForRetry:
 
         index_entry = RunIndexEntry(
             task_id="task1",
-            run_index=1,
+            run_id=run_id,
             timestamp=datetime.now(),
             benign_score=None,
             attack_score=None,
             exception_type="TimeoutError",
-            path=Path("task1/run_001"),
+            path=Path(f"task1/{run_id}"),
         )
         (job.job_dir / "index.jsonl").write_text(index_entry.model_dump_json() + "\n")
 
@@ -248,7 +249,7 @@ class TestJobCleanupForRetry:
             agent_name="test",
         )
 
-        incomplete_run = job.job_dir / "task1" / "run_001"
+        incomplete_run = job.job_dir / "task1" / "abc12345"
         incomplete_run.mkdir(parents=True)
 
         # Without retry flags, incomplete runs are preserved
@@ -272,12 +273,14 @@ class TestJobCleanupForRetry:
         )
 
         # Create failed runs with index entries
+        run_ids = ["aaa11111", "bbb22222", "ccc33333"]
         for i in range(3):
-            run_dir = job.job_dir / f"task{i}" / "run_001"
+            run_id = run_ids[i]
+            run_dir = job.job_dir / f"task{i}" / run_id
             run_dir.mkdir(parents=True)
             result = TaskRunResult(
                 task_id=f"task{i}",
-                run_index=1,
+                run_id=run_id,
                 started_at=datetime.now(),
                 finished_at=datetime.now(),
                 exception_info=ExceptionInfo(
@@ -291,12 +294,12 @@ class TestJobCleanupForRetry:
 
             index_entry = RunIndexEntry(
                 task_id=f"task{i}",
-                run_index=1,
+                run_id=run_id,
                 timestamp=datetime.now(),
                 benign_score=None,
                 attack_score=None,
                 exception_type="TimeoutError" if i < 2 else "RuntimeError",
-                path=Path(f"task{i}/run_001"),
+                path=Path(f"task{i}/{run_id}"),
             )
             with open(job.job_dir / "index.jsonl", "a") as f:
                 f.write(index_entry.model_dump_json() + "\n")
@@ -311,9 +314,9 @@ class TestJobCleanupForRetry:
         assert entries[0].exception_type == "RuntimeError"
 
         # Verify the TimeoutError runs were deleted but RuntimeError run remains
-        assert not (job.job_dir / "task0" / "run_001").exists()
-        assert not (job.job_dir / "task1" / "run_001").exists()
-        assert (job.job_dir / "task2" / "run_001").exists()  # Not deleted (RuntimeError)
+        assert not (job.job_dir / "task0" / run_ids[0]).exists()
+        assert not (job.job_dir / "task1" / run_ids[1]).exists()
+        assert (job.job_dir / "task2" / run_ids[2]).exists()  # Not deleted (RuntimeError)
 
 
 class TestJobToExperimentConfig:
@@ -366,8 +369,8 @@ class TestApplyResumeOverrides:
         assert updated.execution.concurrency == 8
         assert updated.telemetry.trace_console is True
 
-    def test_strips_hydra_prefixes(self, tmp_path: Path):
-        """Test that Hydra prefixes (+, ~) are stripped from overrides."""
+    def test_rejects_hydra_add_prefix(self, tmp_path: Path):
+        """Test that Hydra + prefix is rejected on resume."""
         config_path = tmp_path / CONFIG_FILENAME
         job_config = JobConfig(
             job_name="test",
@@ -382,6 +385,24 @@ class TestApplyResumeOverrides:
         )
         _save_config_yaml(config_path, job_config)
 
-        updated = _apply_resume_overrides(job_config, ["+execution.concurrency=4"], config_path)
+        with pytest.raises(JobConfigMismatchError, match="Cannot add new keys"):
+            _apply_resume_overrides(job_config, ["+execution.concurrency=4"], config_path)
 
-        assert updated.execution.concurrency == 4
+    def test_rejects_hydra_delete_prefix(self, tmp_path: Path):
+        """Test that Hydra ~ prefix is rejected on resume."""
+        config_path = tmp_path / CONFIG_FILENAME
+        job_config = JobConfig(
+            job_name="test",
+            execution_mode="benign",
+            created_at=datetime.now(),
+            dataset=DatasetConfig(type="test", config={}),
+            agent=AgentConfig(type="plain", config={}),
+            attack=None,
+            execution=ExecutionConfig(concurrency=1),
+            telemetry=TelemetryConfig(),
+            output=OutputConfig(jobs_dir=Path("jobs")),
+        )
+        _save_config_yaml(config_path, job_config)
+
+        with pytest.raises(JobConfigMismatchError, match="Cannot delete keys"):
+            _apply_resume_overrides(job_config, ["~execution.concurrency"], config_path)

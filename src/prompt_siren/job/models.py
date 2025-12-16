@@ -41,7 +41,7 @@ class TaskRunResult(BaseModel):
     """
 
     task_id: str
-    run_index: int
+    run_id: str
     started_at: datetime | None = None
     finished_at: datetime | None = None
     benign_score: float | None = None
@@ -58,7 +58,7 @@ class TaskRunExecution(BaseModel):
     """Full execution data for a task run (heavy, stored separately from result)."""
 
     task_id: str
-    run_index: int
+    run_id: str
     execution_id: str
     timestamp: datetime
     trace_id: str | None = None
@@ -109,7 +109,7 @@ class RunIndexEntry(BaseModel):
     """Entry in per-job index.jsonl for fast result lookup."""
 
     task_id: str
-    run_index: int  # 1, 2, 3... for pass@k
+    run_id: str  # 8-char UUID
     timestamp: datetime
     benign_score: float | None
     attack_score: float | None

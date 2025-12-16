@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Generic, TypeAlias, TypeVar
 
 from pydantic_ai.messages import ModelMessage, ModelRequest, SystemPromptPart
@@ -180,7 +181,6 @@ async def _run_single_task_without_attack(
     persistence: JobPersistence | None = None,
 ) -> EvaluationResult:
     """Run and evaluate a single task. Returns single evaluation result."""
-    from datetime import datetime
 
     started_at = datetime.now()
     agent_name = agent.get_agent_name()
@@ -234,7 +234,6 @@ async def _run_single_task_without_attack(
             if persistence:
                 persistence.save_task_run(
                     task=task,
-                    run_index=1,  # pass@k support uses run_index > 1
                     evaluation=evaluation,
                     messages=list(result_ctx.messages),
                     usage=result_ctx.usage,
@@ -373,7 +372,6 @@ async def _run_task_couple_with_attack(
     persistence: JobPersistence | None = None,
 ) -> tuple[EvaluationResult, EvaluationResult]:
     """Run and evaluate a task couple. Returns benign + malicious results."""
-    from datetime import datetime
 
     started_at = datetime.now()
     agent_name = agent.get_agent_name()
@@ -422,7 +420,6 @@ async def _run_task_couple_with_attack(
             if persistence:
                 persistence.save_couple_run(
                     couple=couple,
-                    run_index=1,  # pass@k support uses run_index > 1
                     benign_eval=benign_eval,
                     malicious_eval=malicious_eval,
                     messages=list(result_ctx.messages),
