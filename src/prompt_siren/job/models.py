@@ -1,6 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Data models for job management and persistence."""
 
+from __future__ import annotations
+
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +25,7 @@ class ExceptionInfo(BaseModel):
     occurred_at: datetime
 
     @classmethod
-    def from_exception(cls, e: BaseException) -> "ExceptionInfo":
+    def from_exception(cls, e: BaseException) -> ExceptionInfo:
         """Create ExceptionInfo from an exception."""
         return cls(
             exception_type=type(e).__name__,
@@ -47,14 +49,9 @@ class TaskRunResult(BaseModel):
     attack_score: float | None = None
     exception_info: ExceptionInfo | None = None
 
-    @property
-    def is_successful(self) -> bool:
-        """Return True if the run completed without exception."""
-        return self.exception_info is None and self.finished_at is not None
-
 
 class TaskRunExecution(BaseModel):
-    """Full execution data for a task run (heavy, stored separately from result)."""
+    """Full execution data for a task run."""
 
     task_id: str
     run_id: str

@@ -15,7 +15,6 @@ from prompt_siren.config.experiment_config import (
 from prompt_siren.job.models import (
     ExceptionInfo,
     JobConfig,
-    TaskRunResult,
 )
 
 
@@ -51,48 +50,6 @@ class TestExceptionInfo:
             info = ExceptionInfo.from_exception(e)
             assert info.exception_type == "RuntimeError"
             assert info.exception_message == "outer"
-
-
-class TestTaskRunResult:
-    """Tests for TaskRunResult.is_successful property."""
-
-    def test_is_successful_when_completed_without_exception(self):
-        """Test is_successful returns True when finished without exception."""
-        result = TaskRunResult(
-            task_id="task1",
-            run_id="abc12345",
-            started_at=datetime.now(),
-            finished_at=datetime.now(),
-            benign_score=1.0,
-        )
-        assert result.is_successful is True
-
-    def test_is_not_successful_when_exception_occurred(self):
-        """Test is_successful returns False when exception occurred."""
-        result = TaskRunResult(
-            task_id="task1",
-            run_id="abc12345",
-            started_at=datetime.now(),
-            finished_at=datetime.now(),
-            benign_score=0.0,
-            exception_info=ExceptionInfo(
-                exception_type="RuntimeError",
-                exception_message="error",
-                exception_traceback="traceback",
-                occurred_at=datetime.now(),
-            ),
-        )
-        assert result.is_successful is False
-
-    def test_is_not_successful_when_not_finished(self):
-        """Test is_successful returns False when task hasn't finished."""
-        result = TaskRunResult(
-            task_id="task1",
-            run_id="abc12345",
-            started_at=datetime.now(),
-            finished_at=None,
-        )
-        assert result.is_successful is False
 
 
 class TestJobConfig:

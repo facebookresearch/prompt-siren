@@ -15,7 +15,6 @@ from prompt_siren.config.experiment_config import (
 )
 from prompt_siren.job.models import (
     CONFIG_FILENAME,
-    ExceptionInfo,
     INDEX_FILENAME,
     JobConfig,
     TASK_RESULT_FILENAME,
@@ -70,21 +69,8 @@ def mock_task_span() -> MagicMock:
     return mock_span
 
 
-class TestJobPersistenceLoad:
-    """Tests for JobPersistence.load method."""
-
-    def test_loads_existing_job(self, tmp_path: Path, job_config: JobConfig):
-        """Test loading an existing job preserves config."""
-        job_dir = tmp_path / "existing_job"
-        JobPersistence.create(job_dir, job_config)
-
-        loaded = JobPersistence.load(job_dir)
-        assert loaded.job_config.job_name == job_config.job_name
-
-    def test_raises_for_missing_job(self, tmp_path: Path):
-        """Test that loading nonexistent job raises FileNotFoundError."""
-        with pytest.raises(FileNotFoundError, match="Job config not found"):
-            JobPersistence.load(tmp_path / "nonexistent")
+class TestJobPersistenceCreate:
+    """Tests for JobPersistence.create method."""
 
     def test_does_not_overwrite_existing_config_on_create(
         self, tmp_path: Path, job_config: JobConfig
@@ -99,81 +85,6 @@ class TestJobPersistenceLoad:
         JobPersistence.create(job_dir, job_config)
 
         assert "custom" in (job_dir / CONFIG_FILENAME).read_text()
-
-
-class TestGetCompletedRuns:
-    """Tests for JobPersistence.get_completed_runs method."""
-
-    def test_returns_only_completed_run_ids(self, job_persistence: JobPersistence):
-        """Test that only runs with result.json are returned as completed."""
-        # Create completed runs
-        run_ids = ["abc11111", "def33333"]
-        for run_id in run_ids:
-            run_dir = job_persistence.get_task_run_dir("task1", run_id)
-            run_dir.mkdir(parents=True)
-            result = TaskRunResult(
-                task_id="task1",
-                run_id=run_id,
-                finished_at=datetime.now(),
-            )
-            (run_dir / TASK_RESULT_FILENAME).write_text(result.model_dump_json())
-
-        # Create incomplete run (directory only, no result.json)
-        incomplete_dir = job_persistence.get_task_run_dir("task1", "xyz22222")
-        incomplete_dir.mkdir(parents=True)
-
-        completed = job_persistence.get_completed_runs("task1")
-        assert set(completed) == set(run_ids)  # incomplete run excluded
-
-
-class TestGetRunStatus:
-    """Tests for JobPersistence.get_run_status method."""
-
-    def test_returns_correct_status_for_each_state(self, job_persistence: JobPersistence):
-        """Test that correct status is returned for pending, incomplete, completed, and failed."""
-        # Pending (no directory)
-        status, _ = job_persistence.get_run_status("task1", "aaa11111")
-        assert status == "pending"
-
-        # Incomplete (directory exists, no result)
-        run_dir = job_persistence.get_task_run_dir("task1", "bbb22222")
-        run_dir.mkdir(parents=True)
-        status, _ = job_persistence.get_run_status("task1", "bbb22222")
-        assert status == "incomplete"
-
-        # Completed (directory + result without exception)
-        run_id_completed = "ccc33333"
-        run_dir = job_persistence.get_task_run_dir("task1", run_id_completed)
-        run_dir.mkdir(parents=True)
-        result = TaskRunResult(
-            task_id="task1", run_id=run_id_completed, finished_at=datetime.now(), benign_score=1.0
-        )
-        (run_dir / TASK_RESULT_FILENAME).write_text(result.model_dump_json())
-        status, loaded = job_persistence.get_run_status("task1", run_id_completed)
-        assert status == "completed"
-        assert loaded is not None
-        assert loaded.benign_score == 1.0
-
-        # Failed (directory + result with exception)
-        run_id_failed = "ddd44444"
-        run_dir = job_persistence.get_task_run_dir("task1", run_id_failed)
-        run_dir.mkdir(parents=True)
-        result = TaskRunResult(
-            task_id="task1",
-            run_id=run_id_failed,
-            finished_at=datetime.now(),
-            exception_info=ExceptionInfo(
-                exception_type="RuntimeError",
-                exception_message="error",
-                exception_traceback="",
-                occurred_at=datetime.now(),
-            ),
-        )
-        (run_dir / TASK_RESULT_FILENAME).write_text(result.model_dump_json())
-        status, loaded = job_persistence.get_run_status("task1", run_id_failed)
-        assert status == "failed"
-        assert loaded is not None
-        assert loaded.exception_info is not None
 
 
 class TestSaveTaskRun:
@@ -298,26 +209,6 @@ class TestLoadIndex:
 
         entries = job_persistence.load_index()
         assert len(entries) == 3
-
-
-class TestDeleteRun:
-    """Tests for JobPersistence.delete_run method."""
-
-    def test_deletes_run_directory_and_returns_true(self, job_persistence: JobPersistence):
-        """Test that delete_run removes the run directory."""
-        run_id = "abc12345"
-        run_dir = job_persistence.get_task_run_dir("task1", run_id)
-        run_dir.mkdir(parents=True)
-        (run_dir / "result.json").write_text("{}")
-
-        result = job_persistence.delete_run("task1", run_id)
-        assert result is True
-        assert not run_dir.exists()
-
-    def test_returns_false_for_nonexistent_run(self, job_persistence: JobPersistence):
-        """Test that delete_run returns False if run doesn't exist."""
-        result = job_persistence.delete_run("nonexistent", "xyz99999")
-        assert result is False
 
 
 class TestRemoveIndexEntriesByPaths:

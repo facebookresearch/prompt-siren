@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -42,7 +43,6 @@ class Job:
         self,
         job_dir: Path,
         job_config: JobConfig,
-        is_resuming: bool = False,
     ):
         """Initialize a Job.
 
@@ -50,7 +50,6 @@ class Job:
         """
         self.job_dir = job_dir
         self.job_config = job_config
-        self.is_resuming = is_resuming
         self.persistence = JobPersistence(self.job_dir, self.job_config)
 
     @classmethod
@@ -111,7 +110,7 @@ class Job:
         job_dir.mkdir(parents=True, exist_ok=True)
         JobPersistence.create(job_dir, job_config)
 
-        return cls(job_dir, job_config, is_resuming=False)
+        return cls(job_dir, job_config)
 
     @classmethod
     def resume(
@@ -146,7 +145,7 @@ class Job:
             job_config = _apply_resume_overrides(job_config, overrides, config_path)
 
         # Create job instance
-        job = cls(job_dir, job_config, is_resuming=True)
+        job = cls(job_dir, job_config)
 
         # Handle retry logic
         job._cleanup_for_retry(retry_on_errors)
@@ -155,7 +154,7 @@ class Job:
 
     def _cleanup_for_retry(
         self,
-        retry_on_errors: list[str] | None,
+        retry_on_errors: Sequence[str] | None,
     ) -> None:
         """Clean up run directories for retry based on error filtering.
 

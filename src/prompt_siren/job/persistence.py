@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -79,27 +78,6 @@ class JobPersistence:
 
         return cls(job_dir, job_config)
 
-    @classmethod
-    def load(cls, job_dir: Path) -> JobPersistence:
-        """Load an existing JobPersistence from a job directory.
-
-        Args:
-            job_dir: Directory containing the job data
-
-        Returns:
-            JobPersistence instance
-
-        Raises:
-            FileNotFoundError: If config.yaml doesn't exist
-        """
-        config_path = job_dir / CONFIG_FILENAME
-        if not config_path.exists():
-            msg = f"Job config not found: {config_path}"
-            raise FileNotFoundError(msg)
-
-        job_config = _load_config_yaml(config_path)
-        return cls(job_dir, job_config)
-
     def get_task_run_dir(self, task_id: str, run_id: str) -> Path:
         """Get the directory path for a specific task run.
 
@@ -112,57 +90,6 @@ class JobPersistence:
         """
         task_id_safe = sanitize_for_filename(task_id)
         return self.job_dir / task_id_safe / run_id
-
-    def get_completed_runs(self, task_id: str) -> list[str]:
-        """Get list of completed run IDs for a task.
-
-        Args:
-            task_id: Task identifier
-
-        Returns:
-            List of run IDs that have result.json files
-        """
-        task_id_safe = sanitize_for_filename(task_id)
-        task_dir = self.job_dir / task_id_safe
-
-        if not task_dir.exists():
-            return []
-
-        completed = []
-        for run_dir in task_dir.iterdir():
-            if run_dir.is_dir():
-                result_path = run_dir / TASK_RESULT_FILENAME
-                if result_path.exists():
-                    completed.append(run_dir.name)
-        return completed
-
-    def get_run_status(self, task_id: str, run_id: str) -> tuple[str, TaskRunResult | None]:
-        """Get the status of a specific task run.
-
-        Args:
-            task_id: Task identifier
-            run_id: Run identifier (8-char UUID)
-
-        Returns:
-            Tuple of (status, result):
-            - ("completed", result): Run completed successfully
-            - ("failed", result): Run failed with exception
-            - ("incomplete", None): Run directory exists but no result
-            - ("pending", None): Run directory doesn't exist
-        """
-        run_dir = self.get_task_run_dir(task_id, run_id)
-
-        if not run_dir.exists():
-            return ("pending", None)
-
-        result_path = run_dir / TASK_RESULT_FILENAME
-        if not result_path.exists():
-            return ("incomplete", None)
-
-        result = TaskRunResult.model_validate_json(result_path.read_text())
-        if result.exception_info is not None:
-            return ("failed", result)
-        return ("completed", result)
 
     def save_task_run(
         self,
@@ -411,24 +338,6 @@ class JobPersistence:
                 if line:
                     entries.append(RunIndexEntry.model_validate_json(line))
         return entries
-
-    def delete_run(self, task_id: str, run_id: str) -> bool:
-        """Delete a task run directory.
-
-        Used when retrying failed runs.
-
-        Args:
-            task_id: Task identifier
-            run_id: Run identifier (8-char UUID)
-
-        Returns:
-            True if the directory was deleted, False if it didn't exist
-        """
-        run_dir = self.get_task_run_dir(task_id, run_id)
-        if run_dir.exists():
-            shutil.rmtree(run_dir)
-            return True
-        return False
 
     def remove_index_entries_by_paths(self, paths_to_remove: set[Path]) -> None:
         """Remove entries from the index by their paths.

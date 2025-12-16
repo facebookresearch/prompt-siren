@@ -124,7 +124,7 @@ class TestJobResume:
     """Tests for Job.resume method."""
 
     def test_resumes_existing_job(self, experiment_config: ExperimentConfig, tmp_path: Path):
-        """Test resuming an existing job loads config and sets is_resuming."""
+        """Test resuming an existing job loads config."""
         original_job = Job.create(
             experiment_config=experiment_config,
             execution_mode="benign",
@@ -135,7 +135,6 @@ class TestJobResume:
 
         resumed_job = Job.resume(job_dir=original_job.job_dir)
         assert resumed_job.job_config.job_name == "test_job"
-        assert resumed_job.is_resuming is True
 
     def test_raises_for_nonexistent_job(self, tmp_path: Path):
         """Test that resuming nonexistent job raises FileNotFoundError."""

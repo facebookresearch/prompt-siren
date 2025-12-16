@@ -85,7 +85,6 @@ class TestJobsResumeCommand:
         assert result.exit_code == 0, f"CLI failed: {result.output}"
         assert captured_job is not None, "Job was not passed to run_benign_experiment"
         assert captured_job.job_config.job_name == "test_job"
-        assert captured_job.is_resuming is True
 
     def test_resume_passes_job_to_attack_experiment(
         self, cli_runner: CliRunner, mock_attack_job_config: JobConfig, tmp_path: Path
@@ -111,7 +110,6 @@ class TestJobsResumeCommand:
         assert result.exit_code == 0, f"CLI failed: {result.output}"
         assert captured_job is not None, "Job was not passed to run_attack_experiment"
         assert captured_job.job_config.job_name == "test_attack_job"
-        assert captured_job.is_resuming is True
 
     def test_resume_nonexistent_job_fails(self, cli_runner: CliRunner, tmp_path: Path):
         """Test that resuming a nonexistent job fails with appropriate error."""
