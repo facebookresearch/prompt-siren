@@ -19,9 +19,9 @@ from .config.registry_bridge import (
     create_sandbox_manager_from_config,
 )
 from .datasets.registry import get_dataset_config_class
+from .job import Job
 from .registry_base import UnknownComponentError
 from .run import run_single_tasks_without_attack, run_task_couples_with_attack
-from .run_persistence import ExecutionPersistence
 from .telemetry import setup_telemetry
 from .telemetry.formatted_span import formatted_span
 from .types import ExecutionMode
@@ -135,10 +135,6 @@ async def run_benign_experiment(
     env_instance = dataset.environment
     toolsets = dataset.default_toolsets
 
-    # Create trace directory
-    trace_dir = experiment_config.output.trace_dir
-    trace_dir.mkdir(parents=True, exist_ok=True)
-
     # Get tasks from dataset: benign + malicious (both can be run as benign)
     all_tasks = dataset.benign_tasks + dataset.malicious_tasks
 
@@ -155,19 +151,23 @@ async def run_benign_experiment(
     else:
         selected_tasks = all_tasks
 
-    # Create persistence instance
-    persistence = ExecutionPersistence.create(
-        base_dir=trace_dir,
-        dataset_config=experiment_config.dataset,
-        agent_config=experiment_config.agent,
-        attack_config=None,  # No attack in benign mode
+    # Create job for persistence
+    job = Job.create(
+        experiment_config=experiment_config,
+        execution_mode="benign",
+        jobs_dir=experiment_config.output.jobs_dir,
+        job_name=experiment_config.output.job_name,
+        agent_name=agent.get_agent_name(),
     )
+
+    print(f"Job: {job.job_config.job_name}")
+    print(f"Job directory: {job.job_dir}")
 
     # Run benign experiment
     with formatted_span(
-        "benign experiment with config {hash}",
+        "benign experiment {job_name}",
         config=experiment_config.model_dump(),
-        hash=persistence.config_hash,
+        job_name=job.job_config.job_name,
     ):
         results = await run_single_tasks_without_attack(
             tasks=selected_tasks,
@@ -177,7 +177,7 @@ async def run_benign_experiment(
             toolsets=toolsets,
             usage_limits=experiment_config.usage_limits,
             max_concurrency=experiment_config.execution.concurrency,
-            persistence=persistence,
+            persistence=job.persistence,
             instrument=True,
         )
 
@@ -218,10 +218,6 @@ async def run_attack_experiment(
     attack_instance = create_attack_from_config(experiment_config.attack)
     toolsets = dataset.default_toolsets
 
-    # Create trace directory
-    trace_dir = experiment_config.output.trace_dir
-    trace_dir.mkdir(parents=True, exist_ok=True)
-
     # Get task couples from dataset
     all_couples = dataset.task_couples
 
@@ -238,19 +234,23 @@ async def run_attack_experiment(
     else:
         selected_couples = all_couples
 
-    # Create persistence instance
-    persistence = ExecutionPersistence.create(
-        base_dir=trace_dir,
-        dataset_config=experiment_config.dataset,
-        agent_config=experiment_config.agent,
-        attack_config=experiment_config.attack,
+    # Create job for persistence
+    job = Job.create(
+        experiment_config=experiment_config,
+        execution_mode="attack",
+        jobs_dir=experiment_config.output.jobs_dir,
+        job_name=experiment_config.output.job_name,
+        agent_name=agent.get_agent_name(),
     )
+
+    print(f"Job: {job.job_config.job_name}")
+    print(f"Job directory: {job.job_dir}")
 
     # Run attack experiment
     with formatted_span(
-        "attack experiment with config {hash}",
+        "attack experiment {job_name}",
         config=experiment_config.model_dump(),
-        hash=persistence.config_hash,
+        job_name=job.job_config.job_name,
     ):
         results = await run_task_couples_with_attack(
             couples=selected_couples,
@@ -261,7 +261,7 @@ async def run_attack_experiment(
             attack=attack_instance,
             usage_limits=experiment_config.usage_limits,
             max_concurrency=experiment_config.execution.concurrency,
-            persistence=persistence,
+            persistence=job.persistence,
             instrument=True,
         )
 

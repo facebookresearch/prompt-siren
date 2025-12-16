@@ -1,0 +1,131 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+"""Data models for job management and persistence."""
+
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel, Field
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.usage import RunUsage
+
+
+class ExceptionInfo(BaseModel):
+    """Information about an exception that occurred during task execution."""
+
+    exception_type: str
+    exception_message: str
+    exception_traceback: str
+    occurred_at: datetime
+
+    @classmethod
+    def from_exception(cls, e: BaseException) -> "ExceptionInfo":
+        """Create ExceptionInfo from an exception."""
+        import traceback
+
+        return cls(
+            exception_type=type(e).__name__,
+            exception_message=str(e),
+            exception_traceback=traceback.format_exc(),
+            occurred_at=datetime.now(),
+        )
+
+
+class TaskRunResult(BaseModel):
+    """Result for a single task run (one execution of a task).
+
+    A task may be run multiple times for pass@k evaluation.
+    """
+
+    task_id: str
+    run_index: int
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    benign_score: float | None = None
+    attack_score: float | None = None
+    exception_info: ExceptionInfo | None = None
+
+    @property
+    def is_successful(self) -> bool:
+        """Return True if the run completed without exception."""
+        return self.exception_info is None and self.finished_at is not None
+
+
+class TaskRunExecution(BaseModel):
+    """Full execution data for a task run (heavy, stored separately from result)."""
+
+    task_id: str
+    run_index: int
+    execution_id: str
+    timestamp: datetime
+    trace_id: str | None = None
+    span_id: str | None = None
+    messages: list[ModelMessage]
+    usage: RunUsage
+    attacks: dict[str, Any] | None = None  # Generated attacks
+
+
+class JobConfig(BaseModel):
+    """Snapshot of the experiment configuration for a job.
+
+    This is saved as config.yaml in the job directory and can be loaded
+    via OmegaConf for resume with Hydra-style overrides.
+    """
+
+    job_name: str
+    execution_mode: str  # "benign" or "attack"
+    created_at: datetime
+    n_runs_per_task: int = Field(default=1, ge=1, description="Number of runs per task for pass@k")
+
+    # Component configs (from ExperimentConfig)
+    dataset: dict[str, Any]
+    agent: dict[str, Any]
+    attack: dict[str, Any] | None
+    execution: dict[str, Any]
+    telemetry: dict[str, Any]
+    output: dict[str, Any]
+    task_ids: list[str] | None = None
+    usage_limits: dict[str, Any] | None = None
+
+
+class JobStats(BaseModel):
+    """Statistics for a job."""
+
+    n_total_tasks: int
+    n_runs_per_task: int = 1
+    n_completed_runs: int = 0
+    n_failed_runs: int = 0
+    n_remaining_runs: int = 0
+    avg_benign_score: float | None = None
+    avg_attack_score: float | None = None
+    exception_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class JobResult(BaseModel):
+    """Aggregated result for a job, stored in result.json."""
+
+    job_name: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    is_complete: bool = False
+    stats: JobStats
+
+
+class RunIndexEntry(BaseModel):
+    """Entry in per-job index.jsonl for fast result lookup."""
+
+    task_id: str
+    run_index: int  # 1, 2, 3... for pass@k
+    timestamp: datetime
+    benign_score: float | None
+    attack_score: float | None
+    exception_type: str | None = None  # None if successful
+    path: Path  # Relative path to run directory from job directory
+
+
+# Constants for file names
+CONFIG_FILENAME = "config.yaml"
+RESULT_FILENAME = "result.json"
+INDEX_FILENAME = "index.jsonl"
+TASK_RESULT_FILENAME = "result.json"
+TASK_EXECUTION_FILENAME = "execution.json"

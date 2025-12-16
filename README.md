@@ -96,8 +96,8 @@ After running experiments, use the `results` command to aggregate and analyze re
 # View results with default settings (pass@1, grouped by all configs)
 uv run prompt-siren results
 
-# Specify custom output directory
-uv run prompt-siren results --output-dir=./traces
+# Specify custom jobs directory
+uv run prompt-siren results --jobs-dir=./jobs
 
 # Group results by different dimensions
 uv run prompt-siren results --group-by=model

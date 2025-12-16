@@ -24,7 +24,7 @@ from typing_extensions import assert_never
 from .agents.abstract import AbstractAgent
 from .attacks.abstract import AbstractAttack
 from .environments.abstract import AbstractEnvironment
-from .run_persistence import ExecutionPersistence
+from .job import JobPersistence
 from .tasks import (
     BenignTask,
     EvaluationResult,
@@ -177,7 +177,7 @@ async def _run_single_task_without_attack(
     usage_limits: UsageLimits | None,
     concurrency_limiter: asyncio.BoundedSemaphore | nullcontext,
     instrument: InstrumentationSettings | bool | None,
-    persistence: ExecutionPersistence | None = None,
+    persistence: JobPersistence | None = None,
 ) -> EvaluationResult:
     """Run and evaluate a single task. Returns single evaluation result."""
     agent_name = agent.get_agent_name()
@@ -229,11 +229,12 @@ async def _run_single_task_without_attack(
             _log_single_task_result(evaluation, result_ctx, task_span)
 
             if persistence:
-                persistence.save_single_task_execution(
+                persistence.save_task_run(
                     task=task,
-                    agent_name=agent_name,
-                    result_ctx=result_ctx,
+                    run_index=1,  # pass@k support uses run_index > 1
                     evaluation=evaluation,
+                    messages=list(result_ctx.messages),
+                    usage=result_ctx.usage,
                     task_span=task_span,
                 )
 
@@ -248,7 +249,7 @@ async def run_single_tasks_without_attack(
     toolsets: Sequence[AbstractToolset[EnvStateT]],
     usage_limits: UsageLimits | None = None,
     max_concurrency: int | None = 1,
-    persistence: ExecutionPersistence | None = None,
+    persistence: JobPersistence | None = None,
     instrument: InstrumentationSettings | bool | None = None,
 ) -> list[EvaluationResult]:
     """Run benign tasks. Simple signature, specific return type.
@@ -260,7 +261,7 @@ async def run_single_tasks_without_attack(
         toolsets: The toolsets to use for the tasks
         usage_limits: The usage limits to apply
         max_concurrency: Maximum number of tasks to run concurrently
-        persistence: Optional ExecutionPersistence instance for saving results
+        persistence: Optional JobPersistence instance for saving results
         instrument: Instrumentation settings for telemetry
 
     Returns:
@@ -365,7 +366,7 @@ async def _run_task_couple_with_attack(
     concurrency_limiter: asyncio.BoundedSemaphore | nullcontext,
     instrument: InstrumentationSettings | bool | None,
     attack: AbstractAttack[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
-    persistence: ExecutionPersistence | None = None,
+    persistence: JobPersistence | None = None,
 ) -> tuple[EvaluationResult, EvaluationResult]:
     """Run and evaluate a task couple. Returns benign + malicious results."""
     agent_name = agent.get_agent_name()
@@ -412,12 +413,13 @@ async def _run_task_couple_with_attack(
             _log_couple_result(benign_eval, malicious_eval, result_ctx, task_span)
 
             if persistence:
-                persistence.save_couple_execution(
+                persistence.save_couple_run(
                     couple=couple,
-                    agent_name=agent_name,
-                    result_ctx=result_ctx,
+                    run_index=1,  # pass@k support uses run_index > 1
                     benign_eval=benign_eval,
                     malicious_eval=malicious_eval,
+                    messages=list(result_ctx.messages),
+                    usage=result_ctx.usage,
                     task_span=task_span,
                     generated_attacks=generated_attacks,
                 )
@@ -434,7 +436,7 @@ async def run_task_couples_with_attack(
     attack: AbstractAttack[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
     usage_limits: UsageLimits | None = None,
     max_concurrency: int | None = 1,
-    persistence: ExecutionPersistence | None = None,
+    persistence: JobPersistence | None = None,
     instrument: InstrumentationSettings | bool | None = None,
 ) -> list[tuple[EvaluationResult, EvaluationResult]]:
     """Run attack tasks. Different signature, different return type.
@@ -447,7 +449,7 @@ async def run_task_couples_with_attack(
         attack: Optional AbstractAttack instance (can be None for baseline)
         usage_limits: The usage limits to apply
         max_concurrency: Maximum number of couples to run concurrently
-        persistence: Optional ExecutionPersistence instance for saving results
+        persistence: Optional JobPersistence instance for saving results
         instrument: Instrumentation settings for telemetry
 
     Returns:

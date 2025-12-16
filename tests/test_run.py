@@ -22,12 +22,13 @@ from prompt_siren.config.experiment_config import (
     AgentConfig,
     AttackConfig,
     DatasetConfig,
+    ExperimentConfig,
 )
+from prompt_siren.job import Job
 from prompt_siren.run import (
     run_single_tasks_without_attack,
     run_task_couples_with_attack,
 )
-from prompt_siren.run_persistence import ExecutionPersistence
 from prompt_siren.tasks import BenignTask, MaliciousTask, TaskCouple, TaskResult
 from pydantic_ai.messages import (
     ModelRequest,
@@ -141,12 +142,17 @@ class TestRunBenignTasks:
         agent = PlainAgent(PlainAgentConfig(model=TestModel(), model_settings=ModelSettings()))
         task = create_mock_benign_task("test_task", {"eval1": 1.0})
 
-        # Create persistence
-        persistence = ExecutionPersistence.create(
-            base_dir=tmp_path,
-            dataset_config=DatasetConfig(type="mock", config={}),
-            agent_config=AgentConfig(type="plain", config={"model": "test"}),
-            attack_config=None,
+        # Create job with persistence
+        experiment_config = ExperimentConfig(
+            agent=AgentConfig(type="plain", config={"model": "test"}),
+            dataset=DatasetConfig(type="mock", config={}),
+        )
+        job = Job.create(
+            experiment_config=experiment_config,
+            execution_mode="benign",
+            jobs_dir=tmp_path,
+            job_name="test_job",
+            agent_name="test",
         )
 
         results = await run_single_tasks_without_attack(
@@ -155,16 +161,17 @@ class TestRunBenignTasks:
             env=mock_environment,
             system_prompt=None,
             toolsets=mock_dataset.default_toolsets,
-            persistence=persistence,
+            persistence=job.persistence,
             instrument=False,
         )
 
         assert len(results) == 1
 
-        # Verify files were created
-        output_files = list(persistence.output_dir.glob("*.json"))
-        assert len(output_files) == 1
-        assert "test_task" in output_files[0].name
+        # Verify files were created in job directory
+        task_dir = job.job_dir / "test_task" / "run_001"
+        assert task_dir.exists()
+        assert (task_dir / "result.json").exists()
+        assert (task_dir / "execution.json").exists()
 
     async def test_run_benign_tasks_error_handling(
         self, mock_environment: MockEnvironment, mock_dataset: MockDataset
@@ -335,12 +342,18 @@ class TestRunAttackTasks:
         agent = PlainAgent(PlainAgentConfig(model=TestModel(), model_settings=ModelSettings()))
         couple = create_mock_task_couple("test_couple", {"eval1": 1.0}, {"eval1": 0.5})
 
-        # Create persistence with attack config
-        persistence = ExecutionPersistence.create(
-            base_dir=tmp_path,
-            dataset_config=DatasetConfig(type="mock", config={}),
-            agent_config=AgentConfig(type="plain", config={"model": "test"}),
-            attack_config=AttackConfig(type="mock", config={}),
+        # Create job with persistence and attack config
+        experiment_config = ExperimentConfig(
+            agent=AgentConfig(type="plain", config={"model": "test"}),
+            dataset=DatasetConfig(type="mock", config={}),
+            attack=AttackConfig(type="mock", config={}),
+        )
+        job = Job.create(
+            experiment_config=experiment_config,
+            execution_mode="attack",
+            jobs_dir=tmp_path,
+            job_name="test_attack_job",
+            agent_name="test",
         )
 
         results = await run_task_couples_with_attack(
@@ -350,16 +363,17 @@ class TestRunAttackTasks:
             system_prompt=None,
             toolsets=mock_dataset.default_toolsets,
             attack=mock_attack,
-            persistence=persistence,
+            persistence=job.persistence,
             instrument=False,
         )
 
         assert len(results) == 1
 
-        # Verify files were created
-        output_files = list(persistence.output_dir.glob("*.json"))
-        assert len(output_files) == 1
-        assert "test_couple" in output_files[0].name
+        # Verify files were created in job directory (couple ID is benign:malicious)
+        task_dir = job.job_dir / "test_couple_benign_test_couple_malicious" / "run_001"
+        assert task_dir.exists()
+        assert (task_dir / "result.json").exists()
+        assert (task_dir / "execution.json").exists()
 
     async def test_run_couples_error_handling(
         self,
