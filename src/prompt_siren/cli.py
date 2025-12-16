@@ -2,9 +2,10 @@
 """Click-based CLI for Siren."""
 
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TypeVar
 
 import click
 from hydra import compose, initialize_config_dir
@@ -125,10 +126,13 @@ _start_common_options = [
 ]
 
 
-def _add_options(options: list):
+_F = TypeVar("_F", bound=Callable[..., object])
+
+
+def _add_options(options: list[Callable[[_F], _F]]) -> Callable[[_F], _F]:
     """Decorator to add multiple options to a command."""
 
-    def decorator(func):
+    def decorator(func: _F) -> _F:
         for option in reversed(options):
             func = option(func)
         return func
@@ -214,21 +218,15 @@ def start_attack(
     help="Path to the job directory containing config.yaml",
 )
 @click.option(
+    "-e",
     "--retry-on-error",
-    "-r",
     multiple=True,
     help="Retry tasks that failed with this error type (can be used multiple times)",
-)
-@click.option(
-    "--include-failed",
-    is_flag=True,
-    help="Re-run all failed tasks (not just incomplete)",
 )
 @click.argument("overrides", nargs=-1)
 def resume(
     job_path: Path,
     retry_on_error: tuple[str, ...],
-    include_failed: bool,
     overrides: tuple[str, ...],
 ):
     """Resume an existing job from its job directory.
@@ -238,8 +236,8 @@ def resume(
 
     Examples:
         prompt-siren jobs resume -p ./jobs/my-job
+        prompt-siren jobs resume -p ./jobs/my-job -e TimeoutError
         prompt-siren jobs resume -p ./jobs/my-job --retry-on-error TimeoutError
-        prompt-siren jobs resume -p ./jobs/my-job --include-failed
         prompt-siren jobs resume -p ./jobs/my-job execution.concurrency=8
     """
     try:
@@ -247,7 +245,6 @@ def resume(
             job_dir=job_path,
             overrides=list(overrides) if overrides else None,
             retry_on_errors=list(retry_on_error) if retry_on_error else None,
-            include_failed=include_failed,
         )
     except FileNotFoundError as e:
         click.echo(f"Error: {e}", err=True)

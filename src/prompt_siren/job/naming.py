@@ -87,7 +87,7 @@ def parse_job_name(job_name: str) -> dict[str, str] | None:
         job_name: Job name to parse
 
     Returns:
-        Dictionary with 'timestamp' key if parseable, None otherwise
+        Dictionary with 'timestamp' and 'prefix' keys if parseable, None otherwise
     """
     # Try to extract timestamp from the end (YYYY-MM-DD_HH-MM-SS)
     timestamp_pattern = r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})$"

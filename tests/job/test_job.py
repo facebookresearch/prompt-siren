@@ -236,57 +236,10 @@ class TestJobCleanupForRetry:
 
         assert not run_dir.exists()
 
-    def test_include_failed_deletes_all_failed_runs(
-        self, experiment_config: ExperimentConfig, tmp_path: Path
-    ):
-        """Test that include_failed=True deletes all failed runs regardless of error type."""
-        job = Job.create(
-            experiment_config=experiment_config,
-            execution_mode="benign",
-            jobs_dir=tmp_path,
-            job_name="test_job",
-            agent_name="test",
-        )
-
-        # Create failed runs with different error types
-        for error_type in ["TimeoutError", "RuntimeError"]:
-            run_dir = job.job_dir / f"task_{error_type}" / "run_001"
-            run_dir.mkdir(parents=True)
-            result = TaskRunResult(
-                task_id=f"task_{error_type}",
-                run_index=1,
-                started_at=datetime.now(),
-                finished_at=datetime.now(),
-                exception_info=ExceptionInfo(
-                    exception_type=error_type,
-                    exception_message="error",
-                    exception_traceback="",
-                    occurred_at=datetime.now(),
-                ),
-            )
-            (run_dir / "result.json").write_text(result.model_dump_json())
-
-            index_entry = RunIndexEntry(
-                task_id=f"task_{error_type}",
-                run_index=1,
-                timestamp=datetime.now(),
-                benign_score=None,
-                attack_score=None,
-                exception_type=error_type,
-                path=Path(f"task_{error_type}/run_001"),
-            )
-            with open(job.job_dir / "index.jsonl", "a") as f:
-                f.write(index_entry.model_dump_json() + "\n")
-
-        Job.resume(job_dir=job.job_dir, include_failed=True)
-
-        assert not (job.job_dir / "task_TimeoutError" / "run_001").exists()
-        assert not (job.job_dir / "task_RuntimeError" / "run_001").exists()
-
     def test_cleanup_deletes_incomplete_runs_only_with_retry_flags(
         self, experiment_config: ExperimentConfig, tmp_path: Path
     ):
-        """Test that incomplete runs are only deleted when retry flags are set."""
+        """Test that incomplete runs are only deleted when retry_on_errors is set."""
         job = Job.create(
             experiment_config=experiment_config,
             execution_mode="benign",
@@ -302,8 +255,8 @@ class TestJobCleanupForRetry:
         Job.resume(job_dir=job.job_dir)
         assert incomplete_run.exists()
 
-        # With include_failed, incomplete runs are deleted
-        Job.resume(job_dir=job.job_dir, include_failed=True)
+        # With retry_on_errors, incomplete runs are also deleted
+        Job.resume(job_dir=job.job_dir, retry_on_errors=["TimeoutError"])
         assert not incomplete_run.exists()
 
     def test_cleanup_updates_index_when_runs_deleted(

@@ -138,7 +138,6 @@ class Job:
         job_dir: Path,
         overrides: list[str] | None = None,
         retry_on_errors: list[str] | None = None,
-        include_failed: bool = False,
     ) -> Job:
         """Resume an existing job from its directory.
 
@@ -146,7 +145,6 @@ class Job:
             job_dir: Path to the job directory
             overrides: Hydra-style overrides for execution-related fields
             retry_on_errors: Error types to retry (delete runs with these exceptions)
-            include_failed: If True, retry all failed runs (not just incomplete)
 
         Returns:
             Job instance configured for resumption
@@ -171,7 +169,7 @@ class Job:
         job = cls(job_dir, job_config, is_resuming=True)
 
         # Handle retry logic
-        job._cleanup_for_retry(retry_on_errors, include_failed)
+        job._cleanup_for_retry(retry_on_errors)
 
         return job
 
@@ -249,18 +247,16 @@ class Job:
     def _cleanup_for_retry(
         self,
         retry_on_errors: list[str] | None,
-        include_failed: bool,
     ) -> None:
         """Clean up run directories for retry based on error filtering.
 
         Args:
-            retry_on_errors: Error types to retry
-            include_failed: If True, retry all failed runs
+            retry_on_errors: Error types to retry (delete runs with these exceptions)
         """
-        if not retry_on_errors and not include_failed:
+        if not retry_on_errors:
             return
 
-        retry_error_set = set(retry_on_errors) if retry_on_errors else set()
+        retry_error_set = set(retry_on_errors)
 
         # Track paths that are deleted for index cleanup
         deleted_paths: set[Path] = set()
@@ -269,16 +265,7 @@ class Job:
         index_entries = self.persistence.load_index()
 
         for entry in index_entries:
-            should_delete = False
-
-            if entry.exception_type is not None:
-                # This is a failed run
-                if include_failed:
-                    should_delete = True
-                elif entry.exception_type in retry_error_set:
-                    should_delete = True
-
-            if should_delete:
+            if entry.exception_type is not None and entry.exception_type in retry_error_set:
                 run_dir = self.job_dir / entry.path
                 if run_dir.exists():
                     shutil.rmtree(run_dir)
@@ -403,7 +390,7 @@ def _apply_resume_overrides(
     return updated_config
 
 
-def _parse_value(value: str):
+def _parse_value(value: str) -> str | int | float | bool:
     """Parse a string value to the appropriate type.
 
     Handles:

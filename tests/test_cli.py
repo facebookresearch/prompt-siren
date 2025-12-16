@@ -133,10 +133,10 @@ class TestJobsResumeCommand:
         call_kwargs = mock_resume.call_args.kwargs
         assert call_kwargs.get("retry_on_errors") == ["TimeoutError"]
 
-    def test_resume_with_include_failed_flag(
+    def test_resume_with_retry_on_error_short_flag(
         self, cli_runner: CliRunner, mock_job_config: JobConfig, tmp_path: Path
     ):
-        """Test that --include-failed flag is passed to Job.resume."""
+        """Test that -e short flag works for --retry-on-error."""
         job_dir = tmp_path / "test_job"
         job_dir.mkdir()
         _save_config_yaml(job_dir / "config.yaml", mock_job_config)
@@ -144,13 +144,14 @@ class TestJobsResumeCommand:
         with patch("prompt_siren.hydra_app.run_benign_experiment", AsyncMock(return_value={})):
             with patch.object(Job, "resume", wraps=Job.resume) as mock_resume:
                 result = cli_runner.invoke(
-                    main, ["jobs", "resume", "-p", str(job_dir), "--include-failed"]
+                    main,
+                    ["jobs", "resume", "-p", str(job_dir), "-e", "RuntimeError"],
                 )
 
         assert result.exit_code == 0, f"CLI failed: {result.output}"
         mock_resume.assert_called_once()
         call_kwargs = mock_resume.call_args.kwargs
-        assert call_kwargs.get("include_failed") is True
+        assert call_kwargs.get("retry_on_errors") == ["RuntimeError"]
 
     def test_resume_with_execution_override(
         self, cli_runner: CliRunner, mock_job_config: JobConfig, tmp_path: Path
@@ -243,9 +244,7 @@ class TestJobsStartCommand:
 class TestRunCommandAliases:
     """Tests for 'run' command aliases."""
 
-    def test_run_benign_is_alias_for_jobs_start_benign(
-        self, cli_runner: CliRunner, tmp_path: Path
-    ):
+    def test_run_benign_is_alias_for_jobs_start_benign(self, cli_runner: CliRunner, tmp_path: Path):
         """Test that 'run benign' invokes the same flow as 'jobs start benign'."""
         with patch("prompt_siren.cli._run_hydra") as mock_run_hydra:
             cli_runner.invoke(
@@ -257,9 +256,7 @@ class TestRunCommandAliases:
         call_kwargs = mock_run_hydra.call_args.kwargs
         assert call_kwargs["execution_mode"] == "benign"
 
-    def test_run_attack_is_alias_for_jobs_start_attack(
-        self, cli_runner: CliRunner, tmp_path: Path
-    ):
+    def test_run_attack_is_alias_for_jobs_start_attack(self, cli_runner: CliRunner, tmp_path: Path):
         """Test that 'run attack' invokes the same flow as 'jobs start attack'."""
         with patch("prompt_siren.cli._run_hydra") as mock_run_hydra:
             cli_runner.invoke(
