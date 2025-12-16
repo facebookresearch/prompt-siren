@@ -7,21 +7,18 @@ import shutil
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from omegaconf import OmegaConf
 
+from ..config.experiment_config import ExperimentConfig
+from ..types import ExecutionMode
 from .models import (
     CONFIG_FILENAME,
     JobConfig,
     JobStats,
 )
 from .naming import generate_job_name
-from .persistence import _load_config_yaml, JobPersistence
-
-if TYPE_CHECKING:
-    from ..config.experiment_config import ExperimentConfig
-    from ..types import ExecutionMode
+from .persistence import _load_config_yaml, _save_config_yaml, JobPersistence
 
 # Fields that can be overridden on resume
 RESUMABLE_OVERRIDE_PREFIXES = ("execution.", "telemetry.", "output.", "usage_limits.")
@@ -290,8 +287,6 @@ class Job:
         Returns:
             ExperimentConfig instance
         """
-        from ..config.experiment_config import ExperimentConfig
-
         # Extract only ExperimentConfig fields from JobConfig
         return ExperimentConfig.model_validate(
             self.job_config.model_dump(include=set(ExperimentConfig.model_fields.keys()))
@@ -362,8 +357,6 @@ def _apply_resume_overrides(
     updated_config = JobConfig.model_validate(updated_dict)
 
     # Save updated config back to file
-    from .persistence import _save_config_yaml
-
     _save_config_yaml(config_path, updated_config)
 
     return updated_config

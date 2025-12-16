@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +16,7 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage
 
 from ..tasks import EvaluationResult, Task, TaskCouple
-from ..types import InjectionAttack
+from ..types import InjectionAttack, InjectionAttacksDictTypeAdapter
 from .models import (
     CONFIG_FILENAME,
     ExceptionInfo,
@@ -250,8 +251,6 @@ class JobPersistence:
         # Convert attacks to serializable format
         attacks_dict: dict[str, Any] | None = None
         if generated_attacks:
-            from ..types import InjectionAttacksDictTypeAdapter
-
             attacks_dict = InjectionAttacksDictTypeAdapter.dump_python(generated_attacks)
 
         execution = TaskRunExecution(
@@ -355,8 +354,6 @@ class JobPersistence:
         # Save execution.json (heavy)
         attacks_dict: dict[str, Any] | None = None
         if generated_attacks:
-            from ..types import InjectionAttacksDictTypeAdapter
-
             attacks_dict = InjectionAttacksDictTypeAdapter.dump_python(generated_attacks)
 
         execution = TaskRunExecution(
@@ -472,8 +469,6 @@ class JobPersistence:
         Returns:
             True if the directory was deleted, False if it didn't exist
         """
-        import shutil
-
         run_dir = self.get_task_run_dir(task_id, run_id)
         if run_dir.exists():
             shutil.rmtree(run_dir)

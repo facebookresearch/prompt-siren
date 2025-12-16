@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Data models for job management and persistence."""
 
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,8 +25,6 @@ class ExceptionInfo(BaseModel):
     @classmethod
     def from_exception(cls, e: BaseException) -> "ExceptionInfo":
         """Create ExceptionInfo from an exception."""
-        import traceback
-
         return cls(
             exception_type=type(e).__name__,
             exception_message=str(e),
