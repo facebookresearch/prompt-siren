@@ -191,6 +191,7 @@ class TestSaveTaskRun:
             messages=messages,
             usage=usage,
             task_span=mock_task_span,
+            started_at=datetime.now(),
         )
 
         loaded = TaskRunResult.model_validate_json((run_dir / TASK_RESULT_FILENAME).read_text())
@@ -217,6 +218,7 @@ class TestSaveTaskRun:
             messages=messages,
             usage=usage,
             task_span=mock_task_span,
+            started_at=datetime.now(),
         )
 
         index_content = (job_persistence.job_dir / INDEX_FILENAME).read_text()
@@ -254,6 +256,7 @@ class TestSaveCoupleRun:
             messages=messages,
             usage=usage,
             task_span=mock_task_span,
+            started_at=datetime.now(),
         )
 
         loaded = TaskRunResult.model_validate_json((run_dir / TASK_RESULT_FILENAME).read_text())
@@ -286,6 +289,7 @@ class TestLoadIndex:
                 messages=messages,
                 usage=usage,
                 task_span=mock_task_span,
+                started_at=datetime.now(),
             )
 
         entries = job_persistence.load_index()
@@ -329,6 +333,95 @@ class TestUpdateJobResult:
         content = (job_persistence.job_dir / RESULT_FILENAME).read_text()
         assert "0.85" in content
         assert '"is_complete": true' in content
+
+
+class TestRemoveIndexEntriesByPaths:
+    """Tests for JobPersistence.remove_index_entries_by_paths method."""
+
+    def test_removes_specified_paths_from_index(
+        self, job_persistence: JobPersistence, mock_task_span: MagicMock
+    ):
+        """Test that remove_index_entries_by_paths removes specified entries."""
+
+        async def dummy_eval(task_result: TaskResult) -> float:
+            return 1.0
+
+        # Create multiple task runs
+        tasks = []
+        for i in range(3):
+            task = BenignTask(id=f"task{i}", prompt="test", evaluators={"eval1": dummy_eval})
+            tasks.append(task)
+            evaluation = EvaluationResult(task_id=f"task{i}", results={"eval1": 1.0})
+            messages: list[ModelMessage] = [ModelResponse(parts=[TextPart("response")])]
+            usage = RunUsage()
+
+            job_persistence.save_task_run(
+                task=task,
+                run_index=1,
+                evaluation=evaluation,
+                messages=messages,
+                usage=usage,
+                task_span=mock_task_span,
+                started_at=datetime.now(),
+            )
+
+        # Verify all 3 entries exist
+        entries = job_persistence.load_index()
+        assert len(entries) == 3
+
+        # Remove task1's entry
+        task1_path = job_persistence.get_task_run_dir("task1", 1).relative_to(
+            job_persistence.job_dir
+        )
+        job_persistence.remove_index_entries_by_paths({task1_path})
+
+        # Verify only 2 entries remain
+        entries = job_persistence.load_index()
+        assert len(entries) == 2
+        assert all(entry.task_id != "task1" for entry in entries)
+        assert any(entry.task_id == "task0" for entry in entries)
+        assert any(entry.task_id == "task2" for entry in entries)
+
+    def test_does_nothing_if_index_doesnt_exist(self, job_persistence: JobPersistence):
+        """Test that remove_index_entries_by_paths handles missing index gracefully."""
+        from pathlib import Path
+
+        # Remove index file if it exists
+        index_path = job_persistence.job_dir / INDEX_FILENAME
+        if index_path.exists():
+            index_path.unlink()
+
+        # Should not raise an error
+        job_persistence.remove_index_entries_by_paths({Path("nonexistent/run_001")})
+
+    def test_handles_empty_paths_set(
+        self, job_persistence: JobPersistence, mock_task_span: MagicMock
+    ):
+        """Test that remove_index_entries_by_paths handles empty paths set."""
+
+        async def dummy_eval(task_result: TaskResult) -> float:
+            return 1.0
+
+        task = BenignTask(id="task1", prompt="test", evaluators={"eval1": dummy_eval})
+        evaluation = EvaluationResult(task_id="task1", results={"eval1": 1.0})
+        messages: list[ModelMessage] = [ModelResponse(parts=[TextPart("response")])]
+        usage = RunUsage()
+
+        job_persistence.save_task_run(
+            task=task,
+            run_index=1,
+            evaluation=evaluation,
+            messages=messages,
+            usage=usage,
+            task_span=mock_task_span,
+            started_at=datetime.now(),
+        )
+
+        # Remove with empty set should keep all entries
+        job_persistence.remove_index_entries_by_paths(set())
+
+        entries = job_persistence.load_index()
+        assert len(entries) == 1
 
 
 class TestConfigYamlRoundtrip:

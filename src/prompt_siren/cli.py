@@ -263,15 +263,15 @@ def resume(
     click.echo(f"Resuming job: {job.job_config.job_name}")
     click.echo(f"Mode: {execution_mode}")
 
-    # Run the experiment using the existing hydra_app functions
+    # Run the experiment using the existing hydra_app functions, passing the existing job
     import asyncio
 
     from .hydra_app import run_attack_experiment, run_benign_experiment
 
     if execution_mode == "benign":
-        asyncio.run(run_benign_experiment(experiment_config))
+        asyncio.run(run_benign_experiment(experiment_config, job=job))
     else:
-        asyncio.run(run_attack_experiment(experiment_config))
+        asyncio.run(run_attack_experiment(experiment_config, job=job))
 
 
 # ============================================================================

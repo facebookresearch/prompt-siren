@@ -306,6 +306,62 @@ class TestJobCleanupForRetry:
         Job.resume(job_dir=job.job_dir, include_failed=True)
         assert not incomplete_run.exists()
 
+    def test_cleanup_updates_index_when_runs_deleted(
+        self, experiment_config: ExperimentConfig, tmp_path: Path
+    ):
+        """Test that index.jsonl is updated when runs are deleted during retry cleanup."""
+        job = Job.create(
+            experiment_config=experiment_config,
+            execution_mode="benign",
+            jobs_dir=tmp_path,
+            job_name="test_job",
+            agent_name="test",
+        )
+
+        # Create failed runs with index entries
+        for i in range(3):
+            run_dir = job.job_dir / f"task{i}" / "run_001"
+            run_dir.mkdir(parents=True)
+            result = TaskRunResult(
+                task_id=f"task{i}",
+                run_index=1,
+                started_at=datetime.now(),
+                finished_at=datetime.now(),
+                exception_info=ExceptionInfo(
+                    exception_type="TimeoutError" if i < 2 else "RuntimeError",
+                    exception_message="error",
+                    exception_traceback="",
+                    occurred_at=datetime.now(),
+                ),
+            )
+            (run_dir / "result.json").write_text(result.model_dump_json())
+
+            index_entry = RunIndexEntry(
+                task_id=f"task{i}",
+                run_index=1,
+                timestamp=datetime.now(),
+                benign_score=None,
+                attack_score=None,
+                exception_type="TimeoutError" if i < 2 else "RuntimeError",
+                path=Path(f"task{i}/run_001"),
+            )
+            with open(job.job_dir / "index.jsonl", "a") as f:
+                f.write(index_entry.model_dump_json() + "\n")
+
+        # Verify index has 3 entries
+        resumed_job = Job.resume(job_dir=job.job_dir, retry_on_errors=["TimeoutError"])
+        entries = resumed_job.persistence.load_index()
+
+        # Only the RuntimeError entry should remain (task2)
+        assert len(entries) == 1
+        assert entries[0].task_id == "task2"
+        assert entries[0].exception_type == "RuntimeError"
+
+        # Verify the TimeoutError runs were deleted but RuntimeError run remains
+        assert not (job.job_dir / "task0" / "run_001").exists()
+        assert not (job.job_dir / "task1" / "run_001").exists()
+        assert (job.job_dir / "task2" / "run_001").exists()  # Not deleted (RuntimeError)
+
 
 class TestJobToExperimentConfig:
     """Tests for Job.to_experiment_config method."""

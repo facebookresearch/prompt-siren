@@ -197,6 +197,7 @@ class JobPersistence:
         messages: list[ModelMessage],
         usage: RunUsage,
         task_span: LogfireSpan,
+        started_at: datetime,
         exception: BaseException | None = None,
         generated_attacks: dict[str, InjectionAttackT] | None = None,
         attack_score: float | None = None,
@@ -210,6 +211,7 @@ class JobPersistence:
             messages: Conversation messages
             usage: Token usage
             task_span: Logfire span for trace context
+            started_at: Timestamp when task execution started
             exception: Exception if the run failed
             generated_attacks: Generated attack vectors (for attack mode)
             attack_score: Attack score (for attack mode)
@@ -242,7 +244,7 @@ class JobPersistence:
         result = TaskRunResult(
             task_id=task.id,
             run_index=run_index,
-            started_at=now,  # TODO: Track actual start time
+            started_at=started_at,
             finished_at=now,
             benign_score=benign_score,
             attack_score=attack_score,
@@ -297,6 +299,7 @@ class JobPersistence:
         messages: list[ModelMessage],
         usage: RunUsage,
         task_span: LogfireSpan,
+        started_at: datetime,
         exception: BaseException | None = None,
         generated_attacks: dict[str, InjectionAttackT] | None = None,
     ) -> Path:
@@ -310,6 +313,7 @@ class JobPersistence:
             messages: Conversation messages
             usage: Token usage
             task_span: Logfire span for trace context
+            started_at: Timestamp when task execution started
             exception: Exception if the run failed
             generated_attacks: Generated attack vectors
 
@@ -346,7 +350,7 @@ class JobPersistence:
         result = TaskRunResult(
             task_id=couple.id,
             run_index=run_index,
-            started_at=now,
+            started_at=started_at,
             finished_at=now,
             benign_score=benign_score,
             attack_score=attack_score,
@@ -428,9 +432,16 @@ class JobPersistence:
         """
         result_path = self.job_dir / RESULT_FILENAME
 
+        # Load existing result to preserve original start time
+        if result_path.exists():
+            existing_result = JobResult.model_validate_json(result_path.read_text())
+            started_at = existing_result.started_at
+        else:
+            started_at = datetime.now()
+
         result = JobResult(
             job_name=self.job_config.job_name,
-            started_at=datetime.now(),  # TODO: Preserve original start time
+            started_at=started_at,
             finished_at=datetime.now() if is_complete else None,
             is_complete=is_complete,
             stats=stats,
@@ -476,6 +487,37 @@ class JobPersistence:
             shutil.rmtree(run_dir)
             return True
         return False
+
+    def remove_index_entries_by_paths(self, paths_to_remove: set[Path]) -> None:
+        """Remove entries from the index by their paths.
+
+        Rewrites the entire index file excluding entries with paths in the given set.
+
+        Args:
+            paths_to_remove: Set of paths (relative to job_dir) to remove from index
+        """
+        index_path = self.job_dir / INDEX_FILENAME
+        if not index_path.exists():
+            return
+
+        lock_path = self.job_dir / f"{INDEX_FILENAME}.lock"
+
+        with FileLock(lock_path):
+            # Load all existing entries
+            entries = []
+            with open(index_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        entries.append(RunIndexEntry.model_validate_json(line))
+
+            # Filter out entries with paths in paths_to_remove
+            filtered_entries = [entry for entry in entries if entry.path not in paths_to_remove]
+
+            # Rewrite the index file
+            with open(index_path, "w") as f:
+                for entry in filtered_entries:
+                    f.write(entry.model_dump_json() + "\n")
 
 
 def _save_config_yaml(config_path: Path, job_config: JobConfig) -> None:

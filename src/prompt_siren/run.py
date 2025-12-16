@@ -180,6 +180,9 @@ async def _run_single_task_without_attack(
     persistence: JobPersistence | None = None,
 ) -> EvaluationResult:
     """Run and evaluate a single task. Returns single evaluation result."""
+    from datetime import datetime
+
+    started_at = datetime.now()
     agent_name = agent.get_agent_name()
     message_history = _setup_history(system_prompt)
 
@@ -236,6 +239,7 @@ async def _run_single_task_without_attack(
                     messages=list(result_ctx.messages),
                     usage=result_ctx.usage,
                     task_span=task_span,
+                    started_at=started_at,
                 )
 
             return evaluation
@@ -369,6 +373,9 @@ async def _run_task_couple_with_attack(
     persistence: JobPersistence | None = None,
 ) -> tuple[EvaluationResult, EvaluationResult]:
     """Run and evaluate a task couple. Returns benign + malicious results."""
+    from datetime import datetime
+
+    started_at = datetime.now()
     agent_name = agent.get_agent_name()
     message_history = _setup_history(system_prompt)
 
@@ -421,6 +428,7 @@ async def _run_task_couple_with_attack(
                     messages=list(result_ctx.messages),
                     usage=result_ctx.usage,
                     task_span=task_span,
+                    started_at=started_at,
                     generated_attacks=generated_attacks,
                 )
 

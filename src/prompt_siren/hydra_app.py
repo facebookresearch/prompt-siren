@@ -108,11 +108,13 @@ def validate_config(cfg: DictConfig, execution_mode: ExecutionMode) -> Experimen
 
 async def run_benign_experiment(
     experiment_config: ExperimentConfig,
+    job: Job | None = None,
 ) -> dict[str, dict[str, float]]:
     """Run benign-only experiment.
 
     Args:
         experiment_config: Validated experiment configuration
+        job: Optional Job instance (for resume). If None, creates a new job.
 
     Returns:
         Dictionary mapping task IDs to evaluation results
@@ -151,17 +153,20 @@ async def run_benign_experiment(
     else:
         selected_tasks = all_tasks
 
-    # Create job for persistence
-    job = Job.create(
-        experiment_config=experiment_config,
-        execution_mode="benign",
-        jobs_dir=experiment_config.output.jobs_dir,
-        job_name=experiment_config.output.job_name,
-        agent_name=agent.get_agent_name(),
-    )
-
-    print(f"Job: {job.job_config.job_name}")
-    print(f"Job directory: {job.job_dir}")
+    # Create job for persistence if not provided (resume case provides existing job)
+    if job is None:
+        job = Job.create(
+            experiment_config=experiment_config,
+            execution_mode="benign",
+            jobs_dir=experiment_config.output.jobs_dir,
+            job_name=experiment_config.output.job_name,
+            agent_name=agent.get_agent_name(),
+        )
+        print(f"Job: {job.job_config.job_name}")
+        print(f"Job directory: {job.job_dir}")
+    else:
+        print(f"Resuming job: {job.job_config.job_name}")
+        print(f"Job directory: {job.job_dir}")
 
     # Run benign experiment
     with formatted_span(
@@ -187,11 +192,13 @@ async def run_benign_experiment(
 
 async def run_attack_experiment(
     experiment_config: ExperimentConfig,
+    job: Job | None = None,
 ) -> dict[str, dict[str, float]]:
     """Run attack experiment.
 
     Args:
         experiment_config: Validated experiment configuration (must include attack config)
+        job: Optional Job instance (for resume). If None, creates a new job.
 
     Returns:
         Dictionary mapping task IDs to evaluation results
@@ -234,17 +241,20 @@ async def run_attack_experiment(
     else:
         selected_couples = all_couples
 
-    # Create job for persistence
-    job = Job.create(
-        experiment_config=experiment_config,
-        execution_mode="attack",
-        jobs_dir=experiment_config.output.jobs_dir,
-        job_name=experiment_config.output.job_name,
-        agent_name=agent.get_agent_name(),
-    )
-
-    print(f"Job: {job.job_config.job_name}")
-    print(f"Job directory: {job.job_dir}")
+    # Create job for persistence if not provided (resume case provides existing job)
+    if job is None:
+        job = Job.create(
+            experiment_config=experiment_config,
+            execution_mode="attack",
+            jobs_dir=experiment_config.output.jobs_dir,
+            job_name=experiment_config.output.job_name,
+            agent_name=agent.get_agent_name(),
+        )
+        print(f"Job: {job.job_config.job_name}")
+        print(f"Job directory: {job.job_dir}")
+    else:
+        print(f"Resuming job: {job.job_config.job_name}")
+        print(f"Job directory: {job.job_dir}")
 
     # Run attack experiment
     with formatted_span(

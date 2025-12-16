@@ -105,6 +105,10 @@ class Job:
                 )
 
         # Create job config from experiment config
+        # Exclude jobs_dir from output - it's not needed for resume since job_dir is passed directly
+        output_dict = experiment_config.output.model_dump()
+        output_dict.pop("jobs_dir", None)
+
         job_config = JobConfig(
             job_name=job_name,
             execution_mode=execution_mode,
@@ -115,7 +119,7 @@ class Job:
             attack=experiment_config.attack.model_dump() if experiment_config.attack else None,
             execution=experiment_config.execution.model_dump(),
             telemetry=experiment_config.telemetry.model_dump(),
-            output=experiment_config.output.model_dump(),
+            output=output_dict,
             task_ids=experiment_config.task_ids,
             usage_limits=asdict(experiment_config.usage_limits)
             if experiment_config.usage_limits
@@ -258,6 +262,9 @@ class Job:
 
         retry_error_set = set(retry_on_errors) if retry_on_errors else set()
 
+        # Track paths that are deleted for index cleanup
+        deleted_paths: set[Path] = set()
+
         # Load index to find failed runs
         index_entries = self.persistence.load_index()
 
@@ -275,14 +282,13 @@ class Job:
                 run_dir = self.job_dir / entry.path
                 if run_dir.exists():
                     shutil.rmtree(run_dir)
+                    deleted_paths.add(entry.path)
 
         # Also clean up incomplete runs (directories without result.json)
         for task_dir in self.job_dir.iterdir():
             if not task_dir.is_dir():
                 continue
-            # Skip non-task directories
-            if task_dir.name in ("config.yaml", "result.json", "index.jsonl"):
-                continue
+            # Skip lock directories (unlikely but possible)
             if task_dir.name.endswith(".lock"):
                 continue
 
@@ -292,6 +298,11 @@ class Job:
                     if not result_path.exists():
                         # Incomplete run, delete it
                         shutil.rmtree(run_dir)
+                        deleted_paths.add(run_dir.relative_to(self.job_dir))
+
+        # Clean up index entries for all deleted runs
+        if deleted_paths:
+            self.persistence.remove_index_entries_by_paths(deleted_paths)
 
     def to_experiment_config(self) -> ExperimentConfig:
         """Convert JobConfig back to ExperimentConfig for execution.
@@ -311,6 +322,11 @@ class Job:
             TelemetryConfig,
         )
 
+        # Provide default for jobs_dir since it's not stored in JobConfig
+        # (job_dir is passed directly on resume, so jobs_dir is not needed)
+        output_dict = dict(self.job_config.output)
+        output_dict.setdefault("jobs_dir", Path("jobs"))
+
         return ExperimentConfig(
             name=self.job_config.job_name,
             agent=AgentConfig.model_validate(self.job_config.agent),
@@ -320,7 +336,7 @@ class Job:
             else None,
             execution=ExecutionConfig.model_validate(self.job_config.execution),
             telemetry=TelemetryConfig.model_validate(self.job_config.telemetry),
-            output=OutputConfig.model_validate(self.job_config.output),
+            output=OutputConfig.model_validate(output_dict),
             task_ids=self.job_config.task_ids,
             usage_limits=UsageLimits(**self.job_config.usage_limits)
             if self.job_config.usage_limits
