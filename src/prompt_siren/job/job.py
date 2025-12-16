@@ -53,7 +53,7 @@ class Job:
         self.job_dir = job_dir
         self.job_config = job_config
         self.is_resuming = is_resuming
-        self._persistence: JobPersistence | None = None
+        self.persistence = JobPersistence(self.job_dir, self.job_config)
 
     @classmethod
     def create(
@@ -155,13 +155,6 @@ class Job:
         job._cleanup_for_retry(retry_on_errors)
 
         return job
-
-    @property
-    def persistence(self) -> JobPersistence:
-        """Get the persistence instance for this job."""
-        if self._persistence is None:
-            self._persistence = JobPersistence(self.job_dir, self.job_config)
-        return self._persistence
 
     def get_remaining_runs(self, task_ids: list[str]) -> dict[str, int]:
         """Get the number of runs still needed for each task.
