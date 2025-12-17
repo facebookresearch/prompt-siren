@@ -84,9 +84,7 @@ class TestJobCreate:
         )
         # Format: <dataset>_<sanitized-agent-name>_<attack|benign>_<YYYY-MM-DD_HH-MM-SS>
         pattern = r"^mock_plain_gpt-5_benign_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$"
-        assert re.match(pattern, job.job_config.job_name), (
-            f"Job name '{job.job_config.job_name}' does not match expected pattern '{pattern}'"
-        )
+        assert re.match(pattern, job.job_config.job_name)
 
     def test_requires_agent_name_for_auto_generated_name(
         self, experiment_config: ExperimentConfig, tmp_path: Path
