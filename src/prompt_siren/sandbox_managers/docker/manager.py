@@ -67,6 +67,22 @@ class DockerSandboxConfig(BaseModel):
         default_factory=dict,
         description="Configuration for the Docker client plugin",
     )
+    built_images_file: str | None = Field(
+        default=None,
+        description="Path to file where built image tags will be written (one per line)",
+    )
+    registry_prefix: str | None = Field(
+        default=None,
+        description="Optional registry prefix to prepend to modified image tags (e.g., 'ghcr.io/org/repo')",
+    )
+    execution_mode: str = Field(
+        default="build_and_run",
+        description="Execution mode: 'build_and_run', 'build_only', or 'run_from_prebuilt'",
+    )
+    platform: str = Field(
+        default="linux/amd64",
+        description="Platform for Docker builds (e.g., 'linux/amd64', 'linux/arm64')",
+    )
 
 
 class DockerSandboxManager:
@@ -92,6 +108,21 @@ class DockerSandboxManager:
         """
         self._config = config
         self._batch_state: BatchState | None = None
+
+    @property
+    def execution_mode(self) -> str:
+        """Execution mode: 'build_and_run', 'build_only', or 'run_from_prebuilt'."""
+        return self._config.execution_mode
+
+    @property
+    def registry_prefix(self) -> str | None:
+        """Optional registry prefix for image tags."""
+        return self._config.registry_prefix
+
+    @property
+    def platform(self) -> str:
+        """Target platform for Docker builds (e.g., 'linux/amd64')."""
+        return self._config.platform
 
     @asynccontextmanager
     async def setup_batch(self, task_setups: Sequence[SandboxTaskSetup]) -> AsyncIterator[None]:
@@ -125,7 +156,16 @@ class DockerSandboxManager:
         try:
             # Create image cache
             logger.debug("[DockerSandboxManager] setup_batch: Creating image cache")
-            image_cache = ImageCache(docker_client, batch_id)
+            built_images_file = (
+                Path(self._config.built_images_file) if self._config.built_images_file else None
+            )
+            image_cache = ImageCache(
+                docker_client,
+                batch_id,
+                built_images_file,
+                self._config.registry_prefix,
+                self._config.execution_mode,
+            )
 
             # Create batch state
             logger.debug("[DockerSandboxManager] setup_batch: Creating batch state")
@@ -150,9 +190,10 @@ class DockerSandboxManager:
                     f"[DockerSandboxManager] setup_batch: Container setup {idx}: name='{setup.name}', image_spec={type(setup.spec.image_spec).__name__}"
                 )
 
-            # Build/pull all base images sequentially
+            # Build/pull all base images and modified images sequentially
+            # Pass task_setups to allow building modified images with dockerfile_extra
             logger.debug("[DockerSandboxManager] setup_batch: Calling ensure_all_base_images")
-            await image_cache.ensure_all_base_images(all_container_setups)
+            await image_cache.ensure_all_base_images(list(task_setups))
             logger.debug("[DockerSandboxManager] setup_batch: ensure_all_base_images completed")
 
             # Yield control for task execution

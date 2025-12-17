@@ -208,6 +208,7 @@ class LocalDockerClient(AbstractDockerClient):
         tag: str,
         dockerfile_path: str | None = None,
         buildargs: dict[str, str] | None = None,
+        platform: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Build an image from a build context directory.
 
@@ -237,6 +238,7 @@ class LocalDockerClient(AbstractDockerClient):
                 stream=True,
                 path_dockerfile=dockerfile_path or "Dockerfile",
                 buildargs=buildargs,
+                platform=platform,
             ):
                 yield log_line
         except DockerError as e:

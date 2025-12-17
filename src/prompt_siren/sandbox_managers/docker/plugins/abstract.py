@@ -138,6 +138,7 @@ class AbstractDockerClient(Protocol):
         tag: str,
         dockerfile_path: str | None = None,
         buildargs: dict[str, str] | None = None,
+        platform: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Build an image from a build context directory.
 
@@ -149,6 +150,7 @@ class AbstractDockerClient(Protocol):
             tag: Tag for built image
             dockerfile_path: Path to Dockerfile relative to context (defaults to "Dockerfile")
             buildargs: Build arguments
+            platform: Target platform (e.g., 'linux/amd64', 'linux/arm64')
 
         Yields:
             Build log entries (dicts with "stream", "error", etc.)

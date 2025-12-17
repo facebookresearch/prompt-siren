@@ -30,7 +30,8 @@ class BuildImageSpec(BaseModel):
             context_path="./docker/python-app",
             dockerfile_path="Dockerfile.dev",
             tag="python-app:dev",
-            build_args={"PYTHON_VERSION": "3.12", "ENV": "development"}
+            build_args={"PYTHON_VERSION": "3.12", "ENV": "development"},
+            platform="linux/amd64"
         )
     """
 
@@ -42,6 +43,10 @@ class BuildImageSpec(BaseModel):
     tag: ImageTag = Field(description="Tag for the built image (e.g., 'my-env:latest')")
     build_args: dict[str, str] | None = Field(
         default=None, description="Build-time variables for Docker build"
+    )
+    platform: str | None = Field(
+        default=None,
+        description="Target platform for the build (e.g., 'linux/amd64', 'linux/arm64')",
     )
 
 
@@ -79,6 +84,10 @@ class BuildStage(BaseModel):
     cache_key: str | None = Field(
         default=None,
         description="Cache key for reusing images. Stages with same cache_key can be reused.",
+    )
+    platform: str | None = Field(
+        default=None,
+        description="Target platform for this stage (e.g., 'linux/amd64', 'linux/arm64')",
     )
 
 

@@ -28,7 +28,7 @@ from .config import SwebenchDatasetConfig
 from .constants import _INJECTION_PLACEHOLDER, INSTANCE_INJECTION_MAPPING
 from .docker_builder import prepare_build_context
 from .evaluators import create_test_evaluator
-from .malicious_tasks import MALICIOUS_TASKS
+from .malicious_tasks import create_malicious_tasks
 from .prompts.loader import format_task_prompt_from_template, load_prompt_template
 from .task_metadata import SWEBenchBenignTaskMetadata, SWEBenchMaliciousTaskMetadata
 from .tools import bash
@@ -147,6 +147,9 @@ def _prepare_benign_task_from_instance(
     instance: SWEbenchInstance,
     config: SwebenchDatasetConfig,
     sandbox_manager: AbstractSandboxManager,
+    execution_mode: str,
+    registry_prefix: str | None,
+    platform: str,
 ) -> BenignTask[BashEnvState]:
     """Create a single benign task from a SWE-bench instance.
 
@@ -154,23 +157,31 @@ def _prepare_benign_task_from_instance(
         instance: SWE-bench instance data
         config: Dataset configuration
         sandbox_manager: Sandbox manager for container orchestration
+        execution_mode: Execution mode from sandbox manager
+        registry_prefix: Registry prefix from sandbox manager
+        platform: Platform for Docker builds from sandbox manager
 
     Returns:
         Prepared BenignTask ready for execution
     """
     # Generate multi-stage build spec and test metadata
-    image_spec, test_spec = prepare_build_context(instance, config)
+    image_spec, test_spec = prepare_build_context(
+        instance, config, execution_mode, registry_prefix, platform
+    )
 
     # Format task prompt
     prompt = _format_task_prompt(instance, config)
 
-    # Create evaluator
-    evaluator = create_test_evaluator(instance, test_spec, sandbox_manager)
+    # Create evaluator only for modes that execute tasks
+    evaluators = {}
+    if execution_mode in ("build_and_run", "run_from_prebuilt"):
+        evaluator = create_test_evaluator(instance, test_spec, sandbox_manager)
+        evaluators = {"test_pass_rate": evaluator}
 
     return BenignTask(
         id=instance["instance_id"],
         prompt=prompt,
-        evaluators={"test_pass_rate": evaluator},
+        evaluators=evaluators,
         metadata=SWEBenchBenignTaskMetadata(
             agent_container_spec=ContainerSpec(image_spec=image_spec)
         ),
@@ -181,6 +192,9 @@ def _prepare_benign_tasks(
     instances: list[SWEbenchInstance],
     config: SwebenchDatasetConfig,
     sandbox_manager: AbstractSandboxManager,
+    execution_mode: str,
+    registry_prefix: str | None,
+    platform: str,
 ) -> list[BenignTask[BashEnvState]]:
     """Prepare benign tasks for all instances.
 
@@ -188,6 +202,9 @@ def _prepare_benign_tasks(
         instances: List of SWE-bench instances
         config: Dataset configuration
         sandbox_manager: Sandbox manager for container orchestration
+        execution_mode: Execution mode from sandbox manager
+        registry_prefix: Registry prefix from sandbox manager
+        platform: Platform for Docker builds from sandbox manager
 
     Returns:
         List of prepared benign tasks
@@ -195,7 +212,9 @@ def _prepare_benign_tasks(
     benign_task_list: list[BenignTask[BashEnvState]] = []
 
     for instance in instances:
-        task = _prepare_benign_task_from_instance(instance, config, sandbox_manager)
+        task = _prepare_benign_task_from_instance(
+            instance, config, sandbox_manager, execution_mode, registry_prefix, platform
+        )
         benign_task_list.append(task)
 
     return benign_task_list
@@ -222,16 +241,27 @@ def create_swebench_dataset(
     if sandbox_manager is None:
         raise ValueError("SWEBench dataset requires a sandbox_manager")
 
+    # Get execution_mode, registry_prefix, and platform from sandbox manager
+    # These are exposed as properties on DockerSandboxManager
+    execution_mode = getattr(sandbox_manager, "execution_mode", "build_and_run")
+    registry_prefix = getattr(sandbox_manager, "registry_prefix", None)
+    platform = getattr(sandbox_manager, "platform", "linux/amd64")
+
     # Load and filter instances
     instances = _load_and_filter_instances(config)
 
     # Create benign tasks from instances
-    benign_task_list = _prepare_benign_tasks(instances, config, sandbox_manager)
+    benign_task_list = _prepare_benign_tasks(
+        instances, config, sandbox_manager, execution_mode, registry_prefix, platform
+    )
+
+    # Create malicious tasks with appropriate container specs based on execution mode
+    malicious_task_list = create_malicious_tasks(execution_mode, registry_prefix, platform)
 
     # Generate all valid couples (cartesian product)
     couples = [
         TaskCouple(benign, malicious)
-        for benign, malicious in product(benign_task_list, MALICIOUS_TASKS)
+        for benign, malicious in product(benign_task_list, malicious_task_list)
     ]
 
     injection_ids: list[InjectionVectorID] = [_INJECTION_PLACEHOLDER]
@@ -252,7 +282,7 @@ def create_swebench_dataset(
         name="swebench-lite",
         _environment=environment,
         _benign_tasks=benign_task_list,
-        _malicious_tasks=MALICIOUS_TASKS,
+        _malicious_tasks=malicious_task_list,
         _task_couples=couples,
         _toolsets=toolsets,
         _system_prompt=system_prompt,

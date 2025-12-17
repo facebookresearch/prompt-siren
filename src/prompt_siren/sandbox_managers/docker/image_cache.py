@@ -17,7 +17,7 @@ from ..image_spec import (
     MultiStageBuildImageSpec,
     PullImageSpec,
 )
-from ..sandbox_task_setup import ContainerSetup
+from ..sandbox_task_setup import ContainerSetup, SandboxTaskSetup
 from .plugins import AbstractDockerClient, DockerClientError
 
 logger = logging.getLogger(__name__)
@@ -39,32 +39,63 @@ class ImageCache:
     concurrent Docker build race conditions.
     """
 
-    def __init__(self, docker: AbstractDockerClient, batch_id: str):
+    def __init__(
+        self,
+        docker: AbstractDockerClient,
+        batch_id: str,
+        built_images_file: Path | None = None,
+        registry_prefix: str | None = None,
+        execution_mode: str = "build_and_run",
+    ):
         """Initialize image cache.
 
         Args:
             docker: Abstract Docker client for all operations
             batch_id: Unique identifier for this batch
+            built_images_file: Optional path to file where built image tags will be written
+            registry_prefix: Optional registry prefix for modified images (e.g., 'ghcr.io/org/repo')
+            execution_mode: Execution mode ('build_and_run', 'build_only', or 'run_from_prebuilt')
         """
         self._docker = docker
         self._batch_id = batch_id
+        self._built_images_file = built_images_file
+        self._registry_prefix = registry_prefix
+        self._execution_mode = execution_mode
+        self._built_images: set[ImageTag] = set()
         # Map from cache key to prepared image tag
         self._base_image_cache: dict[str, ImageTag] = {}
         # Map from (base_tag, dockerfile_extra_hash) to modified image tag
         self._modified_image_cache: dict[tuple[str, str], ImageTag] = {}
 
-    async def ensure_all_base_images(self, container_setups: list[ContainerSetup]) -> None:
-        """Ensure all base images are available before task execution.
+    async def ensure_all_base_images(
+        self, task_setups: list[SandboxTaskSetup] | list[ContainerSetup]
+    ) -> None:
+        """Ensure all base images and modified images are available before task execution.
 
-        Builds/pulls all unique base images sequentially to avoid race conditions.
+        Builds/pulls all unique base images sequentially to avoid race conditions,
+        then builds any modified images for containers with dockerfile_extra.
 
         Args:
-            container_setups: All container setups from all tasks in the batch
+            task_setups: All task setups from the batch (preferred), or legacy container setups
         """
+        # Handle both new task_setups format and legacy container_setups format
+        if task_setups and isinstance(task_setups[0], ContainerSetup):
+            # Legacy format: list of ContainerSetup (no task_id available for modified images)
+            container_setups = task_setups
+            task_setups_list: list[SandboxTaskSetup] = []
+        else:
+            # New format: list of SandboxTaskSetup
+            task_setups_list = task_setups  # type: ignore[assignment]
+            container_setups = []
+            for task_setup in task_setups_list:
+                container_setups.append(task_setup.agent_container)
+                container_setups.extend(task_setup.service_containers.values())
+
         logger.debug(
             f"[ImageCache] ensure_all_base_images called with {len(container_setups)} container setups"
         )
-        # Collect unique image specs using cache key
+
+        # Phase 1: Build/pull all unique base images
         seen_specs: set[str] = set()
         for setup in container_setups:
             cache_key = self._get_cache_key(setup.spec.image_spec)
@@ -77,6 +108,77 @@ class ImageCache:
                 await self._prepare_base_image(setup.spec.image_spec)
             else:
                 logger.debug(f"[ImageCache] Skipping duplicate cache_key: {cache_key}")
+
+        # Phase 2: Build modified images for containers with dockerfile_extra
+        # This ensures modified images are built during build_only mode
+        if task_setups_list:
+            await self._build_all_modified_images(task_setups_list)
+
+    async def _build_all_modified_images(self, task_setups: list[SandboxTaskSetup]) -> None:
+        """Build all modified images for containers with dockerfile_extra.
+
+        This is called during batch setup to ensure modified images are built
+        even in build_only mode where task execution is skipped.
+
+        Args:
+            task_setups: All task setups from the batch
+        """
+        # Track unique modified images to avoid duplicate builds
+        # Key: (base_cache_key, dockerfile_extra_hash)
+        seen_modified: set[tuple[str, str]] = set()
+
+        for task_setup in task_setups:
+            # Check agent container
+            await self._maybe_build_modified_image(
+                task_setup.agent_container,
+                task_setup.task_id,
+                seen_modified,
+            )
+
+            # Check service containers
+            for container_setup in task_setup.service_containers.values():
+                await self._maybe_build_modified_image(
+                    container_setup,
+                    task_setup.task_id,
+                    seen_modified,
+                )
+
+    async def _maybe_build_modified_image(
+        self,
+        container_setup: ContainerSetup,
+        task_id: str,
+        seen_modified: set[tuple[str, str]],
+    ) -> None:
+        """Build a modified image if dockerfile_extra is present and not already built.
+
+        Args:
+            container_setup: Container setup with potential dockerfile_extra
+            task_id: Task identifier for naming the modified image
+            seen_modified: Set of already-built modified image keys
+        """
+        if not container_setup.dockerfile_extra:
+            return
+
+        # Create dedup key
+        base_cache_key = self._get_cache_key(container_setup.spec.image_spec)
+        extra_hash = hashlib.sha256(container_setup.dockerfile_extra.encode()).hexdigest()[:12]
+        modified_key = (base_cache_key, extra_hash)
+
+        if modified_key in seen_modified:
+            logger.debug(
+                f"[ImageCache] Skipping duplicate modified image for '{container_setup.name}' "
+                f"in task '{task_id}'"
+            )
+            return
+
+        seen_modified.add(modified_key)
+        logger.debug(
+            f"[ImageCache] Building modified image for '{container_setup.name}' "
+            f"in task '{task_id}' with dockerfile_extra"
+        )
+
+        # This will build and cache the modified image
+        await self.get_image_for_container(container_setup, task_id)
 
     async def get_image_for_container(
         self,
@@ -99,12 +201,22 @@ class ImageCache:
         if not container_setup.dockerfile_extra:
             return base_tag
 
+        # Extract platform from image spec if available
+        image_spec = container_setup.spec.image_spec
+        platform: str | None = None
+        if isinstance(image_spec, BuildImageSpec):
+            platform = image_spec.platform
+        elif isinstance(image_spec, MultiStageBuildImageSpec) and image_spec.stages:
+            # Use platform from the last stage (final image)
+            platform = image_spec.stages[-1].platform
+
         # Build modified image with dockerfile_extra
         return await self._get_modified_image(
             base_tag=base_tag,
             dockerfile_extra=container_setup.dockerfile_extra,
             task_id=task_id,
             container_name=container_setup.name,
+            platform=platform,
         )
 
     async def _prepare_base_image(self, spec: ImageSpec) -> ImageTag:
@@ -172,6 +284,7 @@ class ImageCache:
         dockerfile_extra: str,
         task_id: str,
         container_name: str,
+        platform: str | None = None,
     ) -> ImageTag:
         """Get or build a modified image with dockerfile_extra applied.
 
@@ -180,6 +293,7 @@ class ImageCache:
             dockerfile_extra: Additional Dockerfile instructions
             task_id: Task identifier for naming
             container_name: Container name for naming
+            platform: Target platform (e.g., 'linux/amd64', 'linux/arm64')
 
         Returns:
             Modified image tag
@@ -192,9 +306,48 @@ class ImageCache:
         if cache_key in self._modified_image_cache:
             return self._modified_image_cache[cache_key]
 
-        # Build modified image
+        # Generate stable tag for modified image (without batch_id for cross-run consistency)
+        # Format: [registry/]modified-{base_tag_sanitized}__{task_id_sanitized}-{container_name}:latest
+        # Strip registry prefix from base_tag if present to avoid duplication when prepending later
+        base_tag_for_name = base_tag
+        if self._registry_prefix and base_tag.startswith(self._registry_prefix + "/"):
+            base_tag_for_name = base_tag[len(self._registry_prefix) + 1 :]
+
+        base_tag_sanitized = base_tag_for_name.replace(":", "-").replace("/", "-")
         safe_task_id = task_id.replace(":", "-").replace("/", "-")
-        modified_tag = f"modified-{self._batch_id}-{safe_task_id}-{container_name}:latest"
+        image_name = f"modified-{base_tag_sanitized}__{safe_task_id}-{container_name}:latest"
+
+        # Prepend registry prefix if configured
+        if self._registry_prefix:
+            modified_tag = f"{self._registry_prefix}/{image_name}"
+        else:
+            modified_tag = image_name
+
+        # Check if modified image already exists (e.g., from previous build or pulled in run_from_prebuilt)
+        try:
+            await self._docker.inspect_image(modified_tag)
+            logger.debug(f"[ImageCache] Modified image {modified_tag} already exists locally")
+            # Cache and return existing image
+            self._modified_image_cache[cache_key] = modified_tag
+            return modified_tag
+        except DockerClientError:
+            logger.debug(f"[ImageCache] Modified image {modified_tag} not found locally")
+
+        # In run_from_prebuilt mode, pull the image instead of building
+        if self._execution_mode == "run_from_prebuilt":
+            logger.debug(f"[ImageCache] run_from_prebuilt mode: pulling {modified_tag}")
+            try:
+                await self._docker.pull_image(modified_tag)
+                logger.debug(f"[ImageCache] Successfully pulled modified image {modified_tag}")
+                self._modified_image_cache[cache_key] = modified_tag
+                return modified_tag
+            except DockerClientError as e:
+                raise DockerClientError(
+                    f"Failed to pull prebuilt modified image {modified_tag}. "
+                    f"Ensure the image was pushed to the registry.",
+                    getattr(e, "stdout", ""),
+                    getattr(e, "stderr", ""),
+                ) from e
 
         # Create temporary build context with Dockerfile
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -210,7 +363,9 @@ class ImageCache:
                 context_path=str(temp_path),
                 tag=modified_tag,
                 dockerfile_path="Dockerfile",
+                platform=platform,
             )
+            self._track_built_image(modified_tag)
 
         # Cache result
         self._modified_image_cache[cache_key] = modified_tag
@@ -238,6 +393,26 @@ class ImageCache:
             await self._docker.pull_image(spec.tag)
             logger.debug(f"[ImageCache] _pull_image: Successfully pulled image {spec.tag}")
         return spec.tag
+
+    def _track_built_image(self, tag: ImageTag) -> None:
+        """Track a built image and write to file if configured.
+
+        Args:
+            tag: Image tag that was built
+        """
+        if tag in self._built_images:
+            return  # Already tracked
+
+        self._built_images.add(tag)
+
+        if self._built_images_file:
+            try:
+                # Append the tag to the file
+                with self._built_images_file.open("a") as f:
+                    f.write(f"{tag}\n")
+                logger.debug(f"[ImageCache] Recorded built image: {tag}")
+            except Exception as e:
+                logger.warning(f"[ImageCache] Failed to write built image {tag} to file: {e}")
 
     async def _build_image(self, spec: BuildImageSpec) -> ImageTag:
         """Build an image from a Dockerfile.
@@ -273,8 +448,10 @@ class ImageCache:
             tag=spec.tag,
             dockerfile_path=spec.dockerfile_path,
             build_args=spec.build_args,
+            platform=spec.platform,
         )
         logger.debug(f"[ImageCache] _build_image: Successfully built image {spec.tag}")
+        self._track_built_image(spec.tag)
         return spec.tag
 
     async def _build_multi_stage_image(self, spec: MultiStageBuildImageSpec) -> ImageTag:
@@ -307,7 +484,9 @@ class ImageCache:
                 tag=stage.tag,
                 dockerfile_path=stage.dockerfile_path,
                 build_args=build_args if build_args else None,
+                platform=stage.platform,
             )
+            self._track_built_image(stage.tag)
 
         return spec.final_tag
 
@@ -317,6 +496,7 @@ class ImageCache:
         tag: str,
         dockerfile_path: str | None = None,
         build_args: dict[str, str] | None = None,
+        platform: str | None = None,
     ) -> None:
         """Build a Docker image from a build context.
 
@@ -328,6 +508,7 @@ class ImageCache:
             tag: Tag for the built image
             dockerfile_path: Path to Dockerfile relative to context
             build_args: Build arguments
+            platform: Target platform (e.g., 'linux/amd64', 'linux/arm64')
 
         Raises:
             ImageBuildError: If build fails
@@ -346,6 +527,7 @@ class ImageCache:
             tag=tag,
             dockerfile_path=dockerfile_path,
             buildargs=build_args,
+            platform=platform,
         ):
             logger.debug(f"[ImageCache] _build_from_context: Build log: {log_line}")
             if "error" in log_line:

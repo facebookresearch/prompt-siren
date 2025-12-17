@@ -45,18 +45,91 @@ openssl req -x509 -newkey rsa:2048 -nodes \\
 import base64
 from importlib.resources import files
 
-from ....sandbox_managers.image_spec import BuildImageSpec
+from ....sandbox_managers.image_spec import BuildImageSpec, PullImageSpec
 from ....sandbox_managers.sandbox_task_setup import ContainerSpec
 
 # Get the docker directory path using importlib.resources
 _DOCKER_CONTEXT_PATH = files("prompt_siren.datasets.swebench_dataset").joinpath("dockerfiles")
 
-_SIMPLE_AGENT_CONTAINER_SPEC = ContainerSpec(
-    image_spec=BuildImageSpec(
-        context_path=str(_DOCKER_CONTEXT_PATH.joinpath("basic_agent")),
-        tag="basic_agent:latest",
+
+def get_simple_agent_container_spec(
+    execution_mode: str = "build_and_run",
+    registry_prefix: str | None = None,
+    platform: str | None = None,
+) -> ContainerSpec:
+    """Get agent container spec based on execution mode.
+
+    Args:
+        execution_mode: One of "build_and_run", "build_only", or "run_from_prebuilt"
+        registry_prefix: Registry prefix for prebuilt images (required for run_from_prebuilt)
+        platform: Target platform for builds (e.g., 'linux/amd64', 'linux/arm64')
+
+    Returns:
+        ContainerSpec with appropriate image spec for the execution mode
+
+    Raises:
+        ValueError: If execution_mode is "run_from_prebuilt" but registry_prefix is not set
+    """
+    if execution_mode == "run_from_prebuilt":
+        if registry_prefix:
+            tag = f"{registry_prefix}/basic_agent"
+        else:
+            tag = "basic_agent"
+
+        return ContainerSpec(image_spec=PullImageSpec(tag=tag))
+
+    # For build_and_run and build_only modes, use BuildImageSpec
+    return ContainerSpec(
+        image_spec=BuildImageSpec(
+            context_path=str(_DOCKER_CONTEXT_PATH.joinpath("basic_agent")),
+            tag="basic_agent:latest",
+            platform=platform,
+        )
     )
-)
+
+
+def get_service_container_spec(
+    context_subdir: str,
+    tag: str,
+    execution_mode: str = "build_and_run",
+    registry_prefix: str | None = None,
+    platform: str | None = None,
+    **kwargs,
+) -> ContainerSpec:
+    """Get service container spec based on execution mode.
+
+    Args:
+        context_subdir: Subdirectory under dockerfiles/ containing the Dockerfile
+        tag: Tag for the container image
+        execution_mode: One of "build_and_run", "build_only", or "run_from_prebuilt"
+        registry_prefix: Registry prefix for prebuilt images (required for run_from_prebuilt)
+        platform: Target platform for builds (e.g., 'linux/amd64', 'linux/arm64')
+        **kwargs: Additional arguments to pass to ContainerSpec (hostname, command, etc.)
+
+    Returns:
+        ContainerSpec with appropriate image spec for the execution mode
+
+    Raises:
+        ValueError: If execution_mode is "run_from_prebuilt" but registry_prefix is not set
+    """
+    if execution_mode == "run_from_prebuilt":
+        if registry_prefix:
+            full_tag = f"{registry_prefix}/{tag}"
+        else:
+            full_tag = tag
+
+        return ContainerSpec(image_spec=PullImageSpec(tag=full_tag), **kwargs)
+
+    # For build_and_run and build_only modes, use BuildImageSpec
+    return ContainerSpec(
+        image_spec=BuildImageSpec(
+            context_path=str(_DOCKER_CONTEXT_PATH.joinpath(context_subdir)),
+            tag=tag,
+            platform=platform,
+        ),
+        **kwargs,
+    )
+
 
 # Self-signed certificates for attacker-controlled servers
 # Each certificate is valid for 100 years and matches a specific hostname

@@ -13,7 +13,12 @@ except ImportError as e:
         "Install with: pip install 'prompt-siren[swebench]'"
     ) from e
 
-from ...sandbox_managers.image_spec import BuildStage, MultiStageBuildImageSpec
+from ...sandbox_managers.image_spec import (
+    BuildStage,
+    ImageSpec,
+    MultiStageBuildImageSpec,
+    PullImageSpec,
+)
 from .config import SwebenchDatasetConfig
 from .constants import INSTANCE_INJECTION_MAPPING
 from .dockerfiles import (
@@ -27,21 +32,30 @@ from .swebench_imports import _ACTIVATE_ENV_COMMAND, make_test_spec
 def prepare_build_context(
     instance: SWEbenchInstance,
     config: SwebenchDatasetConfig,
-) -> tuple[MultiStageBuildImageSpec, TestSpec]:
-    """Prepare multi-stage Docker build specification for a SWE-bench instance.
+    execution_mode: str = "build_and_run",
+    registry_prefix: str | None = None,
+    platform: str = "linux/amd64",
+) -> tuple[ImageSpec, TestSpec]:
+    """Prepare Docker image specification for a SWE-bench instance based on execution mode.
 
-    This function generates a three-stage build:
-    1. Base stage: OS and system dependencies (shared across all instances)
-    2. Environment stage: Python environment and packages (shared per dependency set)
-    3. Instance stage: Repository code at specific commit (unique per instance)
+    The function behavior depends on execution_mode:
+    - "build_and_run": Creates MultiStageBuildImageSpec with 3 stages (base, env, instance)
+    - "build_only": Same as "build_and_run" (builds but won't execute)
+    - "run_from_prebuilt": Creates PullImageSpec to pull prebuilt image from registry
 
     Args:
         instance: SWE-bench instance data
-        config: Dataset configuration
+        config: Dataset configuration (cache_dir, use_cache, etc.)
+        execution_mode: Execution mode from sandbox manager config
+        registry_prefix: Optional registry prefix from sandbox manager config
+        platform: Docker platform from sandbox manager config
 
     Returns:
-        Tuple of (MultiStageBuildImageSpec, TestSpec) where the spec contains
-        three BuildStage objects and test_spec contains metadata for evaluation.
+        Tuple of (ImageSpec, TestSpec) where ImageSpec is either MultiStageBuildImageSpec
+        or PullImageSpec depending on execution mode, and TestSpec contains metadata for evaluation.
+
+    Raises:
+        ValueError: If execution_mode is "run_from_prebuilt" but registry_prefix is not set
     """
     # Look up injection spec for this instance
     instance_id = instance["instance_id"]
@@ -55,6 +69,16 @@ def prepare_build_context(
     # Generate scripts and metadata using SWE-bench
     test_spec = make_test_spec(instance, injection_spec=injection_spec)
 
+    # Handle run_from_prebuilt mode
+    if execution_mode == "run_from_prebuilt":
+        if not registry_prefix:
+            full_tag = test_spec.instance_image_key
+        else:
+            # Construct full image tag from registry prefix (if available) and instance image key
+            full_tag = f"{registry_prefix}/{test_spec.instance_image_key}"
+        return (PullImageSpec(tag=full_tag), test_spec)
+
+    # For build_and_run and build_only modes, create multi-stage build spec
     # Create cache directory structure
     cache_dir = Path(config.cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -77,6 +101,7 @@ def prepare_build_context(
             context_path=str(base_context),
             parent_tag=None,  # FROM ghcr.io/astral-sh/uv:bookworm-slim
             cache_key=test_spec.base_image_key,  # Reuse across same base
+            platform=platform,
         )
     )
 
@@ -101,6 +126,7 @@ def prepare_build_context(
             context_path=str(env_context),
             parent_tag=test_spec.base_image_key,
             cache_key=test_spec.env_image_key,  # Reuse across same env
+            platform=platform,
         )
     )
 
@@ -127,6 +153,7 @@ def prepare_build_context(
             context_path=str(instance_context),
             parent_tag=test_spec.env_image_key,
             cache_key=None,  # Always rebuild instances
+            platform=platform,
         )
     )
 
