@@ -168,6 +168,13 @@ async def run_benign_experiment(
         print(f"Resuming job: {job.job_config.job_name}")
         print(f"Job directory: {job.job_dir}")
 
+        # Filter out tasks that already have enough runs
+        task_ids_needing_runs = set(job.filter_tasks_needing_runs([t.id for t in selected_tasks]))
+        selected_tasks = [t for t in selected_tasks if t.id in task_ids_needing_runs]
+        if not selected_tasks:
+            print("All tasks have completed the required number of runs.")
+            return {}
+
     # Run benign experiment
     with formatted_span(
         "benign experiment {job_name}",
@@ -255,6 +262,15 @@ async def run_attack_experiment(
     else:
         print(f"Resuming job: {job.job_config.job_name}")
         print(f"Job directory: {job.job_dir}")
+
+        # Filter out couples that already have enough runs
+        couple_ids_needing_runs = set(
+            job.filter_tasks_needing_runs([c.id for c in selected_couples])
+        )
+        selected_couples = [c for c in selected_couples if c.id in couple_ids_needing_runs]
+        if not selected_couples:
+            print("All task couples have completed the required number of runs.")
+            return {}
 
     # Run attack experiment
     with formatted_span(

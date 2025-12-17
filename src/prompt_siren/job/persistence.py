@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any, TypeVar
@@ -338,6 +339,18 @@ class JobPersistence:
                 if line:
                     entries.append(RunIndexEntry.model_validate_json(line))
         return entries
+
+    def get_run_counts(self) -> dict[str, int]:
+        """Count all runs per task from the index.
+
+        Both successful and errored runs count toward the limit.
+        Use --retry-on-errors to delete errored runs before resuming.
+
+        Returns:
+            Dictionary mapping task_id -> count of runs
+        """
+        entries = self.load_index()
+        return dict(Counter(e.task_id for e in entries))
 
     def remove_index_entries_by_paths(self, paths_to_remove: set[Path]) -> None:
         """Remove entries from the index by their paths.

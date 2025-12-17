@@ -17,6 +17,7 @@ from prompt_siren.config.experiment_config import (
     TelemetryConfig,
 )
 from prompt_siren.job import Job, JobConfig
+from prompt_siren.job.models import RunIndexEntry
 from prompt_siren.job.persistence import _save_config_yaml
 
 
@@ -182,6 +183,79 @@ class TestJobsResumeCommand:
         assert result.exit_code == 0, f"CLI failed: {result.output}"
         assert captured_job is not None
         assert captured_job.job_config.execution.concurrency == 8
+
+    def test_resume_filters_tasks_by_n_runs_per_task(self, cli_runner: CliRunner, tmp_path: Path):
+        """Test that resume filters out tasks that have enough runs."""
+        # Create a job config with n_runs_per_task=2
+        job_config = JobConfig(
+            job_name="test_job",
+            execution_mode="benign",
+            created_at=datetime.now(),
+            n_runs_per_task=2,
+            dataset=DatasetConfig(type="mock", config={}),
+            agent=AgentConfig(type="plain", config={"model": "test"}),
+            attack=None,
+            execution=ExecutionConfig(concurrency=1),
+            telemetry=TelemetryConfig(trace_console=False),
+            output=OutputConfig(jobs_dir=tmp_path),
+        )
+
+        job_dir = tmp_path / "test_job"
+        job_dir.mkdir()
+        _save_config_yaml(job_dir / "config.yaml", job_config)
+
+        # Create index entries: task1 has 2 runs (at limit), task2 has 1 run (needs more)
+        index_entries = [
+            RunIndexEntry(
+                task_id="task1",
+                run_id="aaa11111",
+                timestamp=datetime.now(),
+                benign_score=1.0,
+                attack_score=None,
+                exception_type=None,
+                path=Path("task1/aaa11111"),
+            ),
+            RunIndexEntry(
+                task_id="task1",
+                run_id="bbb22222",
+                timestamp=datetime.now(),
+                benign_score=1.0,
+                attack_score=None,
+                exception_type=None,
+                path=Path("task1/bbb22222"),
+            ),
+            RunIndexEntry(
+                task_id="task2",
+                run_id="ccc33333",
+                timestamp=datetime.now(),
+                benign_score=1.0,
+                attack_score=None,
+                exception_type=None,
+                path=Path("task2/ccc33333"),
+            ),
+        ]
+        with open(job_dir / "index.jsonl", "w") as f:
+            for entry in index_entries:
+                f.write(entry.model_dump_json() + "\n")
+
+        # Capture the job passed to run_benign_experiment
+        captured_job = None
+
+        async def mock_run_benign(experiment_config, job=None):
+            nonlocal captured_job
+            captured_job = job
+            return {}
+
+        with patch("prompt_siren.cli.run_benign_experiment", mock_run_benign):
+            result = cli_runner.invoke(main, ["jobs", "resume", "-p", str(job_dir)])
+
+        assert result.exit_code == 0, f"CLI failed: {result.output}"
+        assert captured_job is not None
+
+        # Verify that filter_tasks_needing_runs correctly identifies which tasks need more runs
+        tasks_needing_runs = captured_job.filter_tasks_needing_runs(["task1", "task2", "task3"])
+        # task1 has 2 runs (at n_runs_per_task limit), task2 has 1 run, task3 has 0 runs
+        assert set(tasks_needing_runs) == {"task2", "task3"}
 
 
 class TestJobsStartCommand:

@@ -319,6 +319,175 @@ class TestJobCleanupForRetry:
         assert (job.job_dir / "task2" / run_ids[2]).exists()  # Not deleted (RuntimeError)
 
 
+class TestJobRunCounts:
+    """Tests for run counting and filtering methods."""
+
+    def test_get_run_counts_counts_all_runs(
+        self, experiment_config: ExperimentConfig, tmp_path: Path
+    ):
+        """Test that get_run_counts counts all runs including errored ones."""
+        job = Job.create(
+            experiment_config=experiment_config,
+            execution_mode="benign",
+            jobs_dir=tmp_path,
+            job_name="test_job",
+            agent_name="test",
+        )
+
+        # Create 3 runs for task1 (1 success, 2 errors)
+        for run_id, exc_type in [
+            ("aaa11111", None),
+            ("bbb22222", "TimeoutError"),
+            ("ccc33333", "RuntimeError"),
+        ]:
+            run_dir = job.job_dir / "task1" / run_id
+            run_dir.mkdir(parents=True)
+            result = TaskRunResult(
+                task_id="task1",
+                run_id=run_id,
+                started_at=datetime.now(),
+                finished_at=datetime.now(),
+                exception_info=ExceptionInfo(
+                    exception_type=exc_type,
+                    exception_message="error",
+                    exception_traceback="",
+                    occurred_at=datetime.now(),
+                )
+                if exc_type
+                else None,
+            )
+            (run_dir / "result.json").write_text(result.model_dump_json())
+
+            index_entry = RunIndexEntry(
+                task_id="task1",
+                run_id=run_id,
+                timestamp=datetime.now(),
+                benign_score=1.0 if exc_type is None else None,
+                attack_score=None,
+                exception_type=exc_type,
+                path=Path(f"task1/{run_id}"),
+            )
+            with open(job.job_dir / "index.jsonl", "a") as f:
+                f.write(index_entry.model_dump_json() + "\n")
+
+        # Create 1 run for task2
+        run_dir = job.job_dir / "task2" / "ddd44444"
+        run_dir.mkdir(parents=True)
+        result = TaskRunResult(
+            task_id="task2",
+            run_id="ddd44444",
+            started_at=datetime.now(),
+            finished_at=datetime.now(),
+        )
+        (run_dir / "result.json").write_text(result.model_dump_json())
+        index_entry = RunIndexEntry(
+            task_id="task2",
+            run_id="ddd44444",
+            timestamp=datetime.now(),
+            benign_score=1.0,
+            attack_score=None,
+            exception_type=None,
+            path=Path("task2/ddd44444"),
+        )
+        with open(job.job_dir / "index.jsonl", "a") as f:
+            f.write(index_entry.model_dump_json() + "\n")
+
+        # All runs should be counted (both successful and errored)
+        run_counts = job.persistence.get_run_counts()
+        assert run_counts == {"task1": 3, "task2": 1}
+
+    def test_filter_tasks_needing_runs(self, experiment_config: ExperimentConfig, tmp_path: Path):
+        """Test that filter_tasks_needing_runs filters correctly."""
+        job = Job.create(
+            experiment_config=experiment_config,
+            execution_mode="benign",
+            jobs_dir=tmp_path,
+            job_name="test_job",
+            agent_name="test",
+            n_runs_per_task=2,
+        )
+
+        # Create 2 runs for task1 (at limit), 1 for task2 (needs 1 more), 0 for task3
+        for task_id, run_id in [
+            ("task1", "aaa11111"),
+            ("task1", "bbb22222"),
+            ("task2", "ccc33333"),
+        ]:
+            run_dir = job.job_dir / task_id / run_id
+            run_dir.mkdir(parents=True)
+            result = TaskRunResult(
+                task_id=task_id,
+                run_id=run_id,
+                started_at=datetime.now(),
+                finished_at=datetime.now(),
+            )
+            (run_dir / "result.json").write_text(result.model_dump_json())
+
+            index_entry = RunIndexEntry(
+                task_id=task_id,
+                run_id=run_id,
+                timestamp=datetime.now(),
+                benign_score=1.0,
+                attack_score=None,
+                exception_type=None,
+                path=Path(f"{task_id}/{run_id}"),
+            )
+            with open(job.job_dir / "index.jsonl", "a") as f:
+                f.write(index_entry.model_dump_json() + "\n")
+
+        # task1 has 2 runs (at limit), task2 has 1 run (needs more), task3 has 0 runs
+        result = job.filter_tasks_needing_runs(["task1", "task2", "task3"])
+        assert set(result) == {"task2", "task3"}
+
+    def test_filter_warns_when_task_has_more_runs_than_expected(
+        self, experiment_config: ExperimentConfig, tmp_path: Path
+    ):
+        """Test that a warning is emitted when a task has more runs than n_runs_per_task."""
+        job = Job.create(
+            experiment_config=experiment_config,
+            execution_mode="benign",
+            jobs_dir=tmp_path,
+            job_name="test_job",
+            agent_name="test",
+            n_runs_per_task=1,
+        )
+
+        # Create 3 runs for task1 (more than n_runs_per_task=1)
+        for run_id in ["aaa11111", "bbb22222", "ccc33333"]:
+            run_dir = job.job_dir / "task1" / run_id
+            run_dir.mkdir(parents=True)
+            result = TaskRunResult(
+                task_id="task1",
+                run_id=run_id,
+                started_at=datetime.now(),
+                finished_at=datetime.now(),
+            )
+            (run_dir / "result.json").write_text(result.model_dump_json())
+
+            index_entry = RunIndexEntry(
+                task_id="task1",
+                run_id=run_id,
+                timestamp=datetime.now(),
+                benign_score=1.0,
+                attack_score=None,
+                exception_type=None,
+                path=Path(f"task1/{run_id}"),
+            )
+            with open(job.job_dir / "index.jsonl", "a") as f:
+                f.write(index_entry.model_dump_json() + "\n")
+
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            job.filter_tasks_needing_runs(["task1"])
+
+            assert len(w) == 1
+            assert "task1" in str(w[0].message)
+            assert "3 runs" in str(w[0].message)
+            assert "n_runs_per_task=1" in str(w[0].message)
+
+
 class TestJobToExperimentConfig:
     """Tests for Job.to_experiment_config method."""
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import shutil
+import warnings
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -213,6 +214,29 @@ class Job:
         return ExperimentConfig.model_validate(
             self.job_config.model_dump(include=set(ExperimentConfig.model_fields.keys()))
         )
+
+    def filter_tasks_needing_runs(self, task_ids: list[str]) -> list[str]:
+        """Filter task IDs to only those needing more runs.
+
+        Args:
+            task_ids: List of task IDs to filter
+
+        Returns:
+            Task IDs that have fewer runs than n_runs_per_task
+        """
+        run_counts = self.persistence.get_run_counts()
+        n_required = self.job_config.n_runs_per_task
+
+        # Warn about tasks with more runs than expected
+        for tid in task_ids:
+            count = run_counts.get(tid, 0)
+            if count > n_required:
+                warnings.warn(
+                    f"Task '{tid}' has {count} runs but n_runs_per_task={n_required}",
+                    stacklevel=2,
+                )
+
+        return [tid for tid in task_ids if run_counts.get(tid, 0) < n_required]
 
 
 def _apply_resume_overrides(
