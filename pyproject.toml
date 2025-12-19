@@ -143,8 +143,8 @@ markers = [
 filterwarnings = [
     # Ignore TestSpec class from swebench module
     "ignore:cannot collect test class 'TestSpec' because it has a __init__ constructor:pytest.PytestCollectionWarning",
-    # Warning coming from external Google module
-    "ignore:Using `@model_validator` with mode='after' on a classmethod is deprecated:pydantic.PydanticDeprecatedSince212:google.genai.types",
+    # Warning coming from external Google module - using correct pydantic class
+    "ignore:Using `@model_validator` with mode='after' on a classmethod is deprecated:pydantic.PydanticDeprecatedSince20:google.genai.types",
 ]
 
 [tool.uv.sources]
