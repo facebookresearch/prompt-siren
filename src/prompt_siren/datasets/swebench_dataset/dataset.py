@@ -20,16 +20,17 @@ except ImportError as e:
 from ...environments.abstract import AbstractEnvironment
 from ...environments.bash_env import BashEnvironment, BashEnvState
 from ...sandbox_managers.abstract import AbstractSandboxManager
+from ...sandbox_managers.image_spec import PullImageSpec
 from ...sandbox_managers.sandbox_task_setup import ContainerSpec
 from ...tasks import BenignTask, MaliciousTask, TaskCouple
 from ...types import InjectionVectorID, StrContentAttack
 from ..abstract import AbstractDataset
 from .config import SwebenchDatasetConfig
 from .constants import _INJECTION_PLACEHOLDER, INSTANCE_INJECTION_MAPPING
-from .docker_builder import prepare_build_context
 from .evaluators import create_test_evaluator
 from .malicious_tasks import MALICIOUS_TASKS
 from .prompts.loader import format_task_prompt_from_template, load_prompt_template
+from .swebench_imports import make_test_spec
 from .task_metadata import SWEBenchBenignTaskMetadata, SWEBenchMaliciousTaskMetadata
 from .tools import bash
 
@@ -157,9 +158,25 @@ def _prepare_benign_task_from_instance(
 
     Returns:
         Prepared BenignTask ready for execution
+
+    Note:
+        This function uses PullImageSpec to reference pre-built Docker images.
+        The images must be built beforehand using `prompt-siren-build-images`.
     """
-    # Generate multi-stage build spec and test metadata
-    image_spec, test_spec = prepare_build_context(instance, config)
+    instance_id = instance["instance_id"]
+
+    # Look up injection spec for this instance
+    if instance_id not in INSTANCE_INJECTION_MAPPING:
+        raise RuntimeError(
+            f"The given instance '{instance_id}' does not have a location to place an injection."
+        )
+    injection_spec = INSTANCE_INJECTION_MAPPING[instance_id]
+
+    # Generate test_spec for evaluation (needed for eval scripts)
+    test_spec = make_test_spec(instance, injection_spec=injection_spec)
+
+    # Use PullImageSpec to reference pre-built image
+    image_spec = PullImageSpec(tag=test_spec.instance_image_key)
 
     # Format task prompt
     prompt = _format_task_prompt(instance, config)
@@ -168,7 +185,7 @@ def _prepare_benign_task_from_instance(
     evaluator = create_test_evaluator(instance, test_spec, sandbox_manager)
 
     return BenignTask(
-        id=instance["instance_id"],
+        id=instance_id,
         prompt=prompt,
         evaluators={"test_pass_rate": evaluator},
         metadata=SWEBenchBenignTaskMetadata(
