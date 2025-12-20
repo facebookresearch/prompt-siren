@@ -38,6 +38,13 @@ class _TestMaliciousTaskBashEnvMetadata(BaseModel):
     service_containers: dict[str, ContainerSpec] = Field(default_factory=dict)
     benign_dockerfile_extra: str | None = None
 
+    def get_pair_image_tag(self, benign_task_id: str, malicious_task_id: str) -> str | None:
+        """Get the pre-built pair image tag for this malicious task combined with a benign task."""
+        if self.benign_dockerfile_extra is None:
+            return None
+        # Return a predictable tag for testing
+        return f"test-pair:{benign_task_id}__{malicious_task_id}"
+
 
 @pytest.fixture
 async def sandbox_manager() -> DockerSandboxManager:
@@ -311,58 +318,6 @@ class TestMultiContainerTaskCouple:
                 # And that network should be different from the original
                 assert original_network_id not in cloned_benign_net_ids
 
-    async def test_build_modified_image(
-        self,
-        bash_env: BashEnvironment[
-            DockerSandboxManager, _TestBenignTaskBashEnvMetadata, _TestMaliciousTaskBashEnvMetadata
-        ],
-    ):
-        """Test building modified images with dockerfile_extra."""
-        # Create benign task
-        benign_image_spec = PullImageSpec(tag="alpine:latest")
-        benign_container_spec = ContainerSpec(image_spec=benign_image_spec)
-        benign_metadata = _TestBenignTaskBashEnvMetadata(agent_container_spec=benign_container_spec)
-
-        benign_task = BenignTask(
-            id="test-benign-modified",
-            prompt="Do something",
-            evaluators={},
-            metadata=benign_metadata,
-        )
-
-        # Create malicious task with dockerfile_extra
-        attack_image_spec = PullImageSpec(tag="alpine:latest")
-        attack_container_spec = ContainerSpec(image_spec=attack_image_spec, hostname="attack")
-        agent_container_spec = ContainerSpec(image_spec=PullImageSpec(tag="alpine:latest"))
-        malicious_metadata = _TestMaliciousTaskBashEnvMetadata(
-            agent_container_spec=agent_container_spec,
-            service_containers={"attack_server": attack_container_spec},
-            benign_dockerfile_extra="RUN echo 'modified' > /tmp/test.txt",
-        )
-
-        malicious_task = MaliciousTask(
-            id="test-malicious-modified",
-            goal="Exfiltrate data",
-            evaluators={},
-            metadata=malicious_metadata,
-        )
-
-        task_couple = TaskCouple(benign=benign_task, malicious=malicious_task)
-
-        # Create batch and task context
-        async with bash_env.create_batch_context([task_couple]):
-            async with bash_env.create_task_context(task_couple) as env_state:
-                # Verify the agent container is using the modified image
-                assert bash_env._sandbox_manager._batch_state is not None
-                docker = bash_env._sandbox_manager._batch_state.docker_client
-
-                agent_container = await docker.get_container(env_state.agent_container_id)
-                container_info = await agent_container.show()
-                image_name = container_info["Config"]["Image"]
-
-                # Should be the modified image tag (contains "modified" in the tag)
-                assert "modified" in image_name
-
     async def test_multiple_service_containers(self, sandbox_manager: DockerSandboxManager):
         """Test creating a task couple with multiple service containers."""
         bash_env = BashEnvironment(sandbox_manager, all_injection_ids=[])
@@ -607,13 +562,12 @@ class TestMultiContainerTaskCouple:
             hostname=attack_hostname,
             command=["python3", "-m", "http.server", "8080"],
         )
-        # Agent container - use image with curl already installed
-        agent_image_spec = PullImageSpec(tag="alpine:latest")
+        # Agent container - use curlimages/curl which has curl pre-installed
+        agent_image_spec = PullImageSpec(tag="curlimages/curl:latest")
         agent_container_spec = ContainerSpec(image_spec=agent_image_spec)
         malicious_metadata = _TestMaliciousTaskBashEnvMetadata(
             agent_container_spec=agent_container_spec,
             service_containers={"http_server": attack_container_spec},
-            benign_dockerfile_extra="RUN apk add --no-cache curl",
         )
 
         malicious_task = MaliciousTask(

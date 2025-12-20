@@ -8,6 +8,7 @@ from typing import Generic, Protocol, runtime_checkable, TypeVar
 from typing_extensions import assert_never, Self
 
 from ..sandbox_managers.abstract import AbstractSandboxManager
+from ..sandbox_managers.image_spec import PullImageSpec
 from ..sandbox_managers.sandbox_state import ContainerID, SandboxState
 from ..sandbox_managers.sandbox_task_setup import (
     ContainerSetup,
@@ -57,21 +58,29 @@ class BenignTaskBashEnvMetadataProtocol(Protocol):
 class MaliciousTaskBashEnvMetadataProtocol(Protocol):
     """Protocol defining the metadata interface for malicious tasks in BashEnvironment.
 
-    Extends the benign task metadata with an additional field for modifying the benign
-    container. This allows malicious tasks to inject setup code into the agent container
-    while using the same base specification as the benign task.
-
     Attributes:
         agent_container_spec: Specification for the container where the agent executes.
         service_containers: Dictionary mapping service names to their container specs.
             These typically include attacker-controlled services (e.g., malicious servers).
-        benign_dockerfile_extra: Optional Dockerfile commands to append to the benign
-            container setup. Used to modify the environment for attack scenarios.
     """
 
     agent_container_spec: ContainerSpec
     service_containers: dict[str, ContainerSpec]
-    benign_dockerfile_extra: str | None
+
+    def get_pair_image_tag(self, benign_task_id: str, malicious_task_id: str) -> str | None:
+        """Get the pre-built pair image tag for this malicious task combined with a benign task.
+
+        If the malicious task requires modifications to the benign container, this returns
+        the tag for the pre-built combined image. Otherwise returns None.
+
+        Args:
+            benign_task_id: The ID of the benign task this is being paired with
+            malicious_task_id: The ID of the malicious task
+
+        Returns:
+            The pre-built pair image tag, or None if no modification is needed
+        """
+        ...
 
 
 def _create_benign_task_setup(
@@ -79,8 +88,9 @@ def _create_benign_task_setup(
 ) -> TaskSetup:
     """Creates setup for benign or malicious task with optional service containers.
 
-    If the task is malicious, it creates a basic agent container with Debian on top
-    of the required attacker services.
+    For benign tasks, uses the benign metadata directly.
+    For malicious tasks run in isolation (not as part of a couple), uses the malicious
+    task's own agent_container_spec.
     """
     match task:
         case BenignTask():
@@ -91,16 +101,14 @@ def _create_benign_task_setup(
                     f"Expected protocol attributes: agent_container_spec, service_containers"
                 )
             meta = task.metadata
-            dockerfile_extra = None
         case MaliciousTask():
             if not isinstance(task.metadata, MaliciousTaskBashEnvMetadataProtocol):
                 raise RuntimeError(
                     f"MaliciousTask metadata does not implement MaliciousTaskBashEnvMetadataProtocol. "
                     f"Got type: {type(task.metadata).__name__}. "
-                    f"Expected protocol attributes: agent_container_spec, service_containers, benign_dockerfile_extra"
+                    f"Expected protocol attributes: agent_container_spec, service_containers, get_pair_image_tag"
                 )
             meta = task.metadata
-            dockerfile_extra = meta.benign_dockerfile_extra
         case _:
             assert_never(task)
 
@@ -120,7 +128,6 @@ def _create_benign_task_setup(
         agent_container=ContainerSetup(
             name="agent",
             spec=meta.agent_container_spec,
-            dockerfile_extra=dockerfile_extra,
         ),
         service_containers=service_containers,
         network_config=network_config,
@@ -132,6 +139,8 @@ def _create_task_couple_setup(task: TaskCouple[BashEnvState]) -> TaskSetup:
 
     Merges benign and malicious service containers. If there are naming conflicts,
     malicious service containers take precedence.
+
+    Uses pre-built pair images when available (via get_pair_image_tag).
     """
     if not isinstance(task.benign.metadata, BenignTaskBashEnvMetadataProtocol):
         raise RuntimeError(
@@ -161,13 +170,25 @@ def _create_task_couple_setup(task: TaskCouple[BashEnvState]) -> TaskSetup:
     # Sanitize task ID for network name (Docker doesn't allow ":")
     safe_task_id = task.id.replace(":", "-").replace("/", "-")
 
-    return TaskSetup(
-        task_id=task.id,
-        agent_container=ContainerSetup(
+    # Determine the agent container spec - use pre-built pair image if available
+    pair_image_tag = malicious_meta.get_pair_image_tag(task.benign.id, task.malicious.id)
+    if pair_image_tag is not None:
+        # Use pre-built pair image
+        agent_container_spec = ContainerSpec(image_spec=PullImageSpec(tag=pair_image_tag))
+        agent_container = ContainerSetup(
+            name="agent",
+            spec=agent_container_spec,
+        )
+    else:
+        # No modification needed, use benign spec directly
+        agent_container = ContainerSetup(
             name="agent",
             spec=benign_meta.agent_container_spec,
-            dockerfile_extra=malicious_meta.benign_dockerfile_extra,
-        ),
+        )
+
+    return TaskSetup(
+        task_id=task.id,
+        agent_container=agent_container,
         service_containers=merged_service_containers,
         network_config=NetworkConfig(name=f"net-{safe_task_id}", internal=True),
     )

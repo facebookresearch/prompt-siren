@@ -276,9 +276,7 @@ class TaskSandboxContext:
         )
 
         # Get image tag from cache
-        image_tag = await self.batch_state.image_cache.get_image_for_container(
-            container_setup, task_id
-        )
+        image_tag = await self.batch_state.image_cache.get_image_for_container(container_setup)
         logger.debug(f"Retrieved image tag from cache: {image_tag}")
 
         # Build container config
