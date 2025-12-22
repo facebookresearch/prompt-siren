@@ -253,7 +253,7 @@ wheels = [
 
 [[package]]
 name = "arize-phoenix"
-version = "12.25.0"
+version = "12.26.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aioitertools" },
@@ -299,14 +299,14 @@ dependencies = [
     { name = "uvicorn" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/71/23/7e78d52f64ce4c8a419ea67d567c017af14fbda71ba1c11bb83d48ef7302/arize_phoenix-12.25.0.tar.gz", hash = "sha256:5f0997c7776101c5329237053c79ff7edcb4d30e5e6d6cb5b7de297092d8a6d5", size = 2379480, upload-time = "2025-12-12T05:07:02.148Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/23/7e/8003913afc9089bc5d849c079651d93618e63a460abd43729ca2ffe1322d/arize_phoenix-12.26.0.tar.gz", hash = "sha256:251581db6a1240d65b5fa76c6c6bf2979de2102bf41fbace70f3a2b14cda8bbc", size = 2379951, upload-time = "2025-12-22T19:26:07.944Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9d/b0/0b3a194ad84b18f8bfe5e2ad86ad87ae8780172c15b750fe292e0860b975/arize_phoenix-12.25.0-py3-none-any.whl", hash = "sha256:52e6932b31887e2f907738c199170d1e945267fc81202fe106979b51fc1b0a3f", size = 2604966, upload-time = "2025-12-12T05:06:59.724Z" },
+    { url = "https://files.pythonhosted.org/packages/51/2f/7272bc0faf2509d6a8ee5a2a56ff5b84063e53181ddef4fe680fce2b196f/arize_phoenix-12.26.0-py3-none-any.whl", hash = "sha256:1dd15d0956e6c43ad7723d1ff04cd4185eb8443a1d96c9a2c5698989bc44cf68", size = 2605333, upload-time = "2025-12-22T19:26:05.804Z" },
 ]
 
 [[package]]
 name = "arize-phoenix-client"
-version = "1.27.0"
+version = "1.27.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -317,9 +317,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e0/1b/8ccb00a3ee23a7ccf0f2de6495cd4f0aa0a9e31089498fff4c18a6f80d68/arize_phoenix_client-1.27.0.tar.gz", hash = "sha256:7981c0e306799b4e637008fb82423ac282d7f5d386685204499d012603321706", size = 141347, upload-time = "2025-12-11T17:31:40.208Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b4/63/66317bf84022b1358483e935abec9fba676902f452b0aa8f5470b3f0b353/arize_phoenix_client-1.27.1.tar.gz", hash = "sha256:d1ccac2d54c0a53c23cb4278ff546a675be8bac174ecdcf3831919dc597ed503", size = 141360, upload-time = "2025-12-16T23:11:52.184Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/63/2ed6df30fb5a5cc28108c78307ba28b9a7e2307797e36247db2e85085847/arize_phoenix_client-1.27.0-py3-none-any.whl", hash = "sha256:7369a599f2214c51e0753bdbf0bdfeb232508543ab05d4cec2ef5772700e521e", size = 148442, upload-time = "2025-12-11T17:31:39.042Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/44/72b72f2a6449dfd012990f46b8762a3d06a23eee50b966b7f4bc2a34e78a/arize_phoenix_client-1.27.1-py3-none-any.whl", hash = "sha256:e75e9b191327bf7c23b05fea3e3b21e4b3128e5d27cf9f3850ad3397f5bea1f4", size = 148461, upload-time = "2025-12-16T23:11:50.74Z" },
 ]
 
 [[package]]
@@ -1806,6 +1806,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/43/ac/96bd5464e3edbc61595d0d69989f5d9969ae411866427b2500a8e5b812c0/ldap3-2.9.1.tar.gz", hash = "sha256:f3e7fc4718e3f09dda568b57100095e0ce58633bcabbed8667ce3f8fbaa4229f", size = 398830, upload-time = "2021-07-18T06:34:21.786Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4e/f6/71d6ec9f18da0b2201287ce9db6afb1a1f637dedb3f0703409558981c723/ldap3-2.9.1-py2.py3-none-any.whl", hash = "sha256:5869596fc4948797020d3f03b7939da938778a0f9e2009f7a072ccf92b8e8d70", size = 432192, upload-time = "2021-07-18T06:34:12.905Z" },
+]
+
+[[package]]
+name = "lia-web"
+version = "0.2.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1e/4e/847404ca9d36e3f5468c9e460aed565a02cbca0fdf81247da9f87fabc1b8/lia_web-0.2.3.tar.gz", hash = "sha256:ccc9d24cdc200806ea96a20b22fb68f4759e6becdb901bd36024df7921e848d7", size = 156761, upload-time = "2025-08-11T10:23:21.003Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/f2/c68a97c727c795119f1056ad2b7e716c23f26f004292517c435accf90b5c/lia_web-0.2.3-py3-none-any.whl", hash = "sha256:237c779c943cd4341527fc0adfcc3d8068f992ee051f4ef059b8474ee087f641", size = 13965, upload-time = "2025-08-11T10:23:20.215Z" },
 ]
 
 [[package]]
@@ -3703,17 +3715,18 @@ wheels = [
 
 [[package]]
 name = "strawberry-graphql"
-version = "0.270.1"
+version = "0.287.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "graphql-core" },
+    { name = "lia-web" },
     { name = "packaging" },
     { name = "python-dateutil" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/67/aa/9d8a53fbf0271e7a5c5155b76d256caf4b94f422676226253648871cc7c1/strawberry_graphql-0.270.1.tar.gz", hash = "sha256:d64524a943851d83252e39b82ef768ee494259edecf9510b37bad9a46b745db8", size = 207190, upload-time = "2025-05-22T12:29:28.617Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/45/5a466ecd7503ad165ed5050e694f3a871b4df085cfaff5c357259bef0ccc/strawberry_graphql-0.287.3.tar.gz", hash = "sha256:c81126cc75102aa32417048f074429d6c5c8d096424aa939fdb8827b8c5f84a9", size = 211998, upload-time = "2025-12-12T11:50:23.266Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/99/e0/c45d74578e7b8cb7e082697d998cebd8ef97afa3d7aedc22e4acd8ae7163/strawberry_graphql-0.270.1-py3-none-any.whl", hash = "sha256:3593086dc08614ae241cb88f7691e90f90b01cab6ee6351cb3838fc5ba8bfab0", size = 301232, upload-time = "2025-05-22T12:29:25.739Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/8e/ffd20e179cc8218465599922660323f453c7b955aca2b909e5b86ba61eb0/strawberry_graphql-0.287.3-py3-none-any.whl", hash = "sha256:2bb1f9b122ef1213f82f01cf27a095eb0776fda78e12af9e60c54de6e543797c", size = 309183, upload-time = "2025-12-12T11:50:20.574Z" },
 ]
 
 [[package]]
