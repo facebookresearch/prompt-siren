@@ -1,6 +1,6 @@
 [project]
 name = "prompt-siren"
-version = "0.0.1a1"
+version = "0.0.1a2"
 description = "A research workbench for developing and testing attacks against large language models, with a focus on prompt injection vulnerabilities and defenses."
 readme = "README.md"
 authors = [
@@ -33,6 +33,7 @@ dependencies = [
     "filelock>=3.19.1",
     "tabulate>=0.9.0",
     "typing-extensions>=4.15.0",
+    "openinference-instrumentation>=0.1.41",
 ]
 
 [dependency-groups]

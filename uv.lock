@@ -2695,7 +2695,7 @@ wheels = [
 
 [[package]]
 name = "prompt-siren"
-version = "0.0.1a1"
+version = "0.0.1a2"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -2708,6 +2708,7 @@ dependencies = [
     { name = "hydra-submitit-launcher" },
     { name = "logfire" },
     { name = "omegaconf" },
+    { name = "openinference-instrumentation" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-sdk" },
@@ -2773,6 +2774,7 @@ requires-dist = [
     { name = "jinja2", marker = "extra == 'swebench'", specifier = ">=3.1.6" },
     { name = "logfire", specifier = ">=4.7.0" },
     { name = "omegaconf", specifier = ">=2.3.0" },
+    { name = "openinference-instrumentation", specifier = ">=0.1.41" },
     { name = "opentelemetry-api", specifier = ">=1.20.0" },
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.20.0" },
     { name = "opentelemetry-sdk", specifier = ">=1.20.0" },
