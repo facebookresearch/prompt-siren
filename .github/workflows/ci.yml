@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  UV_VERSION: 0.9.15
+  UV_VERSION: 0.9.18
 
 jobs:
   lint:
