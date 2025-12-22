@@ -1,6 +1,6 @@
 [project]
 name = "prompt-siren"
-version = "0.0.1a0"
+version = "0.0.1a1"
 description = "A research workbench for developing and testing attacks against large language models, with a focus on prompt injection vulnerabilities and defenses."
 readme = "README.md"
 authors = [
