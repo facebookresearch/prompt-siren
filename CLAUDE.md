@@ -156,13 +156,18 @@ uv run prompt-siren run attack --config-dir=./my_config
    - Handles task evaluation and result aggregation
 
 8. **CLI Interface** (`src/prompt_siren/cli.py` and `src/prompt_siren/hydra_app.py`)
-   - `cli.py` - Click-based CLI with structured subcommands (config, run)
+   - `cli.py` - Click-based CLI with structured subcommands (config, jobs, run, results)
    - `hydra_app.py` - Hydra integration for configuration management
    - Entry point: `prompt_siren` command
-   - Subcommands: `config export`, `config validate`, `run benign`, `run attack`
+   - Subcommands:
+     - `config export`, `config validate` - Configuration management
+     - `jobs start [benign|attack]` - Start a new job
+     - `jobs resume` - Resume an existing job with optional retry flags
+     - `run [benign|attack]` - Alias for `jobs start`
+     - `results` - Aggregate and display results
    - Execution mode (benign vs attack) determined by CLI command, not config
    - Supports parameter overrides and multi-run sweeps via `--multirun`
-   - Automatic experiment tracking and caching
+   - Job-based experiment tracking with resume/retry capabilities
 
 9. **Telemetry System** (`src/prompt_siren/telemetry/`)
    - OpenTelemetry instrumentation for observability
@@ -195,8 +200,14 @@ uv run prompt-siren run attack --config-dir=./my_config
     - Automatically integrated via `infer_model` in agent configuration
     - Factory functions take no parameters (unlike other components)
 
-13. **Supporting Modules**
-    - `run_persistence.py` - Persistence layer for experiment results
+13. **Job System** (`src/prompt_siren/job/`)
+    - `models.py` - Job data models (JobConfig, TaskResult, RunIndexEntry, etc.)
+    - `job.py` - Job class for creating, running, and resuming jobs
+    - `persistence.py` - Per-task persistence (save/load results)
+    - `naming.py` - Job naming utilities (sanitize, generate job names)
+    - Jobs are stored in `jobs/<job_name>/` with per-task directories
+
+14. **Supporting Modules**
     - `tools_utils.py` - Utilities for tool handling
 
 ### Task Selection

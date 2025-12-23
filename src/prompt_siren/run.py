@@ -5,26 +5,27 @@ from collections.abc import Sequence
 from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Generic, TypeAlias, TypeVar
 
 from pydantic_ai.messages import ModelMessage, ModelRequest, SystemPromptPart
 
 # ExceptionGroup is built-in in Python 3.11+, needs backport for 3.10
 if sys.version_info < (3, 11):
-    from exceptiongroup import ExceptionGroup
+    from exceptiongroup import BaseExceptionGroup
 
 import anyio
 import logfire
 from logfire import LogfireSpan
 from pydantic_ai import InstrumentationSettings, RunContext
 from pydantic_ai.toolsets import AbstractToolset
-from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import RunUsage, UsageLimits
 from typing_extensions import assert_never
 
 from .agents.abstract import AbstractAgent
 from .attacks.abstract import AbstractAttack
 from .environments.abstract import AbstractEnvironment
-from .run_persistence import ExecutionPersistence
+from .job import JobPersistence
 from .tasks import (
     BenignTask,
     EvaluationResult,
@@ -58,7 +59,7 @@ class ExecutionError(Generic[EntityT]):
     """Failed execution result."""
 
     entity: EntityT
-    error: Exception
+    error: BaseException
 
 
 ExecutionResult: TypeAlias = ExecutionOk[EntityT, ResultT] | ExecutionError[EntityT]
@@ -72,7 +73,7 @@ CoupleExecutionResult: TypeAlias = ExecutionResult[
 
 def _process_execution_results(
     execution_results: Sequence[ExecutionResult[EntityT, ResultT]],
-) -> tuple[list[ResultT], list[tuple[EntityT, Exception]]]:
+) -> tuple[list[ResultT], list[tuple[EntityT, BaseException]]]:
     """Process execution results, separating successes from failures.
 
     Args:
@@ -82,7 +83,7 @@ def _process_execution_results(
         Tuple of (successful_results, failed_entities)
     """
     successful_results: list[ResultT] = []
-    failed_entities: list[tuple[EntityT, Exception]] = []
+    failed_entities: list[tuple[EntityT, BaseException]] = []
 
     for exec_result in execution_results:
         match exec_result:
@@ -98,7 +99,7 @@ TaskEntityT = TypeVar("TaskEntityT", bound=Task | TaskCouple)
 
 
 def _handle_execution_failures(
-    failed_entities: Sequence[tuple[TaskEntityT, Exception]],
+    failed_entities: Sequence[tuple[TaskEntityT, BaseException]],
     entity_name_singular: str,
     entity_name_plural: str,
 ) -> None:
@@ -110,7 +111,7 @@ def _handle_execution_failures(
         entity_name_plural: Plural form of entity name (e.g., "tasks", "couples")
 
     Raises:
-        ExceptionGroup: If failed_entities is not empty
+        BaseExceptionGroup: If failed_entities is not empty (can contain any BaseException)
     """
     if not failed_entities:
         return
@@ -122,7 +123,7 @@ def _handle_execution_failures(
         )
 
     entity_ids = ", ".join(e.id for e, _ in failed_entities)
-    raise ExceptionGroup(
+    raise BaseExceptionGroup(
         f"{len(failed_entities)} {entity_name_plural} failed: {entity_ids}",
         [error for _, error in failed_entities],
     )
@@ -177,9 +178,11 @@ async def _run_single_task_without_attack(
     usage_limits: UsageLimits | None,
     concurrency_limiter: asyncio.BoundedSemaphore | nullcontext,
     instrument: InstrumentationSettings | bool | None,
-    persistence: ExecutionPersistence | None = None,
+    persistence: JobPersistence | None = None,
 ) -> EvaluationResult:
     """Run and evaluate a single task. Returns single evaluation result."""
+
+    started_at = datetime.now()
     agent_name = agent.get_agent_name()
     message_history = _setup_history(system_prompt)
 
@@ -209,35 +212,55 @@ async def _run_single_task_without_attack(
                 case _:
                     assert_never(task)
 
-            # Execute task
-            result_ctx = await agent.run(
-                environment,
-                env_state,
-                prompt,
-                message_history=message_history,
-                toolsets=toolsets,
-                attacks=None,
-                usage_limits=usage_limits,
-                instrument=instrument,
-            )
-
-            # Evaluate
-            task_result = TaskResult(run_context=result_ctx, pre_env_state=pre_env_state, task=task)
-            evaluation = await task.evaluate(task_result)
-
-            # Log and persist
-            _log_single_task_result(evaluation, result_ctx, task_span)
-
-            if persistence:
-                persistence.save_single_task_execution(
-                    task=task,
-                    agent_name=agent_name,
-                    result_ctx=result_ctx,
-                    evaluation=evaluation,
-                    task_span=task_span,
+            try:
+                # Execute task
+                result_ctx = await agent.run(
+                    environment,
+                    env_state,
+                    prompt,
+                    message_history=message_history,
+                    toolsets=toolsets,
+                    attacks=None,
+                    usage_limits=usage_limits,
+                    instrument=instrument,
                 )
 
-            return evaluation
+                # Evaluate
+                task_result = TaskResult(
+                    run_context=result_ctx, pre_env_state=pre_env_state, task=task
+                )
+                evaluation = await task.evaluate(task_result)
+
+                # Log and persist
+                _log_single_task_result(evaluation, result_ctx, task_span)
+
+                if persistence:
+                    persistence.save_task_run(
+                        task=task,
+                        evaluation=evaluation,
+                        messages=list(result_ctx.messages),
+                        usage=result_ctx.usage,
+                        task_span=task_span,
+                        started_at=started_at,
+                    )
+
+                return evaluation
+
+            except asyncio.CancelledError as e:
+                # TODO: Capture partial messages/usage on cancellation. See issue #44
+                # Currently we save empty messages/zero usage because the agent's
+                # run() method doesn't expose intermediate state when cancelled.
+                if persistence:
+                    persistence.save_task_run(
+                        task=task,
+                        evaluation=EvaluationResult(task_id=task.id, results={}),
+                        messages=[],
+                        usage=RunUsage(),
+                        task_span=task_span,
+                        started_at=started_at,
+                        exception=e,
+                    )
+                raise
 
 
 async def run_single_tasks_without_attack(
@@ -248,7 +271,7 @@ async def run_single_tasks_without_attack(
     toolsets: Sequence[AbstractToolset[EnvStateT]],
     usage_limits: UsageLimits | None = None,
     max_concurrency: int | None = 1,
-    persistence: ExecutionPersistence | None = None,
+    persistence: JobPersistence | None = None,
     instrument: InstrumentationSettings | bool | None = None,
 ) -> list[EvaluationResult]:
     """Run benign tasks. Simple signature, specific return type.
@@ -260,7 +283,7 @@ async def run_single_tasks_without_attack(
         toolsets: The toolsets to use for the tasks
         usage_limits: The usage limits to apply
         max_concurrency: Maximum number of tasks to run concurrently
-        persistence: Optional ExecutionPersistence instance for saving results
+        persistence: Optional JobPersistence instance for saving results
         instrument: Instrumentation settings for telemetry
 
     Returns:
@@ -288,7 +311,7 @@ async def run_single_tasks_without_attack(
                 persistence,
             )
             return ExecutionOk(task, result)
-        except Exception as e:
+        except (Exception, asyncio.CancelledError) as e:
             return ExecutionError(task, e)
 
     # TODO(py3.10): Replace with asyncio.TaskGroup once Python 3.10 support is dropped
@@ -365,9 +388,11 @@ async def _run_task_couple_with_attack(
     concurrency_limiter: asyncio.BoundedSemaphore | nullcontext,
     instrument: InstrumentationSettings | bool | None,
     attack: AbstractAttack[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
-    persistence: ExecutionPersistence | None = None,
+    persistence: JobPersistence | None = None,
 ) -> tuple[EvaluationResult, EvaluationResult]:
     """Run and evaluate a task couple. Returns benign + malicious results."""
+
+    started_at = datetime.now()
     agent_name = agent.get_agent_name()
     message_history = _setup_history(system_prompt)
 
@@ -387,42 +412,61 @@ async def _run_task_couple_with_attack(
             except TypeError:
                 pre_env_state = None
 
-            with create_attack_span(attack):
-                end_state, generated_attacks = await attack.attack(
-                    agent=agent,
-                    environment=environment,
-                    message_history=message_history,
-                    env_state=env_state,
-                    toolsets=toolsets,
-                    benign_task=couple.benign,
-                    malicious_task=couple.malicious,
-                    usage_limits=usage_limits or UsageLimits(),
-                    instrument=instrument,
+            try:
+                with create_attack_span(attack):
+                    end_state, generated_attacks = await attack.attack(
+                        agent=agent,
+                        environment=environment,
+                        message_history=message_history,
+                        env_state=env_state,
+                        toolsets=toolsets,
+                        benign_task=couple.benign,
+                        malicious_task=couple.malicious,
+                        usage_limits=usage_limits or UsageLimits(),
+                        instrument=instrument,
+                    )
+
+                result_ctx = end_state.run_ctx
+
+                # Evaluate (always both tasks)
+                task_result = TaskResult(
+                    run_context=result_ctx, pre_env_state=pre_env_state, task=couple
                 )
+                benign_eval, malicious_eval = await couple.evaluate(task_result)
 
-            result_ctx = end_state.run_ctx
+                # Log and persist
+                _log_couple_result(benign_eval, malicious_eval, result_ctx, task_span)
 
-            # Evaluate (always both tasks)
-            task_result = TaskResult(
-                run_context=result_ctx, pre_env_state=pre_env_state, task=couple
-            )
-            benign_eval, malicious_eval = await couple.evaluate(task_result)
+                if persistence:
+                    persistence.save_couple_run(
+                        couple=couple,
+                        benign_eval=benign_eval,
+                        malicious_eval=malicious_eval,
+                        messages=list(result_ctx.messages),
+                        usage=result_ctx.usage,
+                        task_span=task_span,
+                        started_at=started_at,
+                        generated_attacks=generated_attacks,
+                    )
 
-            # Log and persist
-            _log_couple_result(benign_eval, malicious_eval, result_ctx, task_span)
+                return benign_eval, malicious_eval
 
-            if persistence:
-                persistence.save_couple_execution(
-                    couple=couple,
-                    agent_name=agent_name,
-                    result_ctx=result_ctx,
-                    benign_eval=benign_eval,
-                    malicious_eval=malicious_eval,
-                    task_span=task_span,
-                    generated_attacks=generated_attacks,
-                )
-
-            return benign_eval, malicious_eval
+            except asyncio.CancelledError as e:
+                # TODO: Capture partial messages/usage on cancellation. See #44
+                # Currently we save empty messages/zero usage because the agent's
+                # run() method doesn't expose intermediate state when cancelled.
+                if persistence:
+                    persistence.save_couple_run(
+                        couple=couple,
+                        benign_eval=EvaluationResult(task_id=couple.benign.id, results={}),
+                        malicious_eval=EvaluationResult(task_id=couple.malicious.id, results={}),
+                        messages=[],
+                        usage=RunUsage(),
+                        task_span=task_span,
+                        started_at=started_at,
+                        exception=e,
+                    )
+                raise
 
 
 async def run_task_couples_with_attack(
@@ -434,7 +478,7 @@ async def run_task_couples_with_attack(
     attack: AbstractAttack[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
     usage_limits: UsageLimits | None = None,
     max_concurrency: int | None = 1,
-    persistence: ExecutionPersistence | None = None,
+    persistence: JobPersistence | None = None,
     instrument: InstrumentationSettings | bool | None = None,
 ) -> list[tuple[EvaluationResult, EvaluationResult]]:
     """Run attack tasks. Different signature, different return type.
@@ -447,7 +491,7 @@ async def run_task_couples_with_attack(
         attack: Optional AbstractAttack instance (can be None for baseline)
         usage_limits: The usage limits to apply
         max_concurrency: Maximum number of couples to run concurrently
-        persistence: Optional ExecutionPersistence instance for saving results
+        persistence: Optional JobPersistence instance for saving results
         instrument: Instrumentation settings for telemetry
 
     Returns:
@@ -478,7 +522,7 @@ async def run_task_couples_with_attack(
                 persistence,
             )
             return ExecutionOk(couple, result)
-        except Exception as e:
+        except (Exception, asyncio.CancelledError) as e:
             return ExecutionError(couple, e)
 
     # TODO(py3.10): Replace with asyncio.TaskGroup once Python 3.10 support is dropped
