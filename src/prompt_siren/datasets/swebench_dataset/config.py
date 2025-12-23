@@ -31,6 +31,14 @@ class SwebenchDatasetConfig(BaseModel):
     cache_dir: str = ".swebench_cache"
     """Directory to cache build contexts and generated scripts."""
 
+    # Registry configuration
+    registry: str | None = None
+    """Optional Docker registry prefix for pulling pre-built images.
+    If specified, this prefix will be prepended to image tags when pulling.
+    Example: 'my-registry.com/myrepo' would make 'image:tag' become
+    'my-registry.com/myrepo/image:tag'.
+    """
+
     # Prompt customization
     prompt_template: str = "swe-agent-swebench"
     """Prompt template to use. Can be:
