@@ -11,7 +11,7 @@ defaults:
 # HYDRA CONFIGURATION
 # =============================================================================
 # Disable Hydra's default output directory creation since we use our own
-# persistence system with trace_dir
+# job-based persistence system
 hydra:
   output_subdir: null # Don't create .hydra subdirectory
   job:
@@ -64,7 +64,7 @@ task_ids: null # Task IDs to run (null = all tasks appropriate for mode)
 # OUTPUT CONFIGURATION
 # =============================================================================
 output:
-  trace_dir: "traces" # Directory for trace outputs
+  jobs_dir: "jobs" # Directory for job outputs
 
 # =============================================================================
 # OBSERVABILITY & TELEMETRY

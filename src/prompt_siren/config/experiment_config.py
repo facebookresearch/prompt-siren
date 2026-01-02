@@ -54,7 +54,10 @@ class ExecutionConfig(BaseModel):
 class OutputConfig(BaseModel):
     """Configuration for experiment output."""
 
-    trace_dir: Path = Field(default=Path("traces"), description="Directory to store trace data")
+    jobs_dir: Path = Field(default=Path("jobs"), description="Directory to store job results")
+    job_name: str | None = Field(
+        default=None, description="Custom job name (auto-generated if None)"
+    )
 
 
 class TelemetryConfig(BaseModel):

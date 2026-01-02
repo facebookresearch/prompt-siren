@@ -1,9 +1,10 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-"""Results aggregation and formatting from trace outputs.
+"""Results aggregation and formatting from job outputs.
 
-This module provides functionality to aggregate experiment results from the index.jsonl file
-in the trace directory. It reads the index to identify model, agent, environment, etc.,
-and aggregates task results, handling multiple executions of the same task by averaging.
+This module provides functionality to aggregate experiment results from job directories.
+It reads the config.yaml and index.jsonl from each job directory to identify model, agent,
+environment, etc., and aggregates task results, handling multiple executions of the same
+task by averaging or computing pass@k metrics.
 """
 
 import itertools
@@ -23,7 +24,8 @@ import pandas as pd
 from tabulate import tabulate
 from typing_extensions import assert_never
 
-from .run_persistence import INDEX_FILENAME, IndexEntry
+from .job.models import CONFIG_FILENAME, INDEX_FILENAME, JobConfig, RunIndexEntry
+from .job.persistence import load_config_yaml
 
 
 class GroupBy(StrEnum):
@@ -46,7 +48,7 @@ class Format(StrEnum):
 
 
 # Grouping columns used for aggregation
-# Note: config_hash is not included to allow grouping across dataset suites with the same agent/attack config
+# Note: job_name is not included to allow grouping across jobs with the same agent/attack config
 _ALL_GROUP_COLS = ["dataset", "agent_type", "agent_name", "attack_type"]
 
 
@@ -79,31 +81,52 @@ def estimate_pass_at_k(num_samples: int | list[int], num_correct: list[int], k: 
     )
 
 
-def _parse_index_entry(line: str) -> dict[str, Any]:
-    """Parse and validate a single index entry line.
+def _parse_index_entry(line: str, job_config: JobConfig) -> dict[str, Any]:
+    """Parse and validate a single index entry line combined with job config.
 
     Args:
         line: JSON line from index.jsonl
+        job_config: Job configuration for this index entry
 
     Returns:
-        Row dictionary with None values replaced for aggregation
+        Row dictionary with job config data merged in
     """
     entry_data = json.loads(line)
-    entry = IndexEntry.model_validate(entry_data)
-    row = entry.model_dump()
+    entry = RunIndexEntry.model_validate(entry_data)
 
-    # Replace None with default values for aggregation
-    if row["attack_type"] is None:
-        row["attack_type"] = "benign"
-    else:
-        # For template_string attacks, append the template_short_name to attack_type
-        if row["attack_type"] == "template_string" and row.get("attack_config"):
-            template_short_name = row["attack_config"].get("template_short_name")
+    # Start with entry data
+    row: dict[str, Any] = {
+        "task_id": entry.task_id,
+        "run_id": entry.run_id,
+        "timestamp": entry.timestamp.isoformat(),
+        "benign_score": entry.benign_score if entry.benign_score is not None else 0.0,
+        "attack_score": entry.attack_score if entry.attack_score is not None else float("nan"),
+        "exception_type": entry.exception_type,
+    }
+
+    # Add job config data (JobConfig extends ExperimentConfig with typed fields)
+    row["dataset"] = job_config.dataset.type
+    row["dataset_config"] = job_config.dataset.config
+    row["agent_type"] = job_config.agent.type
+    row["agent_name"] = job_config.agent.config.get("model", "unknown")
+
+    # Handle attack type
+    if job_config.attack is not None:
+        attack_type = job_config.attack.type
+        attack_config = job_config.attack.config
+        row["attack_type"] = attack_type
+        row["attack_config"] = attack_config
+
+        # For template_string attacks, append the template_short_name
+        if attack_type == "template_string" and attack_config:
+            template_short_name = attack_config.get("template_short_name")
             if template_short_name:
                 row["attack_type"] = f"template_string_{template_short_name}"
+    else:
+        row["attack_type"] = "benign"
+        row["attack_config"] = None
 
-    if row["attack_score"] is None:
-        row["attack_score"] = float("nan")
+    row["job_name"] = job_config.job_name
 
     # Extract dataset_suite from dataset_config
     dataset_config = row.get("dataset_config", {})
@@ -116,32 +139,69 @@ def _parse_index_entry(line: str) -> dict[str, Any]:
     return row
 
 
-def _read_index(output_dir: Path) -> list[dict[str, Any]]:
-    """Read all result rows from the index.jsonl file.
+def _read_job_index(job_dir: Path) -> list[dict[str, Any]]:
+    """Read all result rows from a single job's index.jsonl file.
 
     Args:
-        output_dir: Path to trace directory containing index.jsonl
+        job_dir: Path to job directory containing config.yaml and index.jsonl
 
     Returns:
         List of row dictionaries, one per index entry
 
     Raises:
-        FileNotFoundError: If index file does not exist
+        FileNotFoundError: If config or index file does not exist
     """
-    index_file = output_dir / INDEX_FILENAME
+    config_path = job_dir / CONFIG_FILENAME
+    index_path = job_dir / INDEX_FILENAME
 
-    if not index_file.exists():
-        raise FileNotFoundError(f"Index file does not exist at {index_file}.")
+    if not config_path.exists():
+        raise FileNotFoundError(f"Job config not found: {config_path}")
+    if not index_path.exists():
+        return []  # Job exists but no results yet
 
-    with index_file.open() as f:
-        return [_parse_index_entry(line.strip()) for line in f if line.strip()]
+    job_config = load_config_yaml(config_path)
+
+    with index_path.open() as f:
+        return [_parse_index_entry(line.strip(), job_config) for line in f if line.strip()]
+
+
+def _read_all_jobs(jobs_dir: Path) -> list[dict[str, Any]]:
+    """Read all result rows from all job directories.
+
+    Args:
+        jobs_dir: Path to jobs directory containing job subdirectories
+
+    Returns:
+        List of row dictionaries from all jobs
+    """
+    if not jobs_dir.exists():
+        return []
+
+    all_rows: list[dict[str, Any]] = []
+
+    for job_path in jobs_dir.iterdir():
+        if not job_path.is_dir():
+            continue
+
+        config_path = job_path / CONFIG_FILENAME
+        if not config_path.exists():
+            continue  # Not a valid job directory
+
+        try:
+            rows = _read_job_index(job_path)
+            all_rows.extend(rows)
+        except Exception:
+            # Skip jobs that can't be read
+            continue
+
+    return all_rows
 
 
 def _group_by_task(df: pd.DataFrame, k: int = 1) -> pd.DataFrame:
     """Group results by task_id, computing pass@k metric.
 
     This is the first stage of grouping that always happens regardless of user selection.
-    Groups by all configuration columns (dataset, agent_type, agent_name, attack_type, config_hash)
+    Groups by all configuration columns (dataset, agent_type, agent_name, attack_type, job_name)
     plus dataset_suite and task_id. The dataset_suite is included to properly handle task name
     clashes across dataset suites when doing dataset_suite-level aggregation.
 
@@ -165,8 +225,8 @@ def _group_by_task(df: pd.DataFrame, k: int = 1) -> pd.DataFrame:
         return df
 
     # Group by configuration and task
-    # Include dataset_suite and config_hash to disambiguate tasks from different suites with the same name
-    group_cols = [*_ALL_GROUP_COLS, "dataset_suite", "config_hash", "task_id"]
+    # Include dataset_suite and job_name to disambiguate tasks from different jobs
+    group_cols = [*_ALL_GROUP_COLS, "dataset_suite", "job_name", "task_id"]
 
     if k == 1:
         # Original behavior: average across timestamps
@@ -216,13 +276,13 @@ def _group_by_task(df: pd.DataFrame, k: int = 1) -> pd.DataFrame:
 
 
 def aggregate_results(
-    output_dir: Path,
+    jobs_dir: Path,
     group_by: GroupBy = GroupBy.ALL,
     k: int | list[int] = 1,
 ) -> pd.DataFrame:
-    """Aggregate results from trace directory with optional grouping and pass@k metric.
+    """Aggregate results from job directories with optional grouping and pass@k metric.
 
-    Reads the index.jsonl file from the trace directory to aggregate results.
+    Reads the config.yaml and index.jsonl from each job directory to aggregate results.
 
     For k=1: Averages scores across timestamps for each task.
     For k>1: Computes pass@k metric where a task passes if at least one run succeeds.
@@ -233,7 +293,7 @@ def aggregate_results(
     2. Optionally group by selected dimension (dataset, dataset_suite, agent, attack, agent_name, or show all configs)
 
     Args:
-        output_dir: Path to trace directory (e.g., ./traces)
+        jobs_dir: Path to jobs directory (e.g., ./jobs)
         group_by: Grouping level - "all" (default) shows full config breakdown by dataset,
                   "dataset_suite" replaces dataset with dataset_suite, others aggregate further
         k: The k value(s) for pass@k metric. Can be a single int or list of ints.
@@ -244,7 +304,7 @@ def aggregate_results(
         If multiple k values provided, includes a 'k' column to identify each metric.
         Default view includes: dataset, agent_type, agent_name, attack_type,
         benign_pass@k, attack_pass@k, n_tasks, avg_n_samples
-        (aggregates across dataset_suite's and config_hash variations)
+        (aggregates across dataset_suite's and job_name variations)
 
     Raises:
         ValueError: If any task has fewer than k samples when k > 1
@@ -256,7 +316,7 @@ def aggregate_results(
     if len(k_values) > 1:
         all_results = []
         for k_value in k_values:
-            result = aggregate_results(output_dir, group_by=group_by, k=k_value)
+            result = aggregate_results(jobs_dir, group_by=group_by, k=k_value)
             if not result.empty:
                 result["k"] = k_value
                 all_results.append(result)
@@ -269,8 +329,8 @@ def aggregate_results(
     # Single k value - process normally
     k_value = k_values[0]
 
-    # Read all rows from index
-    all_rows = _read_index(output_dir)
+    # Read all rows from all jobs
+    all_rows = _read_all_jobs(jobs_dir)
 
     if not all_rows:
         return pd.DataFrame()

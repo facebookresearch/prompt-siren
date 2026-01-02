@@ -238,7 +238,7 @@ execution:
   concurrency: 1
 task_ids: null  # null = all tasks for the execution mode
 output:
-  trace_dir: "traces"
+  jobs_dir: "jobs"
 telemetry:
   trace_console: true
 usage_limits: null

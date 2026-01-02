@@ -27,7 +27,7 @@ class TestValidateConfig:
                 "attack": None,
                 "execution": {"concurrency": 1},
                 "task_ids": None,
-                "output": {"trace_dir": "traces"},
+                "output": {"jobs_dir": "jobs"},
                 "telemetry": {"trace_console": False},
                 "usage_limits": None,
             }
@@ -50,7 +50,7 @@ class TestValidateConfig:
                 "attack": None,
                 "execution": {"concurrency": 1},
                 "task_ids": None,
-                "output": {"trace_dir": "traces"},
+                "output": {"jobs_dir": "jobs"},
                 "telemetry": {"trace_console": False},
                 "usage_limits": None,
             }
@@ -75,7 +75,7 @@ class TestValidateConfig:
                 "attack": None,
                 "execution": {"concurrency": 1},
                 "task_ids": None,
-                "output": {"trace_dir": "traces"},
+                "output": {"jobs_dir": "jobs"},
                 "telemetry": {"trace_console": False},
                 "usage_limits": None,
             }
@@ -102,7 +102,7 @@ class TestValidateConfig:
                 "attack": None,
                 "execution": {"concurrency": 1},
                 "task_ids": None,
-                "output": {"trace_dir": "traces"},
+                "output": {"jobs_dir": "jobs"},
                 "telemetry": {"trace_console": False},
                 "usage_limits": None,
             }
@@ -131,7 +131,7 @@ class TestValidateConfig:
                 },  # Invalid type (int instead of str)
                 "execution": {"concurrency": 1},
                 "task_ids": None,
-                "output": {"trace_dir": "traces"},
+                "output": {"jobs_dir": "jobs"},
                 "telemetry": {"trace_console": False},
                 "usage_limits": None,
             }
@@ -157,7 +157,7 @@ class TestValidateConfig:
                 "attack": None,
                 "execution": {"concurrency": 1},
                 "task_ids": None,  # Attack mode but no attack!
-                "output": {"trace_dir": "traces"},
+                "output": {"jobs_dir": "jobs"},
                 "telemetry": {"trace_console": False},
                 "usage_limits": None,
             }
@@ -179,7 +179,7 @@ class TestValidateConfig:
                 "attack": None,
                 "execution": {"concurrency": 1},
                 "task_ids": None,
-                "output": {"trace_dir": "traces"},
+                "output": {"jobs_dir": "jobs"},
                 "telemetry": {"trace_console": False},
                 "usage_limits": None,
             }

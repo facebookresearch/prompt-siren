@@ -166,7 +166,7 @@ task_ids: null  # null = all tasks for the execution mode
 
 # Output configuration
 output:
-  trace_dir: "traces"
+  jobs_dir: "jobs"
 
 # Observability
 telemetry:
@@ -347,7 +347,7 @@ uv run prompt-siren run attack +dataset=agentdojo-workspace +attack=template_str
 uv run prompt-siren run benign +dataset=agentdojo-workspace execution.concurrency=8
 
 # Configure output
-uv run prompt-siren run benign +dataset=agentdojo-workspace output.trace_dir=my_traces telemetry.trace_console=true
+uv run prompt-siren run benign +dataset=agentdojo-workspace output.jobs_dir=my_jobs telemetry.trace_console=true
 
 # Set usage limits
 uv run prompt-siren run benign +dataset=agentdojo-workspace usage_limits.request_limit=10 usage_limits.total_tokens_limit=50000
@@ -530,7 +530,7 @@ execution:
 task_ids: ["user_task_1", "user_task_2", "user_task_3"]
 
 output:
-  trace_dir: "custom_traces"
+  jobs_dir: "custom_jobs"
 
 telemetry:
   trace_console: true
@@ -596,7 +596,7 @@ agent:
     model: ${oc.env:DEFAULT_MODEL,azure:gpt-5}
 
 output:
-  trace_dir: ${oc.env:TRACE_DIR,traces}
+  jobs_dir: ${oc.env:JOBS_DIR,jobs}
 ```
 
 ## Configuration Validation
