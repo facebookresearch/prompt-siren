@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+import asyncio
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from typing import ClassVar, TypeVar
@@ -86,10 +87,11 @@ class PlainAgentConfig(BaseModel):
         return infer_model(v)
 
 
-@dataclass(frozen=True)
+@dataclass
 class PlainAgent(AbstractAgent):
     agent_type: ClassVar[str] = "plain"
     _config: PlainAgentConfig
+    _last_state: ExecutionState[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT] | None = None
 
     @property
     def config(self) -> PlainAgentConfig:
@@ -98,6 +100,20 @@ class PlainAgent(AbstractAgent):
     def get_agent_name(self) -> str:
         """Get a descriptive name for this agent (used for filenames and logging)."""
         return f"plain:{self.config.model.model_name}"
+
+    def get_last_state(
+        self,
+    ) -> ExecutionState[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT] | None:
+        """Get the last yielded execution state.
+
+        This is useful for debugging cancelled runs and understanding how far
+        execution progressed before interruption. Returns None if no state has
+        been yielded yet.
+
+        Returns:
+            The last execution state that was yielded, or None
+        """
+        return self._last_state
 
     async def run(
         self,
@@ -113,18 +129,24 @@ class PlainAgent(AbstractAgent):
         instrument: InstrumentationSettings | bool | None = None,
     ) -> RunContext[EnvStateT]:
         result_state = None
-        async for state in self.iter(
-            environment,
-            env_state,
-            user_prompt,
-            message_history=message_history,
-            toolsets=toolsets,
-            usage_limits=usage_limits,
-            usage=usage,
-            attacks=attacks,
-            instrument=instrument,
-        ):
-            result_state = state
+        try:
+            async for state in self.iter(
+                environment,
+                env_state,
+                user_prompt,
+                message_history=message_history,
+                toolsets=toolsets,
+                usage_limits=usage_limits,
+                usage=usage,
+                attacks=attacks,
+                instrument=instrument,
+            ):
+                result_state = state
+                self._last_state = state
+        except asyncio.CancelledError:
+            # On cancellation, _last_state contains the most recent state
+            # Re-raise to propagate cancellation
+            raise
 
         if result_state is None:
             raise RuntimeError("No loop iteration was executed when running `agent.iter`.")
@@ -223,6 +245,7 @@ class PlainAgent(AbstractAgent):
             message_history=message_history,
             usage=usage,
         )
+        self._last_state = initial_state
         yield initial_state
 
         async for current_state in self.resume_iter_from_state(
@@ -232,6 +255,7 @@ class PlainAgent(AbstractAgent):
             attacks=attacks,
             instrument=instrument,
         ):
+            self._last_state = current_state
             yield current_state
 
     async def next_state(

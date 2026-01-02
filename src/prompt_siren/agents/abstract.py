@@ -238,3 +238,18 @@ class AbstractAgent(Protocol):
             The initial state for the state machine
         """
         raise NotImplementedError()
+
+    @abstractmethod
+    def get_last_state(
+        self,
+    ) -> ExecutionState[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT] | None:
+        """Get the last yielded execution state.
+
+        This is useful for debugging cancelled runs and understanding how far
+        execution progressed before interruption. Returns None if no state has
+        been yielded yet.
+
+        Returns:
+            The last execution state that was yielded, or None
+        """
+        raise NotImplementedError()

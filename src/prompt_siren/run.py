@@ -210,16 +210,31 @@ async def _run_single_task_without_attack(
                     assert_never(task)
 
             # Execute task
-            result_ctx = await agent.run(
-                environment,
-                env_state,
-                prompt,
-                message_history=message_history,
-                toolsets=toolsets,
-                attacks=None,
-                usage_limits=usage_limits,
-                instrument=instrument,
-            )
+            try:
+                result_ctx = await agent.run(
+                    environment,
+                    env_state,
+                    prompt,
+                    message_history=message_history,
+                    toolsets=toolsets,
+                    attacks=None,
+                    usage_limits=usage_limits,
+                    instrument=instrument,
+                )
+            except asyncio.CancelledError:
+                # Log partial execution information on cancellation
+                last_state = agent.get_last_state()
+                if last_state is not None:
+                    logfire.warning(
+                        f"Task {task.id} cancelled - partial state captured",
+                        task_id=task.id,
+                        message_count=len(last_state.run_ctx.messages),
+                        input_tokens=last_state.run_ctx.usage.input_tokens if last_state.run_ctx.usage else 0,
+                        output_tokens=last_state.run_ctx.usage.output_tokens if last_state.run_ctx.usage else 0,
+                    )
+                else:
+                    logfire.warning(f"Task {task.id} cancelled - no state captured", task_id=task.id)
+                raise
 
             # Evaluate
             task_result = TaskResult(run_context=result_ctx, pre_env_state=pre_env_state, task=task)
