@@ -1,5 +1,11 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-"""Docker build context preparation for SWE-bench instances."""
+"""Docker build context preparation for SWE-bench instances.
+
+This module is used by the `prompt-siren-build-images` script to prepare
+Docker build contexts for SWE-bench instances. The task definitions themselves
+use PullImageSpec to reference pre-built images, so this module is only used
+during the image building phase, not during experiment runs.
+"""
 
 import hashlib
 from pathlib import Path
