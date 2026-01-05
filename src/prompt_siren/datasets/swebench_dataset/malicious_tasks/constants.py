@@ -55,6 +55,7 @@ from importlib.resources import files
 from ....sandbox_managers.image_spec import BuildImageSpec, PullImageSpec
 from ....sandbox_managers.sandbox_task_setup import ContainerSpec
 from ..image_tags import get_basic_agent_image_tag
+from ..constants import SWEBENCH_IMAGE_PREFIX
 
 # Get the docker directory path using importlib.resources
 _DOCKER_CONTEXT_PATH = files("prompt_siren.datasets.swebench_dataset").joinpath("dockerfiles")
@@ -174,7 +175,7 @@ def get_service_container_build_spec(dockerfile_subdir: str, task_id: str) -> Bu
     """
     return BuildImageSpec(
         context_path=str(_DOCKER_CONTEXT_PATH.joinpath(dockerfile_subdir)),
-        tag=f"{task_id}:latest",
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-{task_id}:latest",
     )
 
 
@@ -187,4 +188,4 @@ def get_service_container_pull_spec(task_id: str) -> PullImageSpec:
     Returns:
         PullImageSpec for pulling the pre-built service container
     """
-    return PullImageSpec(tag=f"{task_id}:latest")
+    return PullImageSpec(tag=f"{SWEBENCH_IMAGE_PREFIX}-{task_id}:latest")

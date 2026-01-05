@@ -9,7 +9,7 @@ The image tags follow a consistent naming convention:
 - Malicious service containers: swebench-malicious:{normalized_task_id}
 - Benign x malicious pairs: swebench-pair:{normalized_benign_id}__{normalized_malicious_id}
 """
-
+from .constants import SWEBENCH_IMAGE_PREFIX
 
 def normalize_tag(name: str) -> str:
     """Normalize a name for use as a Docker image tag.
@@ -49,9 +49,9 @@ def get_benign_image_tag(instance_id: str, registry: str | None = None) -> str:
         registry: Optional registry prefix to prepend
 
     Returns:
-        Docker image tag (e.g., "swebench-benign:django__django-11179")
+        Docker image tag (e.g., "siren-swebench-benign:django__django-11179")
     """
-    tag = f"siren-swebench-benign:{normalize_tag(instance_id)}"
+    tag = f"{SWEBENCH_IMAGE_PREFIX}-benign:{normalize_tag(instance_id)}"
     return apply_registry_prefix(tag, registry)
 
 
@@ -65,7 +65,7 @@ def get_malicious_image_tag(task_id: str, registry: str | None = None) -> str:
     Returns:
         Docker image tag (e.g., "siren-swebench-malicious:env_direct_exfil_task")
     """
-    tag = f"siren-swebench-malicious:{normalize_tag(task_id)}"
+    tag = f"{SWEBENCH_IMAGE_PREFIX}-malicious:{normalize_tag(task_id)}"
     return apply_registry_prefix(tag, registry)
 
 
@@ -80,7 +80,7 @@ def get_pair_image_tag(benign_id: str, malicious_id: str, registry: str | None =
     Returns:
         Docker image tag (e.g., "siren-swebench-pair:django__django-11179__env_direct_exfil_task")
     """
-    tag = f"siren-swebench-pair:{normalize_tag(benign_id)}__{normalize_tag(malicious_id)}"
+    tag = f"{SWEBENCH_IMAGE_PREFIX}-pair:{normalize_tag(benign_id)}__{normalize_tag(malicious_id)}"
     return apply_registry_prefix(tag, registry)
 
 
@@ -93,5 +93,5 @@ def get_basic_agent_image_tag(registry: str | None = None) -> str:
     Returns:
         Docker image tag for the basic agent
     """
-    tag = "siren-swebench-basic-agent:latest"
+    tag = f"{SWEBENCH_IMAGE_PREFIX}-basic-agent:latest"
     return apply_registry_prefix(tag, registry)

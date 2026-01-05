@@ -14,6 +14,7 @@ from importlib.resources import files
 
 from ....sandbox_managers.image_spec import BuildImageSpec
 from ..image_tags import get_basic_agent_image_tag
+from ..constants import SWEBENCH_IMAGE_PREFIX
 
 # Get the docker directory path using importlib.resources
 _DOCKER_CONTEXT_PATH = files("prompt_siren.datasets.swebench_dataset").joinpath("dockerfiles")
@@ -33,38 +34,43 @@ SERVICE_CONTAINER_BUILD_SPECS: dict[str, BuildImageSpec] = {
         tag=get_basic_agent_image_tag(),
     ),
     # exec_curl_bash_task service
-    "exec_curl_bash_task:latest": BuildImageSpec(
+    f"{SWEBENCH_IMAGE_PREFIX}-exec_curl_bash_task:latest": BuildImageSpec(
         context_path=_get_docker_context("exec_curl_bash_task"),
-        tag="exec_curl_bash_task:latest",
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-exec_curl_bash_task:latest",
     ),
     # env_direct_exfil_task service (uses shared exfil_server)
-    "env_direct_exfil_task:latest": BuildImageSpec(
+    f"{SWEBENCH_IMAGE_PREFIX}-env_direct_exfil_task:latest": BuildImageSpec(
         context_path=_get_docker_context("exfil_server"),
-        tag="env_direct_exfil_task:latest",
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-env_direct_exfil_task:latest",
     ),
     # env_backdoor_exfil_task service (uses shared exfil_server)
-    "exfil_server:latest": BuildImageSpec(
+    f"{SWEBENCH_IMAGE_PREFIX}-env_backdoor_exfil_task:latest": BuildImageSpec(
         context_path=_get_docker_context("exfil_server"),
-        tag="exfil_server:latest",
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-env_backdoor_exfil_task:latest",
     ),
     # ssh_keys_direct_exfil_task service (uses shared exfil_server)
-    "ssh_keys_direct_exfil_task:latest": BuildImageSpec(
+    f"{SWEBENCH_IMAGE_PREFIX}-ssh_keys_direct_exfil_task:latest": BuildImageSpec(
         context_path=_get_docker_context("exfil_server"),
-        tag="ssh_keys_direct_exfil_task:latest",
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-ssh_keys_direct_exfil_task:latest",
+    ),
+    # ssh_keys_backdoor_exfil_task service (uses shared exfil_server)
+    f"{SWEBENCH_IMAGE_PREFIX}-ssh_keys_backdoor_exfil_task:latest": BuildImageSpec(
+        context_path=_get_docker_context("exfil_server"),
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-ssh_keys_backdoor_exfil_task:latest",
     ),
     # insert_exploitable_code_task service
-    "insert_exploitable_code_task:latest": BuildImageSpec(
+    f"{SWEBENCH_IMAGE_PREFIX}-insert_exploitable_code_task:latest": BuildImageSpec(
         context_path=_get_docker_context("insert_exploitable_code_task"),
-        tag="insert_exploitable_code_task:latest",
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-insert_exploitable_code_task:latest",
     ),
     # scrape_products_exfil_task services (has two service containers)
-    "scrape_products_exfil_task_ecommerce:latest": BuildImageSpec(
+    f"{SWEBENCH_IMAGE_PREFIX}-scrape_products_exfil_task_ecommerce:latest": BuildImageSpec(
         context_path=_get_docker_context("scrape_products_exfil_task/ecommerce"),
-        tag="scrape_products_exfil_task_ecommerce:latest",
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-scrape_products_exfil_task_ecommerce:latest",
     ),
-    "scrape_products_exfil_task_adversary:latest": BuildImageSpec(
+    f"{SWEBENCH_IMAGE_PREFIX}-scrape_products_exfil_task_adversary:latest": BuildImageSpec(
         context_path=_get_docker_context("scrape_products_exfil_task"),
-        tag="scrape_products_exfil_task_adversary:latest",
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-scrape_products_exfil_task_adversary:latest",
     ),
 }
 
