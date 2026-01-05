@@ -9,7 +9,9 @@ The image tags follow a consistent naming convention:
 - Malicious service containers: swebench-malicious:{normalized_task_id}
 - Benign x malicious pairs: swebench-pair:{normalized_benign_id}__{normalized_malicious_id}
 """
+
 from .constants import SWEBENCH_IMAGE_PREFIX
+
 
 def normalize_tag(name: str) -> str:
     """Normalize a name for use as a Docker image tag.
