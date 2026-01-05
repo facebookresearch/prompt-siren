@@ -28,7 +28,7 @@ SOFTWARE.
 """
 
 import json
-from typing import Any, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 import yaml
 from packaging.version import Version
@@ -340,12 +340,12 @@ def make_eval_script_list_py(
     apply_test_patch_command = (
         f"git apply -v - <<'{heredoc_delimiter}'\n{test_patch}\n{heredoc_delimiter}"
     )
-    test_command = " ".join(
-        [
-            MAP_REPO_VERSION_TO_SPECS[instance["repo"]][instance["version"]]["test_cmd"],
-            *get_test_directives(instance),
-        ]
-    )
+    test_cmd_value = MAP_REPO_VERSION_TO_SPECS[instance["repo"]][instance["version"]]["test_cmd"]
+    if not isinstance(test_cmd_value, str):
+        raise ValueError(f"Expected test_cmd to be str, got {type(test_cmd_value)}")
+    test_cmd: str = test_cmd_value
+    test_directives: list[str] = get_test_directives(instance)
+    test_command = " ".join([test_cmd, *test_directives])
     eval_commands = [
         _ACTIVATE_ENV_COMMAND,
         f"cd {repo_directory}",
@@ -436,8 +436,9 @@ def make_test_spec(
     base_commit = instance["base_commit"]
     test_patch = instance["test_patch"]
 
-    def _from_json_or_obj(key: str) -> Any:
+    def _from_json_or_obj(key: Literal["PASS_TO_PASS", "FAIL_TO_PASS"]) -> Any:
         """If key points to string, load with json"""
+        # Access instance as dict to allow dynamic key access
         if key not in instance:
             # If P2P, F2P keys not found, it's a validation instance
             return []
@@ -451,7 +452,10 @@ def make_test_spec(
     env_name = "testbed"
     repo_directory = f"/{env_name}"
     specs: Specs = MAP_REPO_VERSION_TO_SPECS[repo][version]
-    docker_specs = specs.get("docker_specs", {})
+    docker_specs_value = specs.get("docker_specs", {})
+    if not isinstance(docker_specs_value, dict):
+        raise ValueError(f"Expected docker_specs to be dict, got {type(docker_specs_value)}")
+    docker_specs: dict[str, Any] = docker_specs_value
 
     repo_script_list = make_repo_script_list(
         specs, repo, repo_directory, base_commit, env_name, injection_spec

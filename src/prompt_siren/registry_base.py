@@ -283,7 +283,7 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
                 "config_fields": list(config_class.model_fields.keys())
                 if config_class is not None
                 else [],
-                "factory": factory.__name__,
+                "factory": getattr(factory, "__name__", repr(factory)),
             }
             for name, (config_class, factory) in self._registry.items()
         }
