@@ -120,8 +120,8 @@ def _get_eval_report(
         log_path = log_file.name
 
         # Get eval report with parsed test results
-        prediction = {
-            KEY_PREDICTION: patch_content,  # Use generated patch from git diff
+        prediction: dict[str, str] = {
+            KEY_PREDICTION: patch_content or "",  # Use generated patch from git diff
             KEY_INSTANCE_ID: instance_id,
         }
 

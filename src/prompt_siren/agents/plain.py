@@ -40,9 +40,9 @@ from .states import (
 from .utils import (
     contents_contain_only_user_request_content,
     extract_tool_call_parts,
+    get_model_request_parts_if_no_injectable,
     handle_tool_calls,
     inject_injectable_model_request,
-    parts_contain_only_model_request_parts,
     query_model,
     restore_state_context,
     serialize_tool_return_parts,
@@ -278,9 +278,11 @@ class PlainAgent(AbstractAgent):
                 results_parts, new_run_ctx = await handle_tool_calls(
                     run_ctx, environment, tool_call_parts, toolsets
                 )
-                if parts_contain_only_model_request_parts(results_parts):
+                model_request_parts = get_model_request_parts_if_no_injectable(results_parts)
+                if model_request_parts is not None:
                     serialized_parts = serialize_tool_return_parts(
-                        results_parts, self.config.tool_result_serialization_mode
+                        model_request_parts,
+                        self.config.tool_result_serialization_mode,
                     )
                     return ModelRequestState(
                         new_run_ctx,
