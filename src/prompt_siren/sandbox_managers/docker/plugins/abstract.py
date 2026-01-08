@@ -166,6 +166,23 @@ class AbstractDockerClient(Protocol):
         """
         ...
 
+    async def tag_image(self, source_tag: str, target_tag: str) -> None:
+        """Tag an image with a new tag.
+
+        Args:
+            source_tag: Source image tag
+            target_tag: Target image tag (in format 'repository:tag')
+        """
+        ...
+
+    async def push_image(self, tag: str) -> None:
+        """Push an image to a registry.
+
+        Args:
+            tag: Image tag to push (should include registry prefix)
+        """
+        ...
+
     # Container operations
 
     async def create_container(self, config: dict[str, Any], name: str) -> AbstractContainer:

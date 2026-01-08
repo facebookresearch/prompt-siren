@@ -18,11 +18,14 @@ class ContainerSpec(BaseModel):
 
 @dataclass(frozen=True)
 class ContainerSetup:
-    """Setup for a single container."""
+    """Setup for a single container.
+
+    All images should be pre-built using the build_images script.
+    No runtime image modification is supported.
+    """
 
     name: str  # Container name (e.g., "agent", "attack_server", "db")
     spec: ContainerSpec
-    dockerfile_extra: str | None = None
 
 
 @dataclass(frozen=True)
