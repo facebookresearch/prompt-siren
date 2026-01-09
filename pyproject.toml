@@ -47,7 +47,7 @@ dev = [
     "pytest>=8.4.1",
     "pytest-xdist>=3.8.0",
     "ruff>=0.12.9",
-    "ty>=0.0.8",
+    "ty>=0.0.10",
 ]
 
 [project.scripts]
