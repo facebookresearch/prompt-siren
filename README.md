@@ -152,7 +152,7 @@ The results table includes:
 # Lint and format
 uv run ruff check --fix
 uv run ruff format
-uv run basedpyright
+uv run ty check
 
 # Test
 uv run pytest -v

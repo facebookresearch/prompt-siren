@@ -12,7 +12,7 @@ This is a workbench designed for security research to test attacks against large
 ```sh
 uv run ruff check --fix
 uv run ruff format
-uv run basedpyright
+uv run ty check
 ```
 
 ### Testing
