@@ -55,8 +55,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras
 
-      - name: Run pyright
-        run: uv run basedpyright
+      - name: Run ty
+        run: uv run ty check
 
   meta-format-check:
     name: Meta Format Check
