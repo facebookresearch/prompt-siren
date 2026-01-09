@@ -1,10 +1,10 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
-from typing import Annotated, Any, Generic, Literal, TypeAlias, TypeGuard, TypeVar
+from typing import Annotated, Any, Generic, Literal, TypeAlias, TypeVar
 
 import pydantic
 from pydantic import BaseModel
@@ -17,6 +17,7 @@ from pydantic_ai.messages import (
     ModelRequestPart,
     UserContent,
 )
+from typing_extensions import TypeIs
 
 InjectionVectorID = str
 TaskCoupleID = str
@@ -42,8 +43,9 @@ InjectionAttackT = TypeVar("InjectionAttackT", bound=InjectionAttack)
 
 InjectionAttacksDict: TypeAlias = dict[InjectionVectorID, InjectionAttackT]
 
-InjectionAttacksDictTypeAdapter = pydantic.TypeAdapter(
-    InjectionAttacksDict,
+# TypeAdapter uses the concrete union type, not the generic TypeVar
+InjectionAttacksDictTypeAdapter = pydantic.TypeAdapter[dict[InjectionVectorID, InjectionAttack]](
+    dict[InjectionVectorID, InjectionAttack],
     config=pydantic.ConfigDict(defer_build=True, ser_json_bytes="base64", val_json_bytes="base64"),
 )
 
@@ -51,7 +53,7 @@ InjectionAttacksDictTypeAdapter = pydantic.TypeAdapter(
 def _inject_str(
     content: str,
     default: InjectionAttacksDict[StrContentAttack],
-    attacks: InjectionAttacksDict[InjectionAttack] | None,
+    attacks: Mapping[InjectionVectorID, InjectionAttack] | None,
 ) -> str:
     result = content
     if attacks is None:
@@ -81,7 +83,7 @@ class InjectableStrContent:
     def vector_ids(self) -> list[InjectionVectorID]:
         return list(self.default.keys())
 
-    def inject(self, attacks: InjectionAttacksDict[InjectionAttack] | None) -> str:
+    def inject(self, attacks: Mapping[InjectionVectorID, InjectionAttack] | None) -> str:
         return _inject_str(self.content, self.default, attacks)
 
 
@@ -96,7 +98,7 @@ class InjectableBinaryContent:
     def vector_ids(self) -> list[InjectionVectorID]:
         return [self.vector_id]
 
-    def inject(self, attacks: InjectionAttacksDict[InjectionAttack] | None) -> BinaryContent:
+    def inject(self, attacks: Mapping[InjectionVectorID, InjectionAttack] | None) -> BinaryContent:
         attack = attacks[self.vector_id] if attacks else self.default
         if not isinstance(attack, BinaryContentAttack):
             raise InvalidAttackError(
@@ -142,7 +144,7 @@ class InjectableUserPromptPart:
         return _get_injectable_user_part_vector_ids(self)
 
     def inject(
-        self, attacks: InjectionAttacksDict[InjectionAttack] | None
+        self, attacks: Mapping[InjectionVectorID, InjectionAttack] | None
     ) -> Sequence[UserContent]:
         injected_content_parts = []
         for content_part in self.content:
@@ -184,7 +186,7 @@ class InjectableRetryPromptPart:
     def vector_ids(self) -> list[InjectionVectorID]:
         return get_vector_ids(self)
 
-    def inject(self, attacks: InjectionAttacksDict[InjectionAttack] | None) -> str:
+    def inject(self, attacks: Mapping[InjectionVectorID, InjectionAttack] | None) -> str:
         return _inject_str(self.content, self.default, attacks)
 
 
@@ -196,7 +198,7 @@ InjectableModelRequestPart = Annotated[
 
 def is_injectable_model_request_part(
     part: InjectableModelRequestPart | ModelRequestPart,
-) -> TypeGuard[InjectableModelRequestPart]:
+) -> TypeIs[InjectableModelRequestPart]:
     return isinstance(
         part,
         InjectableUserPromptPart | InjectableToolReturnPart | InjectableRetryPromptPart,
