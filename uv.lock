@@ -2791,7 +2791,7 @@ requires-dist = [
     { name = "tabulate", specifier = ">=0.9.0" },
     { name = "typing-extensions", specifier = ">=4.15.0" },
     { name = "ufmt", marker = "extra == 'ufmt'", specifier = "==2.8.0" },
-    { name = "usort", marker = "extra == 'ufmt'", specifier = "==1.0.8.post1" },
+    { name = "usort", marker = "extra == 'ufmt'", specifier = "==1.1.2" },
 ]
 provides-extras = ["agentdojo", "swebench", "docker", "playwright", "all", "ufmt"]
 
@@ -4021,7 +4021,7 @@ wheels = [
 
 [[package]]
 name = "usort"
-version = "1.0.8.post1"
+version = "1.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
@@ -4029,12 +4029,12 @@ dependencies = [
     { name = "libcst" },
     { name = "moreorless" },
     { name = "stdlibs" },
-    { name = "toml" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "trailrunner" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9b/f4/3ef48b43f2645f2cb4a37d6007e611bc669af44eecfee953c5dd57433011/usort-1.0.8.post1.tar.gz", hash = "sha256:68def75f2b20b97390c552c503e071ee06c65ad502c5f94f3bd03f095cf4dfe6", size = 83215, upload-time = "2024-02-12T04:29:33.632Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/71/42/13cd4343e3bc508efad5d2b229af8afa88db3ba66d3ad4f112308cecc1dd/usort-1.1.2.tar.gz", hash = "sha256:784f780d85d2a8063e0a24ce4f9bbb7b4cac07028d51394a01789aa7ca130399", size = 84246, upload-time = "2026-01-09T22:55:52.93Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5f/55/cc51ceb3d93763b9d28def24615bc485212525550967ce9e992a455f9ab5/usort-1.0.8.post1-py3-none-any.whl", hash = "sha256:6c57cdf17b458c79f8a61eb3ce8bf3f93e36d3c2edd602b9b2aa16b6875d3255", size = 37281, upload-time = "2024-02-12T04:29:31.693Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/ea/d6093165b51b7f4178d7e7989bd04950f6dbbef32e44b323ef93f93f6d92/usort-1.1.2-py3-none-any.whl", hash = "sha256:b4059e4aa6f56a377715d916413e8cfbdcf7d24c57c77d9d2daeed08b489e650", size = 41464, upload-time = "2026-01-09T22:55:51.892Z" },
 ]
 
 [[package]]
