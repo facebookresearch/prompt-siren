@@ -1,17 +1,25 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Click-based CLI for Siren."""
 
+import asyncio
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TypeVar
 
 import click
 from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig
 
 from .config.export import export_default_config
-from .hydra_app import hydra_main_with_config_path, validate_config
+from .hydra_app import (
+    hydra_main_with_config_path,
+    run_attack_experiment,
+    run_benign_experiment,
+    validate_config,
+)
+from .job import Job, JobConfigMismatchError
 from .results import (
     aggregate_results,
     Format,
@@ -71,59 +79,100 @@ def validate(config_dir: Path | None, config_name: str, overrides: tuple[str, ..
     _validate_config(config_dir, config_name, list(overrides), execution_mode=execution_mode)
 
 
+# ============================================================================
+# Jobs commands (main interface)
+# ============================================================================
+
+
 @main.group()
-def run():
-    """Run experiments."""
+def jobs():
+    """Manage jobs."""
 
 
-@run.command()
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, path_type=Path),
-    help="Configuration directory path",
-)
-@click.option("--config-name", default="config", help="Configuration file name (without .yaml)")
-@click.option("--multirun", is_flag=True, help="Enable Hydra multirun mode for parameter sweeps")
-@click.option(
-    "--cfg",
-    "--print-config",
-    type=click.Choice(["job", "hydra", "all"]),
-    help="Print composed config and exit (job=app config, hydra=hydra config, all=both)",
-)
-@click.option(
-    "--resolve",
-    is_flag=True,
-    help="Resolve OmegaConf interpolations when printing config",
-)
-@click.option(
-    "--info",
-    type=click.Choice(["all", "config", "defaults", "defaults-tree", "plugins", "searchpath"]),
-    help="Print Hydra information and exit",
-)
-@click.argument("overrides", nargs=-1)
-def benign(
+@jobs.group()
+def start():
+    """Start a new job."""
+
+
+# Common options for start commands
+_start_common_options = [
+    click.option(
+        "--config-dir",
+        type=click.Path(exists=True, path_type=Path),
+        help="Configuration directory path",
+    ),
+    click.option("--config-name", default="config", help="Configuration file name (without .yaml)"),
+    click.option("--job-name", type=str, help="Custom job name (default: auto-generated)"),
+    click.option(
+        "--jobs-dir",
+        type=click.Path(path_type=Path),
+        default="./jobs",
+        help="Directory to store job results (default: ./jobs)",
+    ),
+    click.option(
+        "--multirun", is_flag=True, help="Enable Hydra multirun mode for parameter sweeps"
+    ),
+    click.option(
+        "--cfg",
+        "--print-config",
+        type=click.Choice(["job", "hydra", "all"]),
+        help="Print composed config and exit (job=app config, hydra=hydra config, all=both)",
+    ),
+    click.option(
+        "--resolve",
+        is_flag=True,
+        help="Resolve OmegaConf interpolations when printing config",
+    ),
+    click.option(
+        "--info",
+        type=click.Choice(["all", "config", "defaults", "defaults-tree", "plugins", "searchpath"]),
+        help="Print Hydra information and exit",
+    ),
+    click.argument("overrides", nargs=-1),
+]
+
+
+_F = TypeVar("_F", bound=Callable[..., object])
+
+
+def _add_options(options: list[Callable[[_F], _F]]) -> Callable[[_F], _F]:
+    """Decorator to add multiple options to a command."""
+
+    def decorator(func: _F) -> _F:
+        for option in reversed(options):
+            func = option(func)
+        return func
+
+    return decorator
+
+
+@start.command(name="benign")
+@_add_options(_start_common_options)
+def start_benign(
     config_dir: Path | None,
     config_name: str,
+    job_name: str | None,
+    jobs_dir: Path,
     multirun: bool,
     cfg: str | None,
     resolve: bool,
     info: str | None,
     overrides: tuple[str, ...],
 ):
-    """Run benign-only evaluation (no attacks).
+    """Start a benign-only evaluation job (no attacks).
 
     Examples:
-        prompt-siren run benign +dataset=agentdojo-workspace
-        prompt-siren run benign +dataset=agentdojo-workspace agent.config.model=azure:gpt-5
-        prompt-siren run benign --multirun +dataset=agentdojo-workspace agent.config.model=azure:gpt-5,azure:gpt-5-nano
-        prompt-siren run benign --print-config job +dataset=agentdojo-workspace
-        prompt-siren run benign --info plugins
+        prompt-siren jobs start benign +dataset=agentdojo-workspace
+        prompt-siren jobs start benign --job-name=my-experiment +dataset=agentdojo-workspace
+        prompt-siren jobs start benign --multirun +dataset=agentdojo-workspace agent.config.model=azure:gpt-5,azure:gpt-5-nano
     """
-    _run_hydra(
-        config_dir,
-        config_name,
-        list(overrides),
+    _run_job(
+        config_dir=config_dir,
+        config_name=config_name,
+        overrides=list(overrides),
         execution_mode="benign",
+        job_name=job_name,
+        jobs_dir=jobs_dir,
         multirun=multirun,
         print_config=cfg,
         resolve=resolve,
@@ -131,56 +180,34 @@ def benign(
     )
 
 
-@run.command()
-@click.option(
-    "--config-dir",
-    type=click.Path(exists=True, path_type=Path),
-    help="Configuration directory path",
-)
-@click.option("--config-name", default="config", help="Configuration file name (without .yaml)")
-@click.option("--multirun", is_flag=True, help="Enable Hydra multirun mode for parameter sweeps")
-@click.option(
-    "--cfg",
-    "--print-config",
-    type=click.Choice(["job", "hydra", "all"]),
-    help="Print composed config and exit (job=app config, hydra=hydra config, all=both)",
-)
-@click.option(
-    "--resolve",
-    is_flag=True,
-    help="Resolve OmegaConf interpolations when printing config",
-)
-@click.option(
-    "--info",
-    type=click.Choice(["all", "config", "defaults", "defaults-tree", "plugins", "searchpath"]),
-    help="Print Hydra information and exit",
-)
-@click.argument("overrides", nargs=-1)
-def attack(
+@start.command(name="attack")
+@_add_options(_start_common_options)
+def start_attack(
     config_dir: Path | None,
     config_name: str,
+    job_name: str | None,
+    jobs_dir: Path,
     multirun: bool,
     cfg: str | None,
     resolve: bool,
     info: str | None,
     overrides: tuple[str, ...],
 ):
-    """Run attack evaluation.
+    """Start an attack evaluation job.
 
     Requires attack configuration (via +attack=<name> override or in config file).
 
     Examples:
-        prompt-siren run attack +dataset=agentdojo-workspace +attack=template_string
-        prompt-siren run attack +dataset=agentdojo-workspace +attack=mini-goat agent.config.model=azure:gpt-5
-        prompt-siren run attack --multirun +dataset=agentdojo-workspace +attack=template_string,mini-goat
-        prompt-siren run attack --print-config job +dataset=agentdojo-workspace +attack=template_string
-        prompt-siren run attack --info plugins
+        prompt-siren jobs start attack +dataset=agentdojo-workspace +attack=template_string
+        prompt-siren jobs start attack --job-name=my-attack-test +dataset=agentdojo-workspace +attack=template_string
     """
-    _run_hydra(
-        config_dir,
-        config_name,
-        list(overrides),
+    _run_job(
+        config_dir=config_dir,
+        config_name=config_name,
+        overrides=list(overrides),
         execution_mode="attack",
+        job_name=job_name,
+        jobs_dir=jobs_dir,
         multirun=multirun,
         print_config=cfg,
         resolve=resolve,
@@ -188,12 +215,97 @@ def attack(
     )
 
 
+@jobs.command()
+@click.option(
+    "-p",
+    "--job-path",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to the job directory containing config.yaml",
+)
+@click.option(
+    "-e",
+    "--retry-on-error",
+    multiple=True,
+    default=("CancelledError",),
+    show_default=True,
+    help="Retry tasks that failed with this error type (can be used multiple times). "
+    "Use -e '' to disable retries.",
+)
+@click.argument("overrides", nargs=-1)
+def resume(
+    job_path: Path,
+    retry_on_error: tuple[str, ...],
+    overrides: tuple[str, ...],
+):
+    """Resume an existing job from its job directory.
+
+    Accepts Hydra-style overrides for execution-related fields only
+    (execution.*, telemetry.*, output.*, usage_limits.*).
+
+    Examples:
+        prompt-siren jobs resume -p ./jobs/my-job
+        prompt-siren jobs resume -p ./jobs/my-job -e TimeoutError
+        prompt-siren jobs resume -p ./jobs/my-job -e TimeoutError -e CancelledError
+        prompt-siren jobs resume -p ./jobs/my-job -e ''  # disable retries
+        prompt-siren jobs resume -p ./jobs/my-job execution.concurrency=8
+    """
+    # Handle retry_on_error: empty string means "no retries"
+    retry_errors: list[str] | None = None
+    if retry_on_error:
+        # Filter out empty strings and convert to list
+        non_empty = [e for e in retry_on_error if e]
+        if non_empty:
+            retry_errors = non_empty
+        # If all were empty strings (e.g., -e ''), retry_errors stays None
+
+    try:
+        job = Job.resume(
+            job_dir=job_path,
+            overrides=list(overrides) if overrides else None,
+            retry_on_errors=retry_errors,
+        )
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise SystemExit(1) from e
+    except JobConfigMismatchError as e:
+        click.echo(f"Configuration error: {e}", err=True)
+        raise SystemExit(1) from e
+
+    # Get experiment config and run
+    experiment_config = job.to_experiment_config()
+    execution_mode = job.job_config.execution_mode
+
+    click.echo(f"Resuming job: {job.job_config.job_name}")
+    click.echo(f"Mode: {execution_mode}")
+
+    if execution_mode == "benign":
+        asyncio.run(run_benign_experiment(experiment_config, job=job))
+    else:
+        asyncio.run(run_attack_experiment(experiment_config, job=job))
+
+
+# ============================================================================
+# Run commands (aliases for jobs start)
+# ============================================================================
+
+
+@main.group()
+def run():
+    """Run experiments. Alias for 'jobs start'."""
+
+
+# Register the same command objects under the 'run' group as aliases
+run.add_command(start_benign, name="benign")
+run.add_command(start_attack, name="attack")
+
+
 @main.command()
 @click.option(
-    "--output-dir",
+    "--jobs-dir",
     type=click.Path(exists=True, path_type=Path),
-    default="./traces",
-    help="Path to trace directory containing results",
+    default="./jobs",
+    help="Path to jobs directory containing results",
 )
 @click.option(
     "--format",
@@ -215,12 +327,13 @@ def attack(
     help="Value(s) for pass@k metric. Can specify multiple times (e.g., --k=1 --k=5 --k=10). Default is 1 (averaging). For k>1, computes pass@k where task passes if at least one of k runs succeeds.",
 )
 def results(
-    output_dir: Path,
+    jobs_dir: Path,
     format: Format,  # noqa: A002 -- format name is fine for cli-friendliness
     group_by: GroupBy,
     k: tuple[int, ...],
 ):
-    """Show aggregated results from trace outputs.
+    """Show aggregated results from job outputs.
+
     Results can be grouped by dataset, agent, attack, model, or show all configurations.
     Grouping is applied during aggregation, then results are formatted as requested.
 
@@ -231,18 +344,17 @@ def results(
 
     Examples:
         prompt-siren results
-        prompt-siren results --output-dir=./traces
+        prompt-siren results --jobs-dir=./jobs
         prompt-siren results --format=json
         prompt-siren results --group-by=model
         prompt-siren results --k=5
         prompt-siren results --k=1 --k=5 --k=10
     """
-
     # Pass k values as list to aggregate_results (handles multiple k internally)
-    aggregated = aggregate_results(output_dir, group_by=group_by, k=list(k))
+    aggregated = aggregate_results(jobs_dir, group_by=group_by, k=list(k))
 
     if aggregated is None or aggregated.empty:
-        click.echo("No results found in output directory", err=True)
+        click.echo("No results found in jobs directory", err=True)
         return
 
     output = format_results(aggregated, format)
@@ -361,6 +473,57 @@ def _run_hydra(
     finally:
         # Restore original sys.argv
         sys.argv = original_argv
+
+
+def _run_job(
+    config_dir: Path | None,
+    config_name: str,
+    overrides: list[str],
+    execution_mode: ExecutionMode,
+    job_name: str | None = None,
+    jobs_dir: Path = Path("./jobs"),
+    multirun: bool = False,
+    print_config: str | None = None,
+    resolve: bool = False,
+    info: str | None = None,
+) -> None:
+    """Run a job with the given configuration.
+
+    This function passes job settings to Hydra via overrides. The actual Job
+    creation happens in hydra_app.py after Hydra composes the configuration.
+    This design is intentional because:
+    - Hydra needs to compose config first (handling defaults, interpolations)
+    - In multirun mode, Hydra creates multiple configs, each needing its own Job
+    - Job creation requires the fully resolved ExperimentConfig
+
+    Args:
+        config_dir: Configuration directory path (if None, uses default ./config)
+        config_name: Configuration file name (without .yaml)
+        overrides: List of Hydra overrides
+        execution_mode: Execution mode ('benign' or 'attack')
+        job_name: Custom job name (auto-generated if None)
+        jobs_dir: Directory to store job results
+        multirun: Enable Hydra multirun mode for parameter sweeps
+        print_config: Print configuration and exit (job, hydra, or all)
+        resolve: Resolve OmegaConf interpolations when printing config
+        info: Print Hydra information and exit
+    """
+    # Add job-related overrides (Job is created in hydra_app.py after config composition)
+    job_overrides = list(overrides)
+    if job_name is not None:
+        job_overrides.append(f"output.job_name={job_name}")
+    job_overrides.append(f"output.jobs_dir={jobs_dir}")
+
+    _run_hydra(
+        config_dir=config_dir,
+        config_name=config_name,
+        overrides=job_overrides,
+        execution_mode=execution_mode,
+        multirun=multirun,
+        print_config=print_config,
+        resolve=resolve,
+        info=info,
+    )
 
 
 if __name__ == "__main__":

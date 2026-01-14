@@ -63,7 +63,7 @@ class TestExperimentConfig:
             },
             "execution": {"concurrency": 4},
             "task_ids": None,
-            "output": {"trace_dir": "test_traces"},
+            "output": {"jobs_dir": "test_jobs"},
             "telemetry": {"trace_console": True},
         }
 
@@ -120,7 +120,7 @@ class TestValidateConfig:
             "attack": {"type": "mock", "config": {"name": "test_attack"}},
             "execution": {"concurrency": 2},
             "task_ids": None,
-            "output": {"trace_dir": "test_traces"},
+            "output": {"jobs_dir": "test_jobs"},
             "telemetry": {"trace_console": False},
         }
 
@@ -399,7 +399,7 @@ class TestValidateConfig:
                 "output_tokens_limit": 500,
                 "total_tokens_limit": 1500,
             },
-            "output": {"trace_dir": "complex_traces"},
+            "output": {"jobs_dir": "complex_jobs"},
             "telemetry": {
                 "trace_console": True,
                 "otel_endpoint": "http://localhost:4317",
