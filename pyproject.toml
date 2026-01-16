@@ -49,6 +49,7 @@ dev = [
 
 [project.scripts]
 prompt-siren = "prompt_siren.cli:main"
+prompt-siren-build-images = "prompt_siren.build_images:main"
 
 [project.entry-points."prompt_siren.agents"]
 plain = "prompt_siren.agents.plain:create_plain_agent"

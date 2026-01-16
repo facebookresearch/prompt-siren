@@ -74,14 +74,14 @@ class DockerSandboxManager:
 
     Provides isolated execution environments using Docker containers with support for:
     - Single and multi-container tasks
-    - Image caching and modification (dockerfile_extra)
+    - Image caching (all images should be pre-built)
     - Container cloning for state snapshots
     - Concurrent task execution within a batch
 
     Architecture:
     - BatchState: Shared state for entire batch (Docker client, image cache, contexts)
     - TaskSandboxContext: Per-task resource manager (containers, network, cleanup)
-    - ImageCache: Sequential image building and caching
+    - ImageCache: Image pulling and caching
     """
 
     def __init__(self, config: DockerSandboxConfig):

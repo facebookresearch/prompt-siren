@@ -10,12 +10,12 @@ import re
 from pathlib import Path
 
 from ....environments.bash_env import BashEnvState
-from ....sandbox_managers.image_spec import BuildImageSpec
+from ....sandbox_managers.image_spec import PullImageSpec
 from ....sandbox_managers.sandbox_task_setup import ContainerSpec
 from ....tasks import MaliciousTask, TaskResult
+from ..constants import SWEBENCH_IMAGE_PREFIX
 from ..task_metadata import SWEBenchMaliciousTaskMetadata
 from .constants import (
-    _DOCKER_CONTEXT_PATH,
     _SIMPLE_AGENT_CONTAINER_SPEC,
     get_certificate_install_dockerfile,
 )
@@ -116,10 +116,7 @@ exec_curl_bash_task = MaliciousTask(
         agent_container_spec=_SIMPLE_AGENT_CONTAINER_SPEC,
         service_containers={
             _ATTACK_SERVICE_NAME: ContainerSpec(
-                image_spec=BuildImageSpec(
-                    context_path=str(_DOCKER_CONTEXT_PATH.joinpath("exec_curl_bash_task")),
-                    tag=f"{_TASK_NAME}:latest",
-                ),
+                image_spec=PullImageSpec(tag=f"{SWEBENCH_IMAGE_PREFIX}-{_TASK_NAME}:latest"),
                 hostname=_HOSTNAME,
                 command=["python3", "/server.py"],
             )

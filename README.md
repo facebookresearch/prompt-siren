@@ -148,6 +148,8 @@ The results table includes:
 
 ## Development
 
+### Linting, Formatting and Typechecking
+
 ```sh
 # Lint and format
 uv run ruff check --fix
@@ -157,6 +159,59 @@ uv run basedpyright
 # Test
 uv run pytest -v
 ```
+
+### Pre-building Docker Images for SWE-bench
+
+The main `prompt-siren` CLI only works with pre-built Docker images. To build all required images for SWE-bench evaluations, use the `prompt-siren-build-images` command:
+
+```sh
+# Build all images (benign, malicious service containers, and pairs)
+uv run prompt-siren-build-images
+
+# Build images for specific instances only
+uv run prompt-siren-build-images --instance-ids django__django-11179 --instance-ids astropy__astropy-12907
+
+# Limit the number of instances to build (useful for testing)
+uv run prompt-siren-build-images --max-instances 5
+
+# Use SWE-bench Lite dataset
+uv run prompt-siren-build-images --dataset "SWE-bench/SWE-bench_Lite"
+
+# Skip building certain image types
+uv run prompt-siren-build-images --skip-benign      # Skip benign task images
+uv run prompt-siren-build-images --skip-malicious   # Skip malicious task service images
+uv run prompt-siren-build-images --skip-pairs       # Skip combined pair images
+
+# Rebuild existing images instead of skipping them
+uv run prompt-siren-build-images --rebuild-existing
+
+# Tag and push images to a registry
+uv run prompt-siren-build-images --registry my-registry.com/myrepo
+
+# Enable verbose logging for debugging
+uv run prompt-siren-build-images --verbose
+
+# Specify a custom cache directory
+uv run prompt-siren-build-images --cache-dir /path/to/cache
+```
+
+**Common workflows:**
+
+```sh
+# Quick test: Build images for a single instance
+uv run prompt-siren-build-images --instance-ids django__django-11179
+
+# Full build for production: Build all images and push to registry
+uv run prompt-siren-build-images --registry my-registry.com/swebench
+
+# Rebuild after updates: Force rebuild of existing images
+uv run prompt-siren-build-images --rebuild-existing
+
+# Build only benign images (no attack scenarios)
+uv run prompt-siren-build-images --skip-malicious --skip-pairs
+```
+
+> **Note:** Once images are built, they are cached locally and will be reused by the main `prompt-siren run` command. The main CLI does not build images on-the-fly—it expects pre-built images to be available.
 
 # License
 Prompt Siren is licensed under an [MIT License](https://github.com/facebookresearch/prompt-siren/blob/main/LICENSE.md).
