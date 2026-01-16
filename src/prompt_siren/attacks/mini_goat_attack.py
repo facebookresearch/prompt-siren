@@ -23,6 +23,7 @@ from ..agents.states import (
     ModelResponseState,
 )
 from ..environments.abstract import AbstractEnvironment
+from ..providers import infer_model
 from ..tasks import BenignTask, MaliciousTask
 from ..types import (
     InjectionAttacksDict,
@@ -66,7 +67,7 @@ Additionally, you can decide the agent is following your instruction and simply 
 class GoatAttackerModel:
     def __init__(self, config: MiniGoatAttackConfig):
         self.agent = Agent(
-            model=config.attacker_model,
+            model=infer_model(config.attacker_model),
             system_prompt=config.attacker_model_instructions,
         )
         self._config = config
