@@ -24,7 +24,7 @@ def normalize_tag(name: str) -> str:
     Returns:
         Normalized tag string
     """
-    return name.replace("/", "_").replace(":", "_").replace(" ", "_").lower()
+    return name.replace("/", "__").replace(":", "__").replace(" ", "__").lower()
 
 
 def apply_registry_prefix(tag: str, registry: str | None) -> str:

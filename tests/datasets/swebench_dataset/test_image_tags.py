@@ -25,15 +25,15 @@ class TestNormalizeTag:
 
     def test_normalize_tag_replaces_slashes(self) -> None:
         """Test that slashes are replaced."""
-        assert normalize_tag("astropy/astropy") == "astropy_astropy"
+        assert normalize_tag("astropy/astropy") == "astropy__astropy"
 
     def test_normalize_tag_replaces_colons(self) -> None:
         """Test that colons are replaced."""
-        assert normalize_tag("image:tag") == "image_tag"
+        assert normalize_tag("image:tag") == "image__tag"
 
     def test_normalize_tag_replaces_spaces(self) -> None:
         """Test that spaces are replaced."""
-        assert normalize_tag("my image") == "my_image"
+        assert normalize_tag("my image") == "my__image"
 
     def test_normalize_tag_lowercases(self) -> None:
         """Test that tags are lowercased."""
@@ -41,7 +41,7 @@ class TestNormalizeTag:
 
     def test_normalize_tag_combined(self) -> None:
         """Test multiple replacements together."""
-        assert normalize_tag("Django/django:11179") == "django_django_11179"
+        assert normalize_tag("Django/django:11179") == "django__django__11179"
 
 
 class TestApplyRegistryPrefix:
@@ -74,7 +74,7 @@ class TestGetBenignImageTag:
     def test_get_benign_image_tag_with_special_chars(self) -> None:
         """Test tag normalization."""
         tag = get_benign_image_tag("astropy/astropy-12345")
-        assert tag == "siren-swebench-benign:astropy_astropy-12345"
+        assert tag == "siren-swebench-benign:astropy__astropy-12345"
 
     def test_get_benign_image_tag_with_registry(self) -> None:
         """Test benign tag with registry prefix."""
@@ -107,7 +107,7 @@ class TestGetPairImageTag:
     def test_get_pair_image_tag_with_special_chars(self) -> None:
         """Test pair tag normalization."""
         tag = get_pair_image_tag("astropy/astropy-12345", "some_task")
-        assert tag == "siren-swebench-pair:astropy_astropy-12345__some_task"
+        assert tag == "siren-swebench-pair:astropy__astropy-12345__some_task"
 
     def test_get_pair_image_tag_with_registry(self) -> None:
         """Test pair tag with registry prefix."""
