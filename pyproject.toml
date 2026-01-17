@@ -86,7 +86,7 @@ ufmt = [
     "ruff-api==0.2.1",
     "stdlibs==2024.1.28",
     "ufmt==2.8.0",
-    "usort==1.0.8.post1",
+    "usort==1.1.2",
 ]
 
 [build-system]
