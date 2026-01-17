@@ -11,6 +11,7 @@ from prompt_siren.types import (
     InjectableModelRequest,
     InjectableStrContent,
     InjectableUserPromptPart,
+    InjectionAttack,
     InjectionAttacksDict,
     InjectionAttacksDictTypeAdapter,
     StrContentAttack,
@@ -90,12 +91,13 @@ def test_injection_attacks_dict_adapter_roundtrip():
     binary_attack = BinaryContentAttack(content=b"Binary malicious payload", media_type="image/png")
 
     # Create dictionaries for each type of attack
-    str_attacks: InjectionAttacksDict[StrContentAttack] = {
+    # Use the union type that the TypeAdapter expects
+    str_attacks: InjectionAttacksDict[InjectionAttack] = {
         "vector1": str_attack1,
         "vector2": str_attack2,
     }
 
-    binary_attacks: InjectionAttacksDict[BinaryContentAttack] = {
+    binary_attacks: InjectionAttacksDict[InjectionAttack] = {
         "vector3": binary_attack,
     }
 

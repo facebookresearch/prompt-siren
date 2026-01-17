@@ -14,7 +14,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from enum import auto
-from typing import Generic, TypeAlias, TypeVar
+from typing import final, Generic, TypeAlias, TypeVar
 
 if sys.version_info >= (3, 11):
     from enum import StrEnum
@@ -41,6 +41,7 @@ class NoPreviousStateError(Exception):
     """Raised when attempting to go back from the initial state."""
 
 
+@final
 @dataclass(frozen=True)
 class InjectableModelRequestState(Generic[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT]):
     """State representing a model request with injectable content.
@@ -67,6 +68,7 @@ class InjectableModelRequestState(Generic[EnvStateT, RawOutputT, FinalOutputT, I
     It should not be used directly, but `AbstractAgent.prev_state` should be used instead."""
 
 
+@final
 @dataclass(frozen=True)
 class ModelRequestState(Generic[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT]):
     """State representing a ready-to-send model request.
@@ -92,6 +94,7 @@ class ModelRequestState(Generic[EnvStateT, RawOutputT, FinalOutputT, InjectionAt
     It should not be used directly, but `AbstractAgent.prev_state` should be used instead."""
 
 
+@final
 @dataclass(frozen=True)
 class ModelResponseState(Generic[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT]):
     """State representing a received model response.
@@ -129,6 +132,7 @@ class FinishReason(StrEnum):
     TOOLS_FAILURE = auto()
 
 
+@final
 @dataclass(frozen=True)
 class EndState(Generic[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT]):
     """Final state when agent execution completes.
