@@ -60,12 +60,6 @@ from ..image_tags import get_basic_agent_image_tag
 # Get the docker directory path using importlib.resources
 _DOCKER_CONTEXT_PATH = files("prompt_siren.datasets.swebench_dataset").joinpath("dockerfiles")
 
-# Build spec for basic agent - used by build_images script
-_BASIC_AGENT_BUILD_SPEC = BuildImageSpec(
-    context_path=str(_DOCKER_CONTEXT_PATH.joinpath("basic_agent")),
-    tag=get_basic_agent_image_tag(),
-)
-
 # Pull spec for basic agent - used by task definitions at runtime
 _SIMPLE_AGENT_CONTAINER_SPEC = ContainerSpec(
     image_spec=PullImageSpec(tag=get_basic_agent_image_tag())

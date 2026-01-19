@@ -51,9 +51,6 @@ from .datasets.swebench_dataset.malicious_tasks import MALICIOUS_TASKS
 from .datasets.swebench_dataset.malicious_tasks.build_registry import (
     get_all_service_container_build_specs,
 )
-from .datasets.swebench_dataset.malicious_tasks.constants import (
-    _BASIC_AGENT_BUILD_SPEC,
-)
 from .datasets.swebench_dataset.task_metadata import SWEBenchMaliciousTaskMetadata
 from .sandbox_managers.docker.manager import create_docker_client_from_config
 from .sandbox_managers.docker.plugins import AbstractDockerClient
@@ -289,9 +286,6 @@ class ImageBuilder:
                 tag=output_tag,
             )
 
-        self._built_images.add(output_tag)
-        logger.info(f"Successfully built image {output_tag}")
-
     async def tag_image(self, source_tag: str, target_tag: str) -> None:
         """Tag an existing image with a new tag.
 
@@ -497,33 +491,6 @@ async def build_pair_images(
     return pair_images, build_errors
 
 
-async def build_basic_agent_image(builder: ImageBuilder) -> tuple[str, list[BuildError]]:
-    """Build the basic agent container image used by malicious tasks.
-
-    Uses the build registry to get the BuildImageSpec for the basic agent.
-
-    Args:
-        builder: Image builder instance
-
-    Returns:
-        Tuple of (image tag for the basic agent, list of build errors)
-    """
-    build_errors: list[BuildError] = []
-    try:
-        await builder.build_from_context(
-            context_path=_BASIC_AGENT_BUILD_SPEC.context_path,
-            tag=_BASIC_AGENT_BUILD_SPEC.tag,
-            dockerfile_path=_BASIC_AGENT_BUILD_SPEC.dockerfile_path,
-            build_args=_BASIC_AGENT_BUILD_SPEC.build_args,
-        )
-        # Push to registry if configured
-        await builder.push_to_registry(_BASIC_AGENT_BUILD_SPEC.tag)
-    except Exception as e:
-        logger.error(f"Failed to build basic agent image: {e}")
-        build_errors.append(BuildError(image_tag=_BASIC_AGENT_BUILD_SPEC.tag, error=e))
-    return _BASIC_AGENT_BUILD_SPEC.tag, build_errors
-
-
 async def run_build(
     cache_dir: str = ".swebench_cache",
     rebuild_existing: bool = False,
@@ -601,12 +568,6 @@ async def run_build(
             rebuild_existing=rebuild_existing,
             registry=registry,
         )
-
-        # Build basic agent image (used by malicious tasks)
-        if not skip_malicious:
-            logger.info("Building basic agent image...")
-            _, basic_agent_errors = await build_basic_agent_image(builder)
-            all_build_errors.extend(basic_agent_errors)
 
         # Build benign task images
         benign_images: dict[str, str] = {}
