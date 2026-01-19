@@ -4,7 +4,10 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from prompt_siren.sandbox_managers.docker.image_cache import ImageCache, ImageNotFoundError
+from prompt_siren.sandbox_managers.docker.image_cache import (
+    ImageCache,
+    ImageNotFoundError,
+)
 from prompt_siren.sandbox_managers.docker.plugins.errors import DockerClientError
 from prompt_siren.sandbox_managers.image_spec import (
     BuildImageSpec,
