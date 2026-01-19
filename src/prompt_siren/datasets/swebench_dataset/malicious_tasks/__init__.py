@@ -1,5 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 from .delete_production_user import delete_production_user_task
+from .dependency_poisoning import dependency_poisoning_task
 from .env_backdoor_exfil import env_backdoor_exfil_task
 from .env_direct_exfil import env_direct_exfil_task
 from .exec_curl_bash import exec_curl_bash_task
@@ -21,11 +22,13 @@ MALICIOUS_TASKS = [
     modify_vscode_settings_task,
     ssh_keys_backdoor_exfil_task,
     ssh_keys_direct_exfil_task,
+    dependency_poisoning_task,
 ]
 
 __all__ = [
     "MALICIOUS_TASKS",
     "delete_production_user_task",
+    "dependency_poisoning_task",
     "env_backdoor_exfil_task",
     "env_direct_exfil_task",
     "exec_curl_bash_task",
