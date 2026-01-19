@@ -367,7 +367,7 @@ async def build_benign_task_images(
 
             return instance_id, BuildSuccess(image_tag=output_tag)
         except Exception as e:
-            logger.error(f"Failed to build benign image for {instance_id}: {e}")
+            logger.warning(f"Failed to build benign image for {instance_id}: {e}")
             return instance_id, BuildError(image_tag=output_tag, error=e)
 
     for instance in instances:
@@ -410,7 +410,7 @@ async def build_malicious_task_images(
             await builder.push_to_registry(build_spec.tag)
             return BuildSuccess(image_tag=build_spec.tag)
         except Exception as e:
-            logger.error(f"Failed to build malicious image {build_spec.tag}: {e}")
+            logger.warning(f"Failed to build malicious image {build_spec.tag}: {e}")
             return BuildError(image_tag=build_spec.tag, error=e)
 
     for build_spec in get_all_service_container_build_specs():
@@ -461,7 +461,7 @@ async def build_pair_images(
             await builder.push_to_registry(pair_tag)
             return BuildSuccess(image_tag=pair_tag)
         except Exception as e:
-            logger.error(f"Failed to build pair image {pair_tag}: {e}")
+            logger.warning(f"Failed to build pair image {pair_tag}: {e}")
             return BuildError(image_tag=pair_tag, error=e)
 
     for benign_id, benign_tag in benign_images.items():

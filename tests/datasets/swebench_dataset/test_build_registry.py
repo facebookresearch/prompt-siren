@@ -6,6 +6,9 @@ import pytest
 # Skip this entire module if swebench is not installed
 pytest.importorskip("swebench")
 
+from prompt_siren.datasets.swebench_dataset.image_tags import (
+    get_basic_agent_image_tag,
+)
 from prompt_siren.datasets.swebench_dataset.malicious_tasks.build_registry import (
     get_all_service_container_build_specs,
     get_service_container_build_spec,
@@ -58,10 +61,6 @@ class TestBuildSpecsHaveValidContextPaths:
 
     def test_basic_agent_is_registered(self) -> None:
         """Test that basic agent is in the registry."""
-        from prompt_siren.datasets.swebench_dataset.image_tags import (
-            get_basic_agent_image_tag,
-        )
-
         basic_agent_tag = get_basic_agent_image_tag()
         spec = get_service_container_build_spec(basic_agent_tag)
         assert spec is not None
