@@ -14,7 +14,7 @@ TESTS_STATUS_KEY = "tests_status"
 """Key in the evaluation report that contains test results."""
 
 # Docker image tagging
-SWEBENCH_IMAGE_PREFIX = "swebench-lite"
+SWEBENCH_IMAGE_PREFIX = "siren-swebench"
 """Prefix for SWE-bench Docker image tags."""
 
 # Character replacements for Docker tag sanitization

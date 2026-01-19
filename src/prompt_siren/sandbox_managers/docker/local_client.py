@@ -193,7 +193,9 @@ class LocalDockerClient(AbstractDockerClient):
         try:
             return await self._docker.images.inspect(tag)
         except DockerError as e:
-            raise DockerClientError(f"Failed to inspect image {tag}: {e.message}") from e
+            raise DockerClientError(
+                f"Failed to inspect image {tag}: {e.message}", status=e.status
+            ) from e
 
     async def pull_image(self, tag: str) -> None:
         """Pull an image from registry."""
@@ -248,6 +250,37 @@ class LocalDockerClient(AbstractDockerClient):
             await self._docker.images.delete(tag, force=force)
         except DockerError as e:
             raise DockerClientError(f"Failed to delete image {tag}: {e.message}") from e
+
+    async def tag_image(self, source_tag: str, target_tag: str) -> None:
+        """Tag an image with a new tag.
+
+        Args:
+            source_tag: Source image tag
+            target_tag: Target image tag (in format 'repository:tag')
+        """
+        try:
+            # Parse target_tag into repo and tag components
+            if ":" in target_tag:
+                repo, tag = target_tag.rsplit(":", 1)
+            else:
+                repo = target_tag
+                tag = "latest"
+            await self._docker.images.tag(source_tag, repo=repo, tag=tag)
+        except DockerError as e:
+            raise DockerClientError(
+                f"Failed to tag image {source_tag} as {target_tag}: {e.message}"
+            ) from e
+
+    async def push_image(self, tag: str) -> None:
+        """Push an image to a registry.
+
+        Args:
+            tag: Image tag to push (should include registry prefix)
+        """
+        try:
+            await self._docker.images.push(tag)
+        except DockerError as e:
+            raise DockerClientError(f"Failed to push image {tag}: {e.message}") from e
 
     # Container operations
 

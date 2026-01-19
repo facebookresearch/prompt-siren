@@ -276,9 +276,7 @@ class TaskSandboxContext:
         )
 
         # Get image tag from cache
-        image_tag = await self.batch_state.image_cache.get_image_for_container(
-            container_setup, task_id
-        )
+        image_tag = await self.batch_state.image_cache.get_image_for_container(container_setup)
         logger.debug(f"Retrieved image tag from cache: {image_tag}")
 
         # Build container config
@@ -441,13 +439,13 @@ class TaskSandboxContext:
                 try:
                     await cloned_container.stop()
                     await cloned_container.delete()
-                except Exception:
-                    pass  # Best effort
+                except Exception as e:
+                    logger.warning(f"Best effort cleanup of cloned container failed: {e}")
 
             try:
                 await self.batch_state.docker_client.delete_image(temp_image_full, force=True)
-            except Exception:
-                pass  # Best effort
+            except Exception as e:
+                logger.warning(f"Best effort cleanup of temp image {temp_image_full} failed: {e}")
 
             raise
 
@@ -530,15 +528,15 @@ class TaskSandboxContext:
         try:
             await info.container.stop()
             await info.container.delete()
-        except Exception:
-            pass  # Best effort cleanup
+        except Exception as e:
+            logger.warning(f"Best effort cleanup of container {container_id} failed: {e}")
 
         # Remove temporary image if exists
         if info.temp_image:
             try:
                 await self.batch_state.docker_client.delete_image(info.temp_image, force=True)
-            except Exception:
-                pass  # Best effort cleanup
+            except Exception as e:
+                logger.warning(f"Best effort cleanup of temp image {info.temp_image} failed: {e}")
 
     async def _cleanup_network(self, network_id: str) -> None:
         """Clean up a network.
@@ -549,5 +547,5 @@ class TaskSandboxContext:
         try:
             network = await self.batch_state.docker_client.get_network(network_id)
             await network.delete()
-        except Exception:
-            pass  # Best effort cleanup
+        except Exception as e:
+            logger.warning(f"Best effort cleanup of network {network_id} failed: {e}")

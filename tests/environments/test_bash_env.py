@@ -31,6 +31,13 @@ class _TestMaliciousTaskBashEnvMetadata(BaseModel):
     service_containers: dict[str, ContainerSpec] = Field(default_factory=dict)
     benign_dockerfile_extra: str | None = None
 
+    def get_pair_image_tag(self, benign_task_id: str, malicious_task_id: str) -> str | None:
+        """Get the pre-built pair image tag for this malicious task combined with a benign task."""
+        if self.benign_dockerfile_extra is None:
+            return None
+        # Return a predictable tag for testing
+        return f"test-pair:{benign_task_id}__{malicious_task_id}"
+
 
 @pytest.fixture
 def mock_sandbox_manager() -> MagicMock:
@@ -317,16 +324,15 @@ class TestCreateTaskSetup:
         assert task_setup.task_id == "benign-1"
         assert task_setup.agent_container.name == "agent"
         assert task_setup.agent_container.spec.image_spec == image_spec
-        assert task_setup.agent_container.dockerfile_extra is None
 
-    def test_task_couple_multi_container(self):
-        """Test creating setup for a task couple with multi-container."""
+    def test_task_couple_uses_prebuilt_pair_image(self):
+        """Test that task couple uses pre-built pair image when dockerfile_extra is set."""
         # Create benign task metadata
         benign_image_spec = PullImageSpec(tag="python:3.12")
         benign_container_spec = ContainerSpec(image_spec=benign_image_spec)
         benign_metadata = _TestBenignTaskBashEnvMetadata(agent_container_spec=benign_container_spec)
 
-        # Create malicious task metadata
+        # Create malicious task metadata with dockerfile_extra (requires pre-built image)
         attack_image_spec = PullImageSpec(tag="attack-server:latest")
         attack_container_spec = ContainerSpec(image_spec=attack_image_spec, hostname="attack")
         agent_image_spec = BuildImageSpec(
@@ -362,15 +368,14 @@ class TestCreateTaskSetup:
         # Verify structure - should be TaskSetup with service containers
         assert task_setup.task_id == task_couple.id
 
-        # Check agent container
-        assert task_setup.agent_container.spec.image_spec == benign_image_spec
-        assert task_setup.agent_container.dockerfile_extra == "RUN curl http://attack:8080/init"
+        # Check agent container uses pre-built pair image
+        assert isinstance(task_setup.agent_container.spec.image_spec, PullImageSpec)
+        assert task_setup.agent_container.spec.image_spec.tag == "test-pair:benign-1__malicious-1"
 
         # Check attack service container
         assert "attack_server" in task_setup.service_containers
         assert task_setup.service_containers["attack_server"].spec.image_spec == attack_image_spec
         assert task_setup.service_containers["attack_server"].spec.hostname == "attack"
-        assert task_setup.service_containers["attack_server"].dockerfile_extra is None
 
         # Check network config
         assert task_setup.network_config is not None
@@ -378,6 +383,55 @@ class TestCreateTaskSetup:
         expected_name = f"net-{task_couple.id.replace(':', '-')}"
         assert task_setup.network_config.name == expected_name
         assert task_setup.network_config.internal is True
+
+    def test_task_couple_without_dockerfile_extra_uses_benign_image(self):
+        """Test creating setup for a task couple without dockerfile_extra uses benign image."""
+        # Create benign task metadata
+        benign_image_spec = PullImageSpec(tag="python:3.12")
+        benign_container_spec = ContainerSpec(image_spec=benign_image_spec)
+        benign_metadata = _TestBenignTaskBashEnvMetadata(agent_container_spec=benign_container_spec)
+
+        # Create malicious task metadata WITHOUT dockerfile_extra
+        attack_image_spec = PullImageSpec(tag="attack-server:latest")
+        attack_container_spec = ContainerSpec(image_spec=attack_image_spec, hostname="attack")
+        agent_image_spec = BuildImageSpec(
+            context_path="/path/to/basic_agent",
+            tag="basic_agent:latest",
+        )
+        agent_container_spec = ContainerSpec(image_spec=agent_image_spec)
+        malicious_metadata = _TestMaliciousTaskBashEnvMetadata(
+            agent_container_spec=agent_container_spec,
+            service_containers={"attack_server": attack_container_spec},
+            benign_dockerfile_extra=None,  # No dockerfile extra
+        )
+
+        benign_task = BenignTask(
+            id="benign-1",
+            prompt="Do something",
+            evaluators={},
+            metadata=benign_metadata,
+        )
+
+        malicious_task = MaliciousTask(
+            id="malicious-1",
+            goal="Exfiltrate data",
+            evaluators={},
+            metadata=malicious_metadata,
+        )
+
+        task_couple = TaskCouple(benign=benign_task, malicious=malicious_task)
+
+        # Create task setup
+        task_setup = _create_task_setup_from_task(task_couple)
+
+        # Verify structure - should use benign image directly since no pair needed
+        assert task_setup.task_id == task_couple.id
+
+        # Check agent container uses benign image directly
+        assert task_setup.agent_container.spec.image_spec == benign_image_spec
+
+        # Check attack service container
+        assert "attack_server" in task_setup.service_containers
 
     def test_standalone_malicious_task_creates_basic_agent_container(self):
         """Test that standalone MaliciousTask uses the specified agent container."""
@@ -413,7 +467,6 @@ class TestCreateTaskSetup:
         assert isinstance(task_setup.agent_container.spec.image_spec, BuildImageSpec)
         assert task_setup.agent_container.spec.image_spec.tag == "basic_agent:latest"
         assert "basic_agent" in task_setup.agent_container.spec.image_spec.context_path
-        assert task_setup.agent_container.dockerfile_extra is None
 
         # Verify service container from malicious metadata
         assert "attack_server" in task_setup.service_containers
@@ -428,9 +481,11 @@ class TestCreateTaskSetup:
         assert task_setup.network_config.name == expected_name
         assert task_setup.network_config.internal is True
 
-    def test_standalone_malicious_task_with_dockerfile_extra(self):
-        """Test that benign_dockerfile_extra is applied to the agent container."""
+    def test_standalone_malicious_task_ignores_dockerfile_extra(self):
+        """Test that standalone malicious task doesn't use dockerfile_extra (only pairs do)."""
         # Create malicious task metadata with benign_dockerfile_extra
+        # Note: For standalone tasks, dockerfile_extra is not applied because there's no
+        # benign task to pair with. The agent uses its own container spec.
         attack_image_spec = PullImageSpec(tag="attack-server:latest")
         attack_container_spec = ContainerSpec(image_spec=attack_image_spec)
         agent_image_spec = BuildImageSpec(
@@ -438,11 +493,10 @@ class TestCreateTaskSetup:
             tag="basic_agent:latest",
         )
         agent_container_spec = ContainerSpec(image_spec=agent_image_spec)
-        dockerfile_extra = 'RUN echo "API_KEY=sk_live_abc123xyz789" > /.env'
         malicious_metadata = _TestMaliciousTaskBashEnvMetadata(
             agent_container_spec=agent_container_spec,
             service_containers={"attack_server": attack_container_spec},
-            benign_dockerfile_extra=dockerfile_extra,
+            benign_dockerfile_extra='RUN echo "API_KEY=sk_live_abc123xyz789" > /.env',
         )
 
         malicious_task = MaliciousTask(
@@ -455,10 +509,10 @@ class TestCreateTaskSetup:
         # Create task setup
         task_setup = _create_task_setup_from_task(malicious_task)
 
-        # Verify agent container has dockerfile_extra applied
+        # Verify agent container uses the malicious task's own container spec
+        # (dockerfile_extra is only used when paired with a benign task)
         assert isinstance(task_setup.agent_container.spec.image_spec, BuildImageSpec)
         assert task_setup.agent_container.spec.image_spec.tag == "basic_agent:latest"
-        assert task_setup.agent_container.dockerfile_extra == dockerfile_extra
 
         # Verify service container is still included
         assert "attack_server" in task_setup.service_containers

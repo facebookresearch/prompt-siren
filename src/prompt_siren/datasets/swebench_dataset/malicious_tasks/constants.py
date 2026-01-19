@@ -40,22 +40,29 @@ openssl req -x509 -newkey rsa:2048 -nodes \\
 3. **Update `_CERTIFICATES` dict**: Map the hostname to the new certificate constant
 4. **Use in Dockerfiles**: Call `get_certificate_install_dockerfile(hostname)` to generate
    the Dockerfile commands that install and trust the certificate
+
+## Docker Image Tags
+
+After the refactor to use pre-built images, the _SIMPLE_AGENT_CONTAINER_SPEC and
+service container specs use PullImageSpec with standardized tags. These images
+must be pre-built using the `prompt-siren-build-images` command before running
+experiments.
 """
 
 import base64
 from importlib.resources import files
 
-from ....sandbox_managers.image_spec import BuildImageSpec
+from ....sandbox_managers.image_spec import BuildImageSpec, PullImageSpec
 from ....sandbox_managers.sandbox_task_setup import ContainerSpec
+from ..constants import SWEBENCH_IMAGE_PREFIX
+from ..image_tags import get_basic_agent_image_tag
 
 # Get the docker directory path using importlib.resources
 _DOCKER_CONTEXT_PATH = files("prompt_siren.datasets.swebench_dataset").joinpath("dockerfiles")
 
+# Pull spec for basic agent - used by task definitions at runtime
 _SIMPLE_AGENT_CONTAINER_SPEC = ContainerSpec(
-    image_spec=BuildImageSpec(
-        context_path=str(_DOCKER_CONTEXT_PATH.joinpath("basic_agent")),
-        tag="basic_agent:latest",
-    )
+    image_spec=PullImageSpec(tag=get_basic_agent_image_tag())
 )
 
 # Self-signed certificates for attacker-controlled servers
@@ -148,3 +155,31 @@ def get_certificate_install_dockerfile(hostname: str) -> str:
     cert_b64 = base64.b64encode(certificate.encode()).decode()
     return f"""# Install certificate for {hostname}
 RUN echo '{cert_b64}' | base64 -d > /usr/local/share/ca-certificates/{hostname}.crt && update-ca-certificates"""
+
+
+def get_service_container_build_spec(dockerfile_subdir: str, task_id: str) -> BuildImageSpec:
+    """Get a BuildImageSpec for a service container (used by build_images script).
+
+    Args:
+        dockerfile_subdir: Subdirectory under dockerfiles/ containing the Dockerfile
+        task_id: The task ID for generating the image tag
+
+    Returns:
+        BuildImageSpec for building the service container
+    """
+    return BuildImageSpec(
+        context_path=str(_DOCKER_CONTEXT_PATH.joinpath(dockerfile_subdir)),
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-{task_id}:latest",
+    )
+
+
+def get_service_container_pull_spec(task_id: str) -> PullImageSpec:
+    """Get a PullImageSpec for a service container (used at runtime).
+
+    Args:
+        task_id: The task ID for generating the image tag
+
+    Returns:
+        PullImageSpec for pulling the pre-built service container
+    """
+    return PullImageSpec(tag=f"{SWEBENCH_IMAGE_PREFIX}-{task_id}:latest")
