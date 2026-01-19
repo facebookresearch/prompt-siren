@@ -32,6 +32,7 @@ if sys.version_info < (3, 11):
     from exceptiongroup import ExceptionGroup
 
 try:
+    from swebench.harness.constants import SWEbenchInstance
     from swebench.harness.utils import load_swebench_dataset
 except ImportError as e:
     raise ImportError(
@@ -57,6 +58,7 @@ from .datasets.swebench_dataset.task_metadata import SWEBenchMaliciousTaskMetada
 from .sandbox_managers.docker.manager import create_docker_client_from_config
 from .sandbox_managers.docker.plugins import AbstractDockerClient
 from .sandbox_managers.docker.plugins.errors import DockerClientError
+from .sandbox_managers.image_spec import BuildImageSpec
 
 logger = logging.getLogger(__name__)
 
@@ -148,8 +150,15 @@ class ImageBuilder:
         try:
             await self._docker.inspect_image(tag)
             return True
-        except DockerClientError:
-            return False
+        except DockerClientError as e:
+            # Check if this is a 404 "image not found" error
+            if e.status == 404:
+                logger.debug(f"Image '{tag}' does not exist (404)")
+                return False
+            # For other errors (daemon issues, permission errors, etc.), re-raise
+            # so the caller can handle them appropriately
+            logger.error(f"Docker error while checking if image '{tag}' exists: {e}")
+            raise
 
     async def delete_image(self, tag: str) -> None:
         """Delete an image by tag.
@@ -314,8 +323,8 @@ class ImageBuilder:
 
 async def build_benign_task_images(
     builder: ImageBuilder,
-    instances: list,
-    config,
+    instances: list[SWEbenchInstance],
+    config: SwebenchDatasetConfig,
 ) -> tuple[dict[str, str], list[BuildError]]:
     """Build images for all benign tasks.
 
@@ -331,7 +340,7 @@ async def build_benign_task_images(
     benign_images: dict[str, str] = {}
     build_errors: list[BuildError] = []
 
-    async def build_single_benign(instance) -> tuple[str, BuildResult]:
+    async def build_single_benign(instance: SWEbenchInstance) -> tuple[str, BuildResult]:
         """Build a single benign image and return result."""
         instance_id = instance["instance_id"]
         output_tag = get_benign_image_tag(instance_id)
@@ -364,7 +373,7 @@ async def build_benign_task_images(
 
             return instance_id, BuildSuccess(image_tag=output_tag)
         except Exception as e:
-            logger.warning(f"Failed to build benign image for {instance_id}: {e}")
+            logger.error(f"Failed to build benign image for {instance_id}: {e}")
             return instance_id, BuildError(image_tag=output_tag, error=e)
 
     for instance in instances:
@@ -394,7 +403,7 @@ async def build_malicious_task_images(
     built_images: dict[str, str] = {}
     build_errors: list[BuildError] = []
 
-    async def build_single_malicious(build_spec) -> BuildResult:
+    async def build_single_malicious(build_spec: BuildImageSpec) -> BuildResult:
         """Build a single malicious image and return result."""
         try:
             await builder.build_from_context(
@@ -407,7 +416,7 @@ async def build_malicious_task_images(
             await builder.push_to_registry(build_spec.tag)
             return BuildSuccess(image_tag=build_spec.tag)
         except Exception as e:
-            logger.warning(f"Failed to build malicious image {build_spec.tag}: {e}")
+            logger.error(f"Failed to build malicious image {build_spec.tag}: {e}")
             return BuildError(image_tag=build_spec.tag, error=e)
 
     for build_spec in get_all_service_container_build_specs():
@@ -458,7 +467,7 @@ async def build_pair_images(
             await builder.push_to_registry(pair_tag)
             return BuildSuccess(image_tag=pair_tag)
         except Exception as e:
-            logger.warning(f"Failed to build pair image {pair_tag}: {e}")
+            logger.error(f"Failed to build pair image {pair_tag}: {e}")
             return BuildError(image_tag=pair_tag, error=e)
 
     for benign_id, benign_tag in benign_images.items():
@@ -510,7 +519,7 @@ async def build_basic_agent_image(builder: ImageBuilder) -> tuple[str, list[Buil
         # Push to registry if configured
         await builder.push_to_registry(_BASIC_AGENT_BUILD_SPEC.tag)
     except Exception as e:
-        logger.warning(f"Failed to build basic agent image: {e}")
+        logger.error(f"Failed to build basic agent image: {e}")
         build_errors.append(BuildError(image_tag=_BASIC_AGENT_BUILD_SPEC.tag, error=e))
     return _BASIC_AGENT_BUILD_SPEC.tag, build_errors
 

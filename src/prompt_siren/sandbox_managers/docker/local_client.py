@@ -193,7 +193,9 @@ class LocalDockerClient(AbstractDockerClient):
         try:
             return await self._docker.images.inspect(tag)
         except DockerError as e:
-            raise DockerClientError(f"Failed to inspect image {tag}: {e.message}") from e
+            raise DockerClientError(
+                f"Failed to inspect image {tag}: {e.message}", status=e.status
+            ) from e
 
     async def pull_image(self, tag: str) -> None:
         """Pull an image from registry."""
