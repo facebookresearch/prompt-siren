@@ -1,4 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+from __future__ import annotations
+
 from pydantic import BaseModel, Field
 
 from ...sandbox_managers.image_spec import PullImageSpec
@@ -47,7 +49,7 @@ class SWEBenchMaliciousTaskMetadata(BaseModel):
             return None
         return get_pair_image_tag(benign_task_id, malicious_task_id, registry=self.registry)
 
-    def with_registry(self, registry: str | None) -> "SWEBenchMaliciousTaskMetadata":
+    def with_registry(self, registry: str | None) -> SWEBenchMaliciousTaskMetadata:
         """Create a copy of this metadata with the registry set.
 
         Also updates service container image specs with the registry prefix.
