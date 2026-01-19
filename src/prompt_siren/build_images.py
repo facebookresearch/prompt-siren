@@ -23,7 +23,6 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
 
 import click
 
@@ -58,9 +57,6 @@ from .sandbox_managers.docker.plugins.errors import DockerClientError
 from .sandbox_managers.image_spec import BuildImageSpec
 
 logger = logging.getLogger(__name__)
-
-# Type variable for generic entity handling
-EntityT = TypeVar("EntityT")
 
 
 @dataclass(frozen=True)
@@ -587,7 +583,14 @@ async def run_build(
             logger.info(f"Built {len(malicious_images)} malicious service images")
 
         # Build pair images
-        if not skip_pairs and benign_images:
+        if skip_pairs:
+            logger.info("Skipping pair image builds (--skip-pairs flag set)")
+        elif not benign_images:
+            logger.warning(
+                "Skipping pair image builds: no benign images available. "
+                "Either --skip-benign was set or all benign builds failed."
+            )
+        else:
             logger.info("Building pair images...")
             pair_images, pair_errors = await build_pair_images(builder, benign_images)
             all_build_errors.extend(pair_errors)

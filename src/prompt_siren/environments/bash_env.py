@@ -154,7 +154,7 @@ def _create_task_couple_setup(task: TaskCouple[BashEnvState]) -> TaskSetup:
         raise RuntimeError(
             f"TaskCouple malicious task metadata does not implement MaliciousTaskBashEnvMetadataProtocol. "
             f"Got type: {type(task.malicious.metadata).__name__}. "
-            f"Expected protocol attributes: agent_container_spec, service_containers, benign_dockerfile_extra"
+            f"Expected protocol attributes: agent_container_spec, service_containers, get_pair_image_tag"
         )
     malicious_meta = task.malicious.metadata
 

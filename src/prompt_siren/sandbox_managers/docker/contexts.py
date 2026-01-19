@@ -440,12 +440,12 @@ class TaskSandboxContext:
                     await cloned_container.stop()
                     await cloned_container.delete()
                 except Exception as e:
-                    logger.debug(f"Best effort cleanup of cloned container failed: {e}")
+                    logger.warning(f"Best effort cleanup of cloned container failed: {e}")
 
             try:
                 await self.batch_state.docker_client.delete_image(temp_image_full, force=True)
             except Exception as e:
-                logger.debug(f"Best effort cleanup of temp image {temp_image_full} failed: {e}")
+                logger.warning(f"Best effort cleanup of temp image {temp_image_full} failed: {e}")
 
             raise
 
@@ -529,14 +529,14 @@ class TaskSandboxContext:
             await info.container.stop()
             await info.container.delete()
         except Exception as e:
-            logger.debug(f"Best effort cleanup of container {container_id} failed: {e}")
+            logger.warning(f"Best effort cleanup of container {container_id} failed: {e}")
 
         # Remove temporary image if exists
         if info.temp_image:
             try:
                 await self.batch_state.docker_client.delete_image(info.temp_image, force=True)
             except Exception as e:
-                logger.debug(f"Best effort cleanup of temp image {info.temp_image} failed: {e}")
+                logger.warning(f"Best effort cleanup of temp image {info.temp_image} failed: {e}")
 
     async def _cleanup_network(self, network_id: str) -> None:
         """Clean up a network.
@@ -548,4 +548,4 @@ class TaskSandboxContext:
             network = await self.batch_state.docker_client.get_network(network_id)
             await network.delete()
         except Exception as e:
-            logger.debug(f"Best effort cleanup of network {network_id} failed: {e}")
+            logger.warning(f"Best effort cleanup of network {network_id} failed: {e}")

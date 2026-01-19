@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Unit tests for the ImageBuilder class."""
 
+import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -8,10 +9,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+# ExceptionGroup is built-in in Python 3.11+, needs backport for 3.10
+if sys.version_info < (3, 11):
+    from exceptiongroup import ExceptionGroup
+
 # Skip this entire module if swebench is not installed
 pytest.importorskip("swebench")
 
-from prompt_siren.build_images import ImageBuilder
+from prompt_siren.build_images import _handle_build_failures, BuildError, ImageBuilder
 from prompt_siren.sandbox_managers.docker.plugins.errors import DockerClientError
 
 
@@ -211,3 +216,43 @@ class TestImageBuilderBuildFromContext:
             )
 
         assert "Failed to build image test:latest" in str(exc_info.value)
+
+
+class TestHandleBuildFailures:
+    """Tests for _handle_build_failures function."""
+
+    def test_empty_list_does_not_raise(self) -> None:
+        """Test that an empty list does not raise any exception."""
+        _handle_build_failures([])  # Should not raise
+
+    def test_single_error_raises_exception_group(self) -> None:
+        """Test that a single error raises an ExceptionGroup."""
+        error = ValueError("Build failed")
+        build_error = BuildError(image_tag="test:latest", error=error)
+
+        with pytest.raises(ExceptionGroup) as exc_info:
+            _handle_build_failures([build_error])
+
+        assert len(exc_info.value.exceptions) == 1
+        assert exc_info.value.exceptions[0] is error
+        assert "1 image build(s) failed" in str(exc_info.value)
+        assert "test:latest" in str(exc_info.value)
+
+    def test_multiple_errors_raises_exception_group_with_all(self) -> None:
+        """Test that multiple errors raises an ExceptionGroup with all errors."""
+        error1 = ValueError("Build 1 failed")
+        error2 = RuntimeError("Build 2 failed")
+        build_errors = [
+            BuildError(image_tag="image1:latest", error=error1),
+            BuildError(image_tag="image2:v1", error=error2),
+        ]
+
+        with pytest.raises(ExceptionGroup) as exc_info:
+            _handle_build_failures(build_errors)
+
+        assert len(exc_info.value.exceptions) == 2
+        assert error1 in exc_info.value.exceptions
+        assert error2 in exc_info.value.exceptions
+        assert "2 image build(s) failed" in str(exc_info.value)
+        assert "image1:latest" in str(exc_info.value)
+        assert "image2:v1" in str(exc_info.value)
