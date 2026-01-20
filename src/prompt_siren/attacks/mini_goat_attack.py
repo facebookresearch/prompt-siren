@@ -1,38 +1,28 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+"""MiniGoat attack implementation.
+
+This attack uses an LLM-based attacker to iteratively refine injection
+payloads based on the target agent's responses.
+"""
+
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import ClassVar, Generic, TypeVar
 
 import logfire
 from pydantic import BaseModel
-from pydantic_ai import (
-    AbstractToolset,
-    Agent,
-    AgentRunResult,
-    InstrumentationSettings,
-    ModelResponse,
-    UsageLimits,
-)
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai import Agent, AgentRunResult
+from pydantic_ai.messages import ModelMessage, ModelResponse
 
-from ..agents.abstract import AbstractAgent
-from ..agents.states import (
-    EndState,
-    InjectableModelRequestState,
-    ModelRequestState,
-    ModelResponseState,
-)
-from ..environments.abstract import AbstractEnvironment
 from ..providers import infer_model
-from ..tasks import BenignTask, MaliciousTask
+from ..tasks import TaskCouple
 from ..types import (
     InjectionAttacksDict,
     InjectionVectorID,
-    is_injectable_model_request_part,
     StrContentAttack,
 )
-from .abstract import AbstractAttack
-from .attack_utils import run_until_injectable
+from .executor import InjectionCheckpoint, RolloutExecutor, RolloutRequest
+from .results import AttackResults, CoupleAttackResult
 
 EnvStateT = TypeVar("EnvStateT")
 
@@ -132,205 +122,174 @@ class GoatAttackerModel:
 
 
 @dataclass(frozen=True)
-class MiniGoatAttack(
-    AbstractAttack[EnvStateT, str, str, StrContentAttack],
-    Generic[EnvStateT],
-):
+class MiniGoatAttack(Generic[EnvStateT]):
+    """MiniGoat attack using an LLM attacker for iterative refinement.
+
+    This attack uses a separate "attacker" LLM to generate and refine
+    injection payloads based on feedback from the target agent's responses.
+
+    The attack iterates:
+    1. Generate injection with attacker LLM
+    2. Test injection by running target agent
+    3. Parse target response and feed back to attacker
+    4. Repeat until max_turns or attacker says STOP
+
+    Note: This attack processes couples sequentially because it needs
+    feedback from the target agent to refine attacks.
+    """
+
     name: ClassVar[str] = "mini-goat"
     _config: MiniGoatAttackConfig = field(default_factory=MiniGoatAttackConfig)
 
     @property
     def config(self) -> MiniGoatAttackConfig:
+        """Return the attack configuration."""
         return self._config
 
     def _select_injection_target(
         self,
-        state: InjectableModelRequestState[EnvStateT, str, str, StrContentAttack],
+        checkpoint: InjectionCheckpoint[EnvStateT, str, str, StrContentAttack],
     ) -> InjectionVectorID:
-        """Get the injection target vector from the last message in the state."""
-        injectable_parts = [
-            part
-            for part in state.injectable_model_request_parts
-            if is_injectable_model_request_part(part)
-        ]
+        """Select which injection vector to target from the checkpoint."""
+        available_vectors = checkpoint.available_vectors
 
-        if not injectable_parts:
-            raise ValueError("No injectable parts found in state")
+        if not available_vectors:
+            raise ValueError("No injectable vectors found in checkpoint")
 
-        if len(injectable_parts) > 1:
+        if len(available_vectors) > 1:
             logfire.warn(
-                f"Mini-GOAT will only fill in the first of {len(injectable_parts)} injectable message parts and the rest will be set to a default attack!"
+                f"Mini-GOAT will only fill in the first of {len(available_vectors)} "
+                "injectable vectors and the rest will use default attacks!"
             )
 
-        part = injectable_parts[0]
-        if len(part.vector_ids) > 1:
-            logfire.warn(
-                f"Mini-GOAT will only fill in the first injectable vector out of {len(part.vector_ids)} available and the rest will be set to a default attack!"
-            )
+        return available_vectors[0]
 
-        return part.vector_ids[0]
-
-    async def _advance_with_attack(
+    async def _generate_attack_for_checkpoint(
         self,
-        agent: AbstractAgent,
-        state: InjectableModelRequestState[EnvStateT, str, str, StrContentAttack],
-        toolsets: Sequence[AbstractToolset[EnvStateT]],
-        usage_limits: UsageLimits,
-        attacks: InjectionAttacksDict[StrContentAttack],
-        instrument: InstrumentationSettings | bool | None,
-    ) -> ModelResponseState[EnvStateT, str, str, StrContentAttack]:
-        """Advance from InjectableModelRequestState to ModelResponseState with attacks applied."""
-        # Move to model request state
-        next_state = await agent.next_state(
-            current_state=state,
-            toolsets=toolsets,
-            usage_limits=usage_limits,
-            attacks=attacks,
-            instrument=instrument,
-        )
+        checkpoint: InjectionCheckpoint[EnvStateT, str, str, StrContentAttack],
+        executor: RolloutExecutor[EnvStateT, str, str, StrContentAttack],
+    ) -> tuple[InjectionAttacksDict[StrContentAttack], list]:
+        """Generate and refine attack for a single checkpoint.
 
-        if not isinstance(next_state, ModelRequestState):
-            raise ValueError(f"Expected ModelRequestState after injection, got {type(next_state)}.")
+        Uses iterative refinement with the attacker model, testing each
+        injection candidate against the target agent.
 
-        # Move to model response state
-        response_state = await agent.next_state(
-            current_state=next_state,
-            toolsets=toolsets,
-            usage_limits=usage_limits,
-            attacks=attacks,
-            instrument=instrument,
-        )
+        Args:
+            checkpoint: The checkpoint to attack
+            executor: The rollout executor for testing injections
 
-        if not isinstance(response_state, ModelResponseState):
-            raise ValueError(
-                f"Expected ModelResponseState after injection, got {type(response_state)}."
-            )
+        Returns:
+            Tuple of (final_attacks, rollout_results) containing the final
+            attack payloads and all rollout results from the refinement process
+        """
+        attacker_model = GoatAttackerModel(self.config)
+        malicious_goal = checkpoint.couple.malicious.goal
 
-        return response_state
+        # Select target vector
+        vector_id = self._select_injection_target(checkpoint)
 
-    async def _rollback_to_injectable(
-        self,
-        agent: AbstractAgent,
-        state: ModelResponseState[EnvStateT, str, str, StrContentAttack],
-        toolsets: Sequence[AbstractToolset[EnvStateT]],
-    ) -> InjectableModelRequestState[EnvStateT, str, str, StrContentAttack]:
-        """Rollback from ModelResponseState to InjectableModelRequestState."""
-        # Roll back to model request state
-        prev_state = await agent.prev_state(current_state=state, toolsets=toolsets)
-
-        if not isinstance(prev_state, ModelRequestState):
-            raise ValueError(
-                f"Expected ModelRequestState when rolling back, got {type(prev_state)}."
-            )
-
-        # Roll back to injectable state
-        injectable_state = await agent.prev_state(current_state=prev_state, toolsets=toolsets)
-
-        if not isinstance(injectable_state, InjectableModelRequestState):
-            raise ValueError(
-                f"Expected InjectableModelRequestState when rolling back, got {type(injectable_state)}."
-            )
-
-        return injectable_state
-
-    async def attack(
-        self,
-        agent: AbstractAgent,
-        environment: AbstractEnvironment[EnvStateT, str, str, StrContentAttack],
-        message_history: Sequence[ModelMessage],
-        env_state: EnvStateT,
-        toolsets: Sequence[AbstractToolset[EnvStateT]],
-        benign_task: BenignTask[EnvStateT],
-        malicious_task: MaliciousTask[EnvStateT],
-        usage_limits: UsageLimits,
-        instrument: InstrumentationSettings | bool | None = None,
-    ) -> tuple[
-        EndState[EnvStateT, str, str, StrContentAttack],
-        InjectionAttacksDict[StrContentAttack],
-    ]:
         attacks: InjectionAttacksDict[StrContentAttack] = {}
-        attacker_model_instance = GoatAttackerModel(self.config)
+        last_target_response: str | None = None
+        last_attacker_result: AgentRunResult[str] | None = None
+        all_rollouts: list = []
 
-        state = agent.create_initial_request_state(
-            environment,
-            env_state,
-            benign_task.prompt,
-            message_history=[*message_history, *(benign_task.message_history or [])],
-        )
-
-        while not isinstance(state, EndState):
-            state = await run_until_injectable(
-                agent,
-                state,
-                toolsets=toolsets,
-                usage_limits=usage_limits,
-                instrument=instrument,
+        # Iteratively refine the injection
+        for turn in range(self.config.max_turns):
+            # Generate injection with current context
+            injection, last_attacker_result = await attacker_model.generate_injection(
+                attacker_goal=malicious_goal,
+                last_target_response=last_target_response,
+                previous_messages=last_attacker_result.all_messages()
+                if last_attacker_result
+                else None,
             )
-            if isinstance(state, EndState):
-                return state, attacks
 
-            # Select the injection target
-            vector_id = self._select_injection_target(state)
-
-            last_target_response: str | None = None
-            last_attacker_result: AgentRunResult[str] | None = None
-
-            # Iteratively refine the injection
-            for turn in range(self.config.max_turns):
-                # Generate injection with current context
-                (
-                    injection,
-                    last_attacker_result,
-                ) = await attacker_model_instance.generate_injection(
-                    attacker_goal=malicious_task.goal,
-                    last_target_response=last_target_response,
-                    previous_messages=last_attacker_result.all_messages()
-                    if last_attacker_result
-                    else None,
-                )
-
-                if injection == "STOP":
-                    logfire.info(
-                        f"Goat attacker issued STOP after turn {turn} out of max {self.config.max_turns}"
-                    )
-                    break
-
+            if injection == "STOP":
                 logfire.info(
-                    f"Goat attacker generated injection {injection} at turn {turn} out of max {self.config.max_turns}",
-                    injection=injection,
+                    f"Goat attacker issued STOP after turn {turn} out of max {self.config.max_turns}"
                 )
-                attacks[vector_id] = StrContentAttack(content=injection)
+                break
 
-                # If not the last turn, test the injection and get feedback for refinement
-                if turn < self.config.max_turns - 1:
-                    # Test the injection by advancing the state
-                    response_state = await self._advance_with_attack(
-                        agent,
-                        state,
-                        toolsets,
-                        usage_limits,
-                        attacks,
-                        instrument,
-                    )
-
-                    # Parse the response for feedback to the attacker
-                    last_target_response = attacker_model_instance.parse_target_model_response(
-                        response_state.model_response
-                    )
-
-                    # Rollback to try again with refined injection
-                    state = await self._rollback_to_injectable(agent, response_state, toolsets)
-
-            # Apply the final injection and continue execution
-            state = await agent.next_state(
-                current_state=state,
-                toolsets=toolsets,
-                usage_limits=usage_limits,
-                attacks=attacks,
-                instrument=instrument,
+            logfire.info(
+                f"Goat attacker generated injection at turn {turn} out of max {self.config.max_turns}",
+                injection=injection,
             )
+            attacks[vector_id] = StrContentAttack(content=injection)
 
-        return state, attacks
+            # Execute rollout to test this injection
+            request = RolloutRequest(checkpoint=checkpoint, attacks=attacks)
+            results = await executor.execute_from_checkpoints([request])
+
+            if results:
+                rollout_result = results[0]
+                all_rollouts.append(rollout_result)
+
+                # If not the last turn, parse response for attacker feedback
+                if turn < self.config.max_turns - 1:
+                    # Get the model response from the end state's messages
+                    messages = rollout_result.messages
+                    for msg in reversed(messages):
+                        if isinstance(msg, ModelResponse):
+                            last_target_response = GoatAttackerModel.parse_target_model_response(
+                                msg
+                            )
+                            break
+
+        return attacks, all_rollouts
+
+    async def run(
+        self,
+        couples: Sequence[TaskCouple[EnvStateT]],
+        executor: RolloutExecutor[EnvStateT, str, str, StrContentAttack],
+    ) -> AttackResults[EnvStateT, str, str, StrContentAttack]:
+        """Execute the MiniGoat attack across all couples.
+
+        Processes couples sequentially since the attack requires feedback
+        from the target agent to refine injections.
+
+        Args:
+            couples: The task couples to attack
+            executor: The rollout executor
+
+        Returns:
+            Attack results for each couple
+        """
+        # Discover injection points for all couples
+        checkpoints = await executor.discover_injection_points(couples)
+
+        # Build a map from couple_id to (checkpoint, attacks, rollouts)
+        couple_results: list[CoupleAttackResult[EnvStateT, str, str, StrContentAttack]] = []
+
+        try:
+            for checkpoint in checkpoints:
+                if checkpoint.is_terminal:
+                    # No injection point found
+                    logfire.warning(f"No injection point found for couple {checkpoint.couple.id}")
+                    couple_results.append(
+                        CoupleAttackResult(
+                            couple=checkpoint.couple,
+                            rollout_results=[],
+                            generated_attacks={},
+                        )
+                    )
+                    continue
+
+                # Generate refined attack for this checkpoint
+                attacks, rollouts = await self._generate_attack_for_checkpoint(checkpoint, executor)
+
+                couple_results.append(
+                    CoupleAttackResult(
+                        couple=checkpoint.couple,
+                        rollout_results=rollouts,
+                        generated_attacks=attacks,
+                    )
+                )
+
+        finally:
+            # Release all checkpoints
+            await executor.release_checkpoints(checkpoints)
+
+        return AttackResults(couple_results=couple_results)
 
 
 def create_mini_goat_attack(config: MiniGoatAttackConfig, context: None = None) -> MiniGoatAttack:

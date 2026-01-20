@@ -21,7 +21,7 @@ from .config.registry_bridge import (
 from .datasets.registry import get_dataset_config_class
 from .job import Job
 from .registry_base import UnknownComponentError
-from .run import run_single_tasks_without_attack, run_task_couples_with_attack
+from .run import run_attack, run_single_tasks_without_attack
 from .telemetry import setup_telemetry
 from .telemetry.formatted_span import formatted_span
 from .types import ExecutionMode
@@ -278,7 +278,7 @@ async def run_attack_experiment(
         config=experiment_config.model_dump(),
         job_name=job.job_config.job_name,
     ):
-        results = await run_task_couples_with_attack(
+        attack_results = await run_attack(
             couples=selected_couples,
             agent=agent,
             env=env_instance,
@@ -291,13 +291,8 @@ async def run_attack_experiment(
             instrument=True,
         )
 
-        # Convert results to expected format (flatten benign + malicious)
-        formatted_results = {}
-        for benign_result, malicious_result in results:
-            formatted_results[benign_result.task_id] = benign_result.results
-            formatted_results[malicious_result.task_id] = malicious_result.results
-
-        return formatted_results
+        # Convert AttackResults to expected format (flatten benign + malicious)
+        return attack_results.to_evaluation_dict()
 
 
 def hydra_main_with_config_path(config_path: str, execution_mode: ExecutionMode) -> None:

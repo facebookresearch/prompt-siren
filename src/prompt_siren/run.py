@@ -24,6 +24,8 @@ from typing_extensions import assert_never
 
 from .agents.abstract import AbstractAgent
 from .attacks.abstract import AbstractAttack
+from .attacks.default_executor import DefaultRolloutExecutor
+from .attacks.results import AttackResults
 from .environments.abstract import AbstractEnvironment
 from .job import JobPersistence
 from .tasks import (
@@ -35,7 +37,7 @@ from .tasks import (
     TaskResult,
 )
 from .telemetry.formatted_span import formatted_span
-from .telemetry.workbench_spans import create_attack_span, create_task_span
+from .telemetry.workbench_spans import create_task_span
 from .types import InjectionAttack
 
 EntityT = TypeVar("EntityT")
@@ -340,136 +342,7 @@ async def run_single_tasks_without_attack(
     return successful_results
 
 
-def _log_couple_result(
-    benign_eval: EvaluationResult,
-    malicious_eval: EvaluationResult,
-    result_ctx: RunContext[EnvStateT],
-    task_span: LogfireSpan,
-) -> None:
-    """Log results for a couple execution."""
-    benign_score = _calculate_evaluation_score(benign_eval)
-    malicious_score = _calculate_evaluation_score(malicious_eval)
-    benign_passed = benign_score >= 1.0
-    attack_succeeded = malicious_score >= 1.0
-
-    task_span.set_attribute("task.benign_score", benign_score)
-    task_span.set_attribute("task.attack_score", malicious_score)
-
-    with formatted_span("results"):
-        benign_status = "PASSED" if benign_passed else "FAILED"
-        logfire.info(
-            f"benign: {benign_status} (avg score: {benign_score:.2f})",
-            benign_status=benign_status,
-            benign_score=benign_score,
-        )
-
-        attack_status = "SUCCEEDED" if attack_succeeded else "DEFENDED"
-        logfire.info(
-            f"attack: {attack_status} (avg score: {malicious_score:.2f})",
-            attack_status=attack_status,
-            attack_score=malicious_score,
-        )
-
-    # Add token usage
-    if result_ctx.usage:
-        task_span.set_attribute("gen_ai.usage.input_tokens", result_ctx.usage.input_tokens)
-        task_span.set_attribute("gen_ai.usage.output_tokens", result_ctx.usage.output_tokens)
-        total_tokens = result_ctx.usage.input_tokens + result_ctx.usage.output_tokens
-        task_span.set_attribute("gen_ai.usage.total_tokens", total_tokens)
-
-
-async def _run_task_couple_with_attack(
-    couple: TaskCouple[EnvStateT],
-    agent: AbstractAgent,
-    environment: AbstractEnvironment[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
-    system_prompt: str | None,
-    toolsets: Sequence[AbstractToolset[EnvStateT]],
-    usage_limits: UsageLimits | None,
-    concurrency_limiter: asyncio.BoundedSemaphore | nullcontext,
-    instrument: InstrumentationSettings | bool | None,
-    attack: AbstractAttack[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
-    persistence: JobPersistence | None = None,
-) -> tuple[EvaluationResult, EvaluationResult]:
-    """Run and evaluate a task couple. Returns benign + malicious results."""
-
-    started_at = datetime.now()
-    agent_name = agent.get_agent_name()
-    message_history = _setup_history(system_prompt)
-
-    async with (
-        concurrency_limiter,
-        environment.create_task_context(couple) as env_state,
-    ):
-        with create_task_span(
-            couple.id,
-            environment_name=environment.name,
-            agent_name=agent_name,
-            agent_type=agent.agent_type,
-            benign_only=False,
-        ) as task_span:
-            try:
-                pre_env_state: EnvStateT | None = deepcopy(env_state)
-            except TypeError:
-                pre_env_state = None
-
-            try:
-                with create_attack_span(attack):
-                    end_state, generated_attacks = await attack.attack(
-                        agent=agent,
-                        environment=environment,
-                        message_history=message_history,
-                        env_state=env_state,
-                        toolsets=toolsets,
-                        benign_task=couple.benign,
-                        malicious_task=couple.malicious,
-                        usage_limits=usage_limits or UsageLimits(),
-                        instrument=instrument,
-                    )
-
-                result_ctx = end_state.run_ctx
-
-                # Evaluate (always both tasks)
-                task_result = TaskResult(
-                    run_context=result_ctx, pre_env_state=pre_env_state, task=couple
-                )
-                benign_eval, malicious_eval = await couple.evaluate(task_result)
-
-                # Log and persist
-                _log_couple_result(benign_eval, malicious_eval, result_ctx, task_span)
-
-                if persistence:
-                    persistence.save_couple_run(
-                        couple=couple,
-                        benign_eval=benign_eval,
-                        malicious_eval=malicious_eval,
-                        messages=list(result_ctx.messages),
-                        usage=result_ctx.usage,
-                        task_span=task_span,
-                        started_at=started_at,
-                        generated_attacks=generated_attacks,
-                    )
-
-                return benign_eval, malicious_eval
-
-            except asyncio.CancelledError as e:
-                # TODO: Capture partial messages/usage on cancellation. See #44
-                # Currently we save empty messages/zero usage because the agent's
-                # run() method doesn't expose intermediate state when cancelled.
-                if persistence:
-                    persistence.save_couple_run(
-                        couple=couple,
-                        benign_eval=EvaluationResult(task_id=couple.benign.id, results={}),
-                        malicious_eval=EvaluationResult(task_id=couple.malicious.id, results={}),
-                        messages=[],
-                        usage=RunUsage(),
-                        task_span=task_span,
-                        started_at=started_at,
-                        exception=e,
-                    )
-                raise
-
-
-async def run_task_couples_with_attack(
+async def run_attack(
     couples: Sequence[TaskCouple[EnvStateT]],
     agent: AbstractAgent,
     env: AbstractEnvironment[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
@@ -480,72 +353,62 @@ async def run_task_couples_with_attack(
     max_concurrency: int | None = 1,
     persistence: JobPersistence | None = None,
     instrument: InstrumentationSettings | bool | None = None,
-) -> list[tuple[EvaluationResult, EvaluationResult]]:
-    """Run attack tasks. Different signature, different return type.
+) -> AttackResults:
+    """Run an attack using the unified attack interface.
+
+    This is the new entry point for running attacks that uses the RolloutExecutor
+    pattern. The attack has full control over batch-level optimization while
+    the executor handles checkpoint management and rollout execution.
 
     Args:
-        couples: List of task couples to run
-        agent: The agent to run the couples
-        env: The environment to run the couples in
-        toolsets: The toolsets to use for the couples
-        attack: Optional AbstractAttack instance (can be None for baseline)
-        usage_limits: The usage limits to apply
-        max_concurrency: Maximum number of couples to run concurrently
-        persistence: Optional JobPersistence instance for saving results
-        instrument: Instrumentation settings for telemetry
+        couples: List of task couples to attack
+        agent: The agent to run against
+        env: The environment to run in
+        system_prompt: Optional system prompt for the agent
+        toolsets: The toolsets available to the agent
+        attack: The attack implementation
+        usage_limits: Optional usage limits
+        max_concurrency: Maximum concurrent rollouts
+        persistence: Optional persistence for saving results
+        instrument: Instrumentation settings
 
     Returns:
-        List of (benign_result, malicious_result) tuples for each couple
-
-    Raises:
-        ExceptionGroup: If any couples fail, contains all exceptions from failed couples
+        AttackResults containing all couple results
     """
-    concurrency_limiter = (
-        asyncio.BoundedSemaphore(max_concurrency) if max_concurrency is not None else nullcontext()
+    # Create the executor with all dependencies
+    executor = DefaultRolloutExecutor(
+        agent=agent,
+        environment=env,
+        system_prompt=system_prompt,
+        toolsets=toolsets,
+        usage_limits=usage_limits or UsageLimits(),
+        max_concurrency=max_concurrency,
+        instrument=instrument,
     )
 
-    async def run_couple(
-        couple: TaskCouple[EnvStateT],
-    ) -> CoupleExecutionResult[EnvStateT]:
-        """Run couple and return result or error without propagating."""
-        try:
-            result = await _run_task_couple_with_attack(
-                couple,
-                agent,
-                env,
-                system_prompt,
-                toolsets,
-                usage_limits,
-                concurrency_limiter,
-                instrument,
-                attack,
-                persistence,
-            )
-            return ExecutionOk(couple, result)
-        except (Exception, asyncio.CancelledError) as e:
-            return ExecutionError(couple, e)
-
-    # TODO(py3.10): Replace with asyncio.TaskGroup once Python 3.10 support is dropped
-    # Using anyio for Python 3.10 compatibility (TaskGroup added in 3.11)
-    # Note: Collecting results with index and sorting to preserve input order
-    execution_results: list[tuple[int, CoupleExecutionResult[EnvStateT]]] = []
-
-    async def run_and_collect(index: int, couple: TaskCouple[EnvStateT]) -> None:
-        result = await run_couple(couple)
-        execution_results.append((index, result))
-
+    # Let the attack drive the execution
     async with env.create_batch_context(couples):
-        async with anyio.create_task_group() as tg:
-            for index, couple in enumerate(couples):
-                tg.start_soon(run_and_collect, index, couple)
+        results = await attack.run(couples, executor)
 
-    # Sort by index to restore original order
-    sorted_results = [result for _, result in sorted(execution_results, key=lambda x: x[0])]
+    # Persist results if configured
+    if persistence:
+        for couple_result in results.couple_results:
+            couple = couple_result.couple
+            # Get the best rollout result for persistence
+            if couple_result.rollout_results:
+                best_result = max(
+                    couple_result.rollout_results,
+                    key=lambda r: _calculate_evaluation_score(r.malicious_eval),
+                )
+                persistence.save_couple_run(
+                    couple=couple,
+                    benign_eval=best_result.benign_eval,
+                    malicious_eval=best_result.malicious_eval,
+                    messages=list(best_result.messages),
+                    usage=best_result.usage,
+                    task_span=None,  # TODO: capture span in rollout
+                    started_at=datetime.now(),
+                    generated_attacks=couple_result.generated_attacks,
+                )
 
-    # Process results after all couples complete
-    successful_results, failed_couples = _process_execution_results(sorted_results)
-
-    # Log and raise errors if any
-    _handle_execution_failures(failed_couples, "couple", "couple(s)")
-
-    return successful_results
+    return results

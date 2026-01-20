@@ -198,7 +198,7 @@ class JobPersistence:
         malicious_eval: EvaluationResult,
         messages: list[ModelMessage],
         usage: RunUsage,
-        task_span: LogfireSpan,
+        task_span: LogfireSpan | None,
         started_at: datetime,
         exception: BaseException | None = None,
         generated_attacks: Mapping[str, InjectionAttack] | None = None,
@@ -243,9 +243,13 @@ class JobPersistence:
         exception_info = ExceptionInfo.from_exception(exception) if exception else None
 
         # Get trace context
-        span_context = task_span.get_span_context()
-        trace_id = format(span_context.trace_id, "032x") if span_context else None
-        span_id = format(span_context.span_id, "016x") if span_context else None
+        trace_id: str | None = None
+        span_id: str | None = None
+        if task_span is not None:
+            span_context = task_span.get_span_context()
+            if span_context:
+                trace_id = format(span_context.trace_id, "032x")
+                span_id = format(span_context.span_id, "016x")
 
         # Save result.json (lightweight)
         result = TaskRunResult(
