@@ -43,9 +43,11 @@ def _substitute_placeholders(
             )
             return obj.model_validate(substituted_data)
         case dict():
+            # After pattern match, obj is dict[Unknown, Unknown]; we know values are FunctionReturnType
+            obj_dict: dict[str, FunctionReturnType] = dict(obj)
             return {
                 k: _substitute_placeholders(v, values, default_placeholder_replacements)
-                for k, v in obj.items()
+                for k, v in obj_dict.items()
             }
         case list():
             return [
@@ -82,8 +84,14 @@ def _find_vector_ids(
         case BaseModel():
             return _find_vector_ids(obj.model_dump(), vector_ids)
         case dict():
+            # After pattern match, obj is dict[Unknown, Unknown]; we know values are FunctionReturnType
+            obj_dict: dict[str, FunctionReturnType] = dict(obj)
             return list(
-                {vector_id for v in obj.values() for vector_id in _find_vector_ids(v, vector_ids)}
+                {
+                    vector_id
+                    for v in obj_dict.values()
+                    for vector_id in _find_vector_ids(v, vector_ids)
+                }
             )
         case list() | tuple():
             return list({vector_id for v in obj for vector_id in _find_vector_ids(v, vector_ids)})

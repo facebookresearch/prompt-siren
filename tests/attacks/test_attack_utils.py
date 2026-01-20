@@ -3,7 +3,6 @@
 
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import cast
 
 import pytest
 from prompt_siren.agents.plain import PlainAgent, PlainAgentConfig
@@ -36,7 +35,7 @@ from pydantic_ai.usage import RunUsage
 from ..conftest import MockEnvironment, MockEnvState
 
 pytestmark = pytest.mark.anyio
-models.ALLOW_MODEL_REQUESTS = False
+models.ALLOW_MODEL_REQUESTS = False  # ty: ignore[invalid-assignment]
 
 
 # Tests for make_fake_context
@@ -352,7 +351,9 @@ class TestRunToolHistory:
             tool_calls.append(("stateful_tool", input_text))
             return f"Tool result: {input_text}"
 
-        toolsets = [FunctionToolset([stateful_tool])]
+        toolsets: Sequence[AbstractToolset[MockEnvState]] = [
+            FunctionToolset[MockEnvState]([stateful_tool])
+        ]
 
         # History with a tool call
         history = [
@@ -398,10 +399,7 @@ class TestRunToolHistory:
             tool_calls.append(("tool_two", query))
             return f"Tool2: {query}"
 
-        # Explicitly type toolsets for the type checker
-        toolsets: Sequence[AbstractToolset[MockEnvState]] = cast(
-            Sequence[AbstractToolset[MockEnvState]], agent.toolsets
-        )
+        toolsets = agent.toolsets
 
         # History with tool calls in different messages
         history = [
@@ -466,10 +464,7 @@ class TestRunToolHistory:
             tool_calls.append(("append_tool", suffix))
             return f"Appended: {suffix}"
 
-        # Explicitly type toolsets for the type checker
-        toolsets: Sequence[AbstractToolset[MockEnvState]] = cast(
-            Sequence[AbstractToolset[MockEnvState]], agent.toolsets
-        )
+        toolsets = agent.toolsets
 
         # History with multiple tool calls in same message
         history = [
@@ -519,7 +514,9 @@ class TestRunToolHistory:
             tool_calls.append(("existing_tool", data))
             return f"Result: {data}"
 
-        toolsets = [FunctionToolset([existing_tool])]
+        toolsets: Sequence[AbstractToolset[MockEnvState]] = [
+            FunctionToolset[MockEnvState]([existing_tool])
+        ]
 
         # History with both existing and non-existing tool calls
         history = [
@@ -570,9 +567,9 @@ class TestRunToolHistory:
             return f"Agent2: {input_val}"
 
         # Combine toolsets
-        toolsets = [
-            FunctionToolset([tool_from_agent1]),
-            FunctionToolset([tool_from_agent2]),
+        toolsets: Sequence[AbstractToolset[MockEnvState]] = [
+            FunctionToolset[MockEnvState]([tool_from_agent1]),
+            FunctionToolset[MockEnvState]([tool_from_agent2]),
         ]
 
         history = [
@@ -620,7 +617,9 @@ class TestRunToolHistory:
             ctx.deps.value = f"{current_value}_x{multiplier}"
             return f"Multiplied by {multiplier}"
 
-        toolsets = [FunctionToolset([context_dependent_tool])]
+        toolsets: Sequence[AbstractToolset[MockEnvState]] = [
+            FunctionToolset[MockEnvState]([context_dependent_tool])
+        ]
 
         history = [
             ModelResponse(

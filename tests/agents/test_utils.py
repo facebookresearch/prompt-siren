@@ -6,8 +6,8 @@ import yaml
 from prompt_siren.agents.states import ModelRequestState
 from prompt_siren.agents.utils import (
     extract_tool_call_parts,
+    get_model_request_parts_if_no_injectable,
     handle_tool_calls,
-    parts_contain_only_model_request_parts,
     query_model,
     restore_state_context,
     serialize_tool_return_part,
@@ -37,7 +37,7 @@ from pydantic_ai.usage import RunUsage
 from ..conftest import MockEnvState
 
 pytestmark = pytest.mark.anyio
-models.ALLOW_MODEL_REQUESTS = False
+models.ALLOW_MODEL_REQUESTS = False  # ty: ignore[invalid-assignment]
 
 
 # Test helper functions
@@ -134,11 +134,11 @@ class TestUtils:
         )
         mixed_parts = [*regular_parts, injectable_part]
 
-        # Test with only ModelRequestPart instances
-        assert parts_contain_only_model_request_parts(regular_parts) is True
+        # Test with only ModelRequestPart instances - returns list
+        assert get_model_request_parts_if_no_injectable(regular_parts) is not None
 
-        # Test with mixed part types
-        assert parts_contain_only_model_request_parts(mixed_parts) is False
+        # Test with mixed part types - returns None
+        assert get_model_request_parts_if_no_injectable(mixed_parts) is None
 
 
 class TestHandleToolCalls:

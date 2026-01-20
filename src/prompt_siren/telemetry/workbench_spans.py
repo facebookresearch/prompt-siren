@@ -7,7 +7,7 @@ import json
 from argparse import Namespace
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from logfire import LogfireSpan
 from pydantic_ai.messages import BaseToolCallPart
@@ -89,7 +89,7 @@ def create_task_span(
 
 @contextmanager
 def create_attack_span(
-    attack: AbstractAttack[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
+    attack: AbstractAttack[Any, Any, Any, Any],
 ) -> Generator[LogfireSpan]:
     """Create a span for task execution using Logfire.
 
