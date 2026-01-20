@@ -62,6 +62,13 @@ class TestApplyRegistryPrefix:
         tag = apply_registry_prefix("siren-swebench-benign:instance", "")
         assert tag == "siren-swebench-benign:instance"
 
+    def test_apply_registry_prefix_does_not_double_prefix(self) -> None:
+        """Test that tags with existing registry are not double-prefixed."""
+        tag = apply_registry_prefix(
+            "existing-registry.com/repo/siren-swebench-benign:instance", "my-registry.com/repo"
+        )
+        assert tag == "existing-registry.com/repo/siren-swebench-benign:instance"
+
 
 class TestGetBenignImageTag:
     """Test benign image tag generation."""

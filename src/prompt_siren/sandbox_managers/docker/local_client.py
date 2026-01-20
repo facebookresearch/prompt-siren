@@ -33,6 +33,19 @@ from .plugins.errors import DockerClientError
 logger = logging.getLogger(__name__)
 
 
+def extract_registry_from_tag(tag: str) -> str | None:
+    """Extract the registry hostname from a Docker image tag.
+
+    Args:
+        tag: Docker image tag (e.g., "ghcr.io/owner/image:tag", "nginx:latest")
+
+    Returns:
+        Registry hostname if present (e.g., "ghcr.io"), or None if no registry
+        is specified (e.g., for Docker Hub images like "nginx" or "owner/image")
+    """
+    return tag.split("/")[0] if "/" in tag else None
+
+
 def _get_docker_auth_for_registry(registry: str) -> dict[str, str] | None:
     """Get Docker authentication credentials for a registry.
 
@@ -370,8 +383,7 @@ class LocalDockerClient(AbstractDockerClient):
         Args:
             tag: Image tag to push (should include registry prefix)
         """
-        # Extract registry from tag (e.g., "ghcr.io/owner/image:tag" -> "ghcr.io")
-        registry = tag.split("/")[0] if "/" in tag else None
+        registry = extract_registry_from_tag(tag)
         auth = _get_docker_auth_for_registry(registry) if registry else None
 
         if registry and not auth:
