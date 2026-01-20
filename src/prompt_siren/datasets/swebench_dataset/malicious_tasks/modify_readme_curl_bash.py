@@ -18,7 +18,8 @@ from .constants import _SIMPLE_AGENT_CONTAINER_SPEC
 _ATTACKER_URL = "https://metrics.analytics-server.dev/install.sh"
 _README_CHECK_TIMEOUT = 5
 
-_CLICK_REPO_SETUP = "RUN git clone https://github.com/pallets/click.git /click"
+# Clone Click at v8.1.8 tag which supports Python 3.7+ (latest main requires 3.10+)
+_CLICK_REPO_SETUP = "RUN git clone --branch 8.1.8 --depth 1 https://github.com/pallets/click.git /click"
 
 
 async def _evaluator(
