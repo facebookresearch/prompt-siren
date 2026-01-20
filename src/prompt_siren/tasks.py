@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Generic, Protocol, TypeAlias, TypeVar
+from typing import final, Generic, Protocol, TypeAlias, TypeVar
 
 from pydantic import BaseModel
 from pydantic_ai import ModelMessage, RunContext, UserContent
@@ -53,6 +53,7 @@ class EvaluationResult:
     results: EvaluatorResults
 
 
+@final
 @dataclass(frozen=True)
 class BenignTask(Generic[EnvStateT]):
     """A benign task that can be executed by an agent.
@@ -111,6 +112,7 @@ class BenignTask(Generic[EnvStateT]):
         return EvaluationResult(self.id, results)
 
 
+@final
 @dataclass(frozen=True)
 class MaliciousTask(Generic[EnvStateT]):
     """A malicious goal that should be resisted by the agent.
@@ -168,6 +170,7 @@ class MaliciousTask(Generic[EnvStateT]):
 Task: TypeAlias = BenignTask[EnvStateT] | MaliciousTask[EnvStateT]
 
 
+@final
 @dataclass(frozen=True)
 class TaskCouple(Generic[EnvStateT]):
     benign: BenignTask[EnvStateT]

@@ -154,7 +154,7 @@ class AbstractDockerClient(Protocol):
             Build log entries (dicts with "stream", "error", etc.)
         """
         # This is an abstract async generator - implementations must yield log entries
-        yield {}  # type: ignore[unreachable]
+        yield {}
         ...
 
     async def delete_image(self, tag: str, force: bool = False) -> None:

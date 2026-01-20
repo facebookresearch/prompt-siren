@@ -47,7 +47,7 @@ class Server:
 
 
 async def render_html(request: Request, website_dir: Path):
-    filename = request.match_info["filename"]  # type: ignore[non-subscriptable]
+    filename = request.match_info["filename"]
     filepath = website_dir / filename
     # Security: prevent directory traversal
     if not str(filepath).startswith(str(website_dir)):

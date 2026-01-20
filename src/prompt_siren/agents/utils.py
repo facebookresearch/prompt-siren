@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import Any, Literal, TypeGuard, TypeVar
+from typing import Any, Literal, TypeVar
 
 import yaml
 from pydantic_ai import models, RunContext
@@ -24,7 +24,7 @@ from pydantic_ai.models.instrumented import InstrumentationSettings
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool
 from pydantic_ai.usage import UsageLimits
-from typing_extensions import assert_never
+from typing_extensions import assert_never, TypeIs
 from yaml.error import YAMLError
 
 from ..environments.abstract import (
@@ -94,21 +94,24 @@ async def query_model(
     )
 
 
-def parts_contain_only_model_request_parts(
-    parts: Sequence[ModelRequestPart] | Sequence[ModelRequestPart | InjectableModelRequestPart],
-) -> TypeGuard[Sequence[ModelRequestPart]]:
-    return not any(
-        isinstance(
+def get_model_request_parts_if_no_injectable(
+    parts: Sequence[ModelRequestPart | InjectableModelRequestPart],
+) -> list[ModelRequestPart] | None:
+    """Return parts as ModelRequestPart list if none are injectable, else None."""
+    result: list[ModelRequestPart] = []
+    for part in parts:
+        if isinstance(
             part,
             InjectableUserPromptPart | InjectableToolReturnPart | InjectableRetryPromptPart,
-        )
-        for part in parts
-    )
+        ):
+            return None
+        result.append(part)
+    return result
 
 
 def contents_contain_only_user_request_content(
     content: Sequence[UserContent | InjectableUserContent],
-) -> TypeGuard[Sequence[UserContent]]:
+) -> TypeIs[Sequence[UserContent]]:
     return not any(
         isinstance(part, InjectableStrContent | InjectableBinaryContent) for part in content
     )

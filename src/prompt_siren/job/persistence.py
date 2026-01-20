@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any, TypeVar
@@ -31,7 +32,6 @@ from .models import (
 from .naming import sanitize_for_filename
 
 EnvStateT = TypeVar("EnvStateT")
-InjectionAttackT = TypeVar("InjectionAttackT", bound="InjectionAttack")
 
 
 class JobPersistence:
@@ -101,7 +101,7 @@ class JobPersistence:
         task_span: LogfireSpan,
         started_at: datetime,
         exception: BaseException | None = None,
-        generated_attacks: dict[str, InjectionAttackT] | None = None,
+        generated_attacks: Mapping[str, InjectionAttack] | None = None,
         attack_score: float | None = None,
     ) -> Path:
         """Save a single task run result and execution data.
@@ -161,7 +161,7 @@ class JobPersistence:
         # Convert attacks to serializable format
         attacks_dict: dict[str, Any] | None = None
         if generated_attacks:
-            attacks_dict = InjectionAttacksDictTypeAdapter.dump_python(generated_attacks)
+            attacks_dict = InjectionAttacksDictTypeAdapter.dump_python(dict(generated_attacks))
 
         execution = TaskRunExecution(
             task_id=task.id,
@@ -201,7 +201,7 @@ class JobPersistence:
         task_span: LogfireSpan,
         started_at: datetime,
         exception: BaseException | None = None,
-        generated_attacks: dict[str, InjectionAttackT] | None = None,
+        generated_attacks: Mapping[str, InjectionAttack] | None = None,
     ) -> Path:
         """Save a task couple run result and execution data.
 
@@ -264,7 +264,7 @@ class JobPersistence:
         # Save execution.json (heavy)
         attacks_dict: dict[str, Any] | None = None
         if generated_attacks:
-            attacks_dict = InjectionAttacksDictTypeAdapter.dump_python(generated_attacks)
+            attacks_dict = InjectionAttacksDictTypeAdapter.dump_python(dict(generated_attacks))
 
         execution = TaskRunExecution(
             task_id=couple.id,

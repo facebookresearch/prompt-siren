@@ -15,8 +15,11 @@ import pytest
 from pydantic_ai.messages import ModelMessage
 
 # ExceptionGroup/BaseExceptionGroup are built-in in Python 3.11+, needs backport for 3.10
+# Explicit import on all versions helps ty resolve types correctly
 if sys.version_info < (3, 11):
     from exceptiongroup import BaseExceptionGroup, ExceptionGroup
+else:
+    from builtins import BaseExceptionGroup, ExceptionGroup
 
 from prompt_siren.agents.plain import PlainAgent, PlainAgentConfig
 from prompt_siren.config.experiment_config import (
@@ -660,7 +663,7 @@ class TestSystemPromptIntegration:
         # Mock the attack method to capture parameters
         original_attack = mock_attack_instance.attack
         attack_mock = AsyncMock(side_effect=original_attack)
-        mock_attack_instance.attack = attack_mock
+        mock_attack_instance.attack = attack_mock  # ty: ignore[invalid-assignment]
 
         await run_task_couples_with_attack(
             couples=[couple],
@@ -726,7 +729,7 @@ class TestSystemPromptIntegration:
         # Mock the attack method to capture parameters
         original_attack = mock_attack_instance.attack
         attack_mock = AsyncMock(side_effect=original_attack)
-        mock_attack_instance.attack = attack_mock
+        mock_attack_instance.attack = attack_mock  # ty: ignore[invalid-assignment]
 
         await run_task_couples_with_attack(
             couples=[couple],
