@@ -11,7 +11,6 @@ The image tags follow a consistent naming convention:
 """
 
 from ...sandbox_managers.docker import extract_registry_from_tag
-
 from .constants import SWEBENCH_IMAGE_PREFIX
 
 
