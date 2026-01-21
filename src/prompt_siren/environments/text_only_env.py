@@ -12,10 +12,11 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
-from prompt_siren.environments.abstract import SnapshottableAbstractEnvironment
-from prompt_siren.tasks import BenignTask, MaliciousTask, TaskCouple
-from prompt_siren.types import InjectionVectorID, StrContentAttack
 from typing_extensions import Self
+
+from ..environments.abstract import SnapshottableAbstractEnvironment
+from ..tasks import BenignTask, MaliciousTask, TaskCouple
+from ..types import InjectionVectorID, StrContentAttack
 
 INJECTION_PLACEHOLDER = "{INJECTION}"
 

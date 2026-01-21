@@ -15,22 +15,23 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from prompt_siren.datasets.abstract import AbstractDataset
-from prompt_siren.environments.text_only_env import (
+from pydantic import BaseModel, Field, field_validator, TypeAdapter
+from pydantic_ai.messages import ModelMessage, ModelRequest, SystemPromptPart, TextPart
+from pydantic_ai.toolsets import FunctionToolset
+
+from ...datasets.abstract import AbstractDataset
+from ...environments.text_only_env import (
     INJECTION_PLACEHOLDER,
     TextOnlyEnvironment,
 )
-from prompt_siren.tasks import (
+from ...tasks import (
     BenignTask,
     MaliciousTask,
     TaskCouple,
     TaskEvaluator,
     TaskResult,
 )
-from prompt_siren.types import InjectableStrContent, StrContentAttack
-from pydantic import BaseModel, Field, field_validator, TypeAdapter
-from pydantic_ai.messages import ModelMessage, ModelRequest, SystemPromptPart, TextPart
-from pydantic_ai.toolsets import FunctionToolset
+from ...types import InjectableStrContent, StrContentAttack
 
 
 class PurpleLlamaEntry(BaseModel):
