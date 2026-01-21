@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import io
+import json
+import logging
+import subprocess
 import tarfile
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 try:
@@ -24,6 +29,107 @@ from pydantic import BaseModel
 from .. import ExecOutput, StderrChunk, StdoutChunk
 from .plugins import AbstractContainer, AbstractDockerClient, AbstractNetwork
 from .plugins.errors import DockerClientError
+
+logger = logging.getLogger(__name__)
+
+
+def extract_registry_from_tag(tag: str) -> str | None:
+    """Extract the registry hostname from a Docker image tag.
+
+    Args:
+        tag: Docker image tag (e.g., "ghcr.io/owner/image:tag", "nginx:latest")
+
+    Returns:
+        Registry hostname if present (e.g., "ghcr.io"), or None if no registry
+        is specified (e.g., for Docker Hub images like "nginx" or "owner/image")
+    """
+    return tag.split("/")[0] if "/" in tag else None
+
+
+def _get_docker_auth_for_registry(registry: str) -> dict[str, str] | None:
+    """Get Docker authentication credentials for a registry.
+
+    Reads credentials from Docker's config file (~/.docker/config.json),
+    supporting both direct auth and credential helpers.
+
+    Args:
+        registry: Registry hostname (e.g., "ghcr.io")
+
+    Returns:
+        Dict with "username" and "password" keys, or None if not found
+    """
+    config_path = Path.home() / ".docker" / "config.json"
+    if not config_path.exists():
+        logger.debug("Docker config not found at %s", config_path)
+        return None
+
+    try:
+        config = json.loads(config_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Failed to read Docker config: %s", e)
+        return None
+
+    # Check for credential helper (per-registry or global)
+    cred_helpers = config.get("credHelpers", {})
+    creds_store = config.get("credsStore")
+
+    helper_name = cred_helpers.get(registry) or creds_store
+    if helper_name:
+        return _get_credentials_from_helper(helper_name, registry)
+
+    # Fall back to direct auth in config
+    auths = config.get("auths", {})
+    registry_auth = auths.get(registry, {})
+
+    if "auth" in registry_auth:
+        # Base64 encoded "username:password"
+        try:
+            decoded = base64.b64decode(registry_auth["auth"]).decode("utf-8")
+            username, password = decoded.split(":", 1)
+            return {"username": username, "password": password}
+        except (ValueError, UnicodeDecodeError) as e:
+            logger.warning("Failed to decode auth for %s: %s", registry, e)
+            return None
+
+    return None
+
+
+def _get_credentials_from_helper(helper_name: str, registry: str) -> dict[str, str] | None:
+    """Get credentials from a Docker credential helper.
+
+    Args:
+        helper_name: Name of the credential helper (e.g., "osxkeychain", "desktop")
+        registry: Registry hostname to get credentials for
+
+    Returns:
+        Dict with "username" and "password" keys, or None if not found
+    """
+    helper_binary = f"docker-credential-{helper_name}"
+    try:
+        result = subprocess.run(
+            [helper_binary, "get"],
+            input=registry,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            logger.debug(
+                "Credential helper %s failed for %s: %s",
+                helper_binary,
+                registry,
+                result.stderr,
+            )
+            return None
+
+        creds = json.loads(result.stdout)
+        return {"username": creds.get("Username", ""), "password": creds.get("Secret", "")}
+    except FileNotFoundError:
+        logger.debug("Credential helper %s not found", helper_binary)
+        return None
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
+        logger.warning("Failed to get credentials from %s: %s", helper_binary, e)
+        return None
 
 
 class LocalDockerClientConfig(BaseModel):
@@ -277,8 +383,22 @@ class LocalDockerClient(AbstractDockerClient):
         Args:
             tag: Image tag to push (should include registry prefix)
         """
+        registry = extract_registry_from_tag(tag)
+        auth = _get_docker_auth_for_registry(registry) if registry else None
+
+        if registry and not auth:
+            logger.warning(
+                "No Docker credentials found for registry %s. "
+                "Push may fail if authentication is required.",
+                registry,
+            )
+
         try:
-            await self._docker.images.push(tag)
+            # aiodocker.images.push() with stream=True returns an async iterator
+            # that must be consumed for the push to actually happen
+            async for log_line in self._docker.images.push(tag, auth=auth, stream=True):
+                if "error" in log_line:
+                    raise DockerClientError(f"Failed to push image {tag}: {log_line['error']}")
         except DockerError as e:
             raise DockerClientError(f"Failed to push image {tag}: {e.message}") from e
 

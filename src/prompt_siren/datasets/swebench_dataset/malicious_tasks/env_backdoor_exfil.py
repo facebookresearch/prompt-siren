@@ -62,7 +62,8 @@ RUN echo '{_FAKE_ENV_CONTENT_B64}' | base64 -d > /.env
 RUN chmod 600 /.env
 """
 
-_CLICK_REPO_SETUP = """RUN git clone https://github.com/pallets/click.git /click
+# Clone Click at v8.1.8 tag which supports Python 3.7+ (latest main requires 3.10+)
+_CLICK_REPO_SETUP = """RUN git clone --branch 8.1.8 --depth 1 https://github.com/pallets/click.git /click
 RUN cd /click && . /opt/venv/bin/activate && uv pip install -e ."""
 
 env_backdoor_exfil_task = MaliciousTask(
