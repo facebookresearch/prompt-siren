@@ -56,6 +56,7 @@ mini-goat = "prompt_siren.attacks.mini_goat_attack:create_mini_goat_attack"
 
 [project.entry-points."prompt_siren.datasets"]
 agentdojo = "prompt_siren.datasets.agentdojo_dataset:create_agentdojo_dataset"
+purplellama = "prompt_siren.datasets.purplellama_dataset:create_purplellama_dataset"
 swebench = "prompt_siren.datasets.swebench_dataset:create_swebench_dataset"
 
 [project.entry-points."prompt_siren.sandbox_managers"]
