@@ -28,9 +28,29 @@ from prompt_siren.tasks import (
     TaskResult,
 )
 from prompt_siren.types import InjectableStrContent, StrContentAttack
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, TypeAdapter
 from pydantic_ai.messages import ModelMessage, ModelRequest, SystemPromptPart, TextPart
 from pydantic_ai.toolsets import FunctionToolset
+
+
+class PurpleLlamaEntry(BaseModel):
+    """A single entry in the PurpleLlama dataset."""
+
+    system_prompt: str
+    input_template: str
+    malicious_goal: str
+    expected_response_contains: list[str]
+
+    @field_validator("expected_response_contains", mode="before")
+    @classmethod
+    def normalize_to_list(cls, v: str | list[str]) -> list[str]:
+        """Normalize expected_response_contains to always be a list."""
+        if isinstance(v, str):
+            return [v]
+        return v
+
+
+_PurpleLlamaDataAdapter = TypeAdapter(list[PurpleLlamaEntry])
 
 
 class PurpleLlamaDatasetConfig(BaseModel):
@@ -132,43 +152,33 @@ def load_purplellama_dataset(
 
     Returns:
         Loaded PurpleLlama dataset with tasks and environment
+
+    Raises:
+        FileNotFoundError: If the data file does not exist
+        pydantic.ValidationError: If the JSON data does not match the expected schema
     """
-    # Load JSON data
     with open(config.data_file, encoding="utf-8") as f:
-        data = json.load(f)
+        raw_data = json.load(f)
+
+    entries = _PurpleLlamaDataAdapter.validate_python(raw_data)
 
     benign_tasks: list[BenignTask[None]] = []
     malicious_tasks: list[MaliciousTask[None]] = []
     task_couples: list[TaskCouple[None]] = []
 
-    for idx, entry in enumerate(data):
+    for idx, entry in enumerate(entries):
         task_id = f"purplellama-{idx}"
         attack_id = f"purplellama-{idx}-attack"
 
-        # Extract fields from JSON entry
-        system_prompt: str = entry["system_prompt"]
-        input_template: str = entry["input_template"]
-        malicious_goal: str = entry["malicious_goal"]
-        expected_response = entry["expected_response_contains"]
-
-        # Normalize expected_response to list
-        if isinstance(expected_response, str):
-            expected_list = [expected_response]
-        else:
-            expected_list = expected_response
-
-        # Create injectable prompt with {INJECTION} placeholder
         injectable_content = InjectableStrContent(
-            content=input_template,
+            content=entry.input_template,
             default={INJECTION_PLACEHOLDER: StrContentAttack(content="")},
         )
 
-        # Create message history with system prompt
         message_history: list[ModelMessage] = [
-            ModelRequest(parts=[SystemPromptPart(content=system_prompt)])
+            ModelRequest(parts=[SystemPromptPart(content=entry.system_prompt)])
         ]
 
-        # Create benign task with injectable prompt and system prompt in history
         benign_task = BenignTask[None](
             id=task_id,
             prompt=[injectable_content],
@@ -176,11 +186,10 @@ def load_purplellama_dataset(
             message_history=message_history,
         )
 
-        # Create malicious task with contains-based evaluator
         malicious_task = MaliciousTask[None](
             id=attack_id,
-            goal=malicious_goal,
-            evaluators={"security": _make_contains_evaluator(expected_list)},
+            goal=entry.malicious_goal,
+            evaluators={"security": _make_contains_evaluator(entry.expected_response_contains)},
         )
 
         benign_tasks.append(benign_task)
