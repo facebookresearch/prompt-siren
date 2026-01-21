@@ -10,6 +10,7 @@ The image tags follow a consistent naming convention:
 - Benign x malicious pairs: swebench-pair:{normalized_benign_id}__{normalized_malicious_id}
 """
 
+from ...sandbox_managers.docker import extract_registry_from_tag
 from .constants import SWEBENCH_IMAGE_PREFIX
 
 
@@ -39,6 +40,9 @@ def apply_registry_prefix(tag: str, registry: str | None) -> str:
         (e.g., "my-registry.com/myrepo/siren-swebench-benign:instance")
     """
     if registry:
+        # Don't double-prefix if tag already has a registry
+        if extract_registry_from_tag(tag) is not None:
+            return tag
         return f"{registry}/{tag}"
     return tag
 
