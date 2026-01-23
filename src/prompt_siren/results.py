@@ -279,6 +279,7 @@ def aggregate_results(
     jobs_dir: Path,
     group_by: GroupBy = GroupBy.ALL,
     k: int | list[int] = 1,
+    show_attack_successes: bool = False,
 ) -> pd.DataFrame:
     """Aggregate results from job directories with optional grouping and pass@k metric.
 
@@ -298,6 +299,8 @@ def aggregate_results(
                   "dataset_suite" replaces dataset with dataset_suite, others aggregate further
         k: The k value(s) for pass@k metric. Can be a single int or list of ints.
            Default=1 means averaging. Multiple values compute separate metrics for each k.
+        show_attack_successes: If True, include a column with comma-separated task IDs
+           where the attack succeeded (attack score = 1.0). Default is False.
 
     Returns:
         DataFrame with aggregated results based on grouping level.
@@ -305,6 +308,7 @@ def aggregate_results(
         Default view includes: dataset, agent_type, agent_name, attack_type,
         benign_pass@k, attack_pass@k, n_tasks, avg_n_samples
         (aggregates across dataset_suite's and job_name variations)
+        If show_attack_successes is True, includes 'attack_succeeded_tasks' column.
 
     Raises:
         ValueError: If any task has fewer than k samples when k > 1
@@ -316,7 +320,12 @@ def aggregate_results(
     if len(k_values) > 1:
         all_results = []
         for k_value in k_values:
-            result = aggregate_results(jobs_dir, group_by=group_by, k=k_value)
+            result = aggregate_results(
+                jobs_dir,
+                group_by=group_by,
+                k=k_value,
+                show_attack_successes=show_attack_successes,
+            )
             if not result.empty:
                 result["k"] = k_value
                 all_results.append(result)
@@ -354,6 +363,10 @@ def aggregate_results(
         # Add metadata columns
         result["n_tasks"] = grouped.size().values
         result["avg_n_samples"] = grouped["n_samples"].mean().values
+        if show_attack_successes:
+            result["attack_succeeded_tasks"] = _collect_attack_succeeded_tasks(
+                df, _ALL_GROUP_COLS, attack_col
+            )
         return result
 
     if group_by == GroupBy.DATASET_SUITE:
@@ -370,6 +383,10 @@ def aggregate_results(
         # Add metadata columns
         result["n_tasks"] = grouped.size().values
         result["avg_n_samples"] = grouped["n_samples"].mean().values
+        if show_attack_successes:
+            result["attack_succeeded_tasks"] = _collect_attack_succeeded_tasks(
+                df, dataset_suite_group_cols, attack_col
+            )
         return result
 
     # Group by specific dimension
@@ -389,6 +406,32 @@ def aggregate_results(
     # Add metadata columns
     result["n_tasks"] = grouped.size().values
     result["avg_n_samples"] = grouped["n_samples"].mean().values
+    if show_attack_successes:
+        result["attack_succeeded_tasks"] = _collect_attack_succeeded_tasks(
+            df, [group_col], attack_col
+        )
+    return result
+
+
+def _collect_attack_succeeded_tasks(
+    df: pd.DataFrame, group_cols: list[str], attack_col: str
+) -> list[str]:
+    """Collect comma-separated task IDs where attack succeeded for each group.
+
+    Args:
+        df: DataFrame with task-level results (after _group_by_task)
+        group_cols: Columns to group by
+        attack_col: Name of the attack score column (e.g., 'attack_pass@1')
+
+    Returns:
+        List of comma-separated task ID strings, one per group (in groupby order)
+    """
+    result = []
+    for _, group in df.groupby(group_cols):
+        # Find tasks where attack succeeded (score = 1.0)
+        succeeded_mask = group[attack_col] == 1.0
+        succeeded_tasks = group.loc[succeeded_mask, "task_id"].tolist()
+        result.append(",".join(str(t) for t in succeeded_tasks))
     return result
 
 

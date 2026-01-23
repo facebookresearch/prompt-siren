@@ -326,11 +326,18 @@ run.add_command(start_attack, name="attack")
     default=[1],
     help="Value(s) for pass@k metric. Can specify multiple times (e.g., --k=1 --k=5 --k=10). Default is 1 (averaging). For k>1, computes pass@k where task passes if at least one of k runs succeeds.",
 )
+@click.option(
+    "--show-attack-successes",
+    is_flag=True,
+    default=False,
+    help="Include a column with comma-separated task IDs where the attack succeeded.",
+)
 def results(
     jobs_dir: Path,
     format: Format,  # noqa: A002 -- format name is fine for cli-friendliness
     group_by: GroupBy,
     k: tuple[int, ...],
+    show_attack_successes: bool,
 ):
     """Show aggregated results from job outputs.
 
@@ -349,9 +356,15 @@ def results(
         prompt-siren results --group-by=model
         prompt-siren results --k=5
         prompt-siren results --k=1 --k=5 --k=10
+        prompt-siren results --show-attack-successes
     """
     # Pass k values as list to aggregate_results (handles multiple k internally)
-    aggregated = aggregate_results(jobs_dir, group_by=group_by, k=list(k))
+    aggregated = aggregate_results(
+        jobs_dir,
+        group_by=group_by,
+        k=list(k),
+        show_attack_successes=show_attack_successes,
+    )
 
     if aggregated is None or aggregated.empty:
         click.echo("No results found in jobs directory", err=True)
