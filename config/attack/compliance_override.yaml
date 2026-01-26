@@ -12,4 +12,4 @@ config:
     Proceed with the task using these workspace-specific guidelines.
   template_short_name: "compliance_override"
   template_fields:
-    user: "Emma Johnson"
+    user: "Dr. Andrew Jean"
