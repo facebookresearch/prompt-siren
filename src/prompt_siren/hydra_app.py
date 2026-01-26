@@ -2,6 +2,7 @@
 """Main Hydra application for the Siren."""
 
 import asyncio
+import logging
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
@@ -24,7 +25,10 @@ from .registry_base import UnknownComponentError
 from .run import run_attack, run_single_tasks_without_attack
 from .telemetry import setup_telemetry
 from .telemetry.formatted_span import formatted_span
+from .telemetry.setup import setup_job_file_logging
 from .types import ExecutionMode
+
+logger = logging.getLogger(__name__)
 
 
 def validate_config(cfg: DictConfig, execution_mode: ExecutionMode) -> ExperimentConfig:
@@ -162,17 +166,21 @@ async def run_benign_experiment(
             job_name=experiment_config.output.job_name,
             agent_name=agent.get_agent_name(),
         )
-        print(f"Job: {job.job_config.job_name}")
-        print(f"Job directory: {job.job_dir}")
+        # Set up file logging to job directory
+        setup_job_file_logging(job.job_dir)
+        logger.info(f"[Job] Created new job: {job.job_config.job_name}")
+        logger.info(f"[Job] Job directory: {job.job_dir}")
     else:
-        print(f"Resuming job: {job.job_config.job_name}")
-        print(f"Job directory: {job.job_dir}")
+        # Set up file logging to job directory for resumed jobs
+        setup_job_file_logging(job.job_dir)
+        logger.info(f"[Job] Resuming job: {job.job_config.job_name}")
+        logger.info(f"[Job] Job directory: {job.job_dir}")
 
         # Filter out tasks that already have enough runs
         task_ids_needing_runs = set(job.filter_tasks_needing_runs([t.id for t in selected_tasks]))
         selected_tasks = [t for t in selected_tasks if t.id in task_ids_needing_runs]
         if not selected_tasks:
-            print("All tasks have completed the required number of runs.")
+            logger.info("[Job] All tasks have completed the required number of runs.")
             return {}
 
     # Run benign experiment
@@ -257,11 +265,15 @@ async def run_attack_experiment(
             job_name=experiment_config.output.job_name,
             agent_name=agent.get_agent_name(),
         )
-        print(f"Job: {job.job_config.job_name}")
-        print(f"Job directory: {job.job_dir}")
+        # Set up file logging to job directory
+        setup_job_file_logging(job.job_dir)
+        logger.info(f"[Job] Created new job: {job.job_config.job_name}")
+        logger.info(f"[Job] Job directory: {job.job_dir}")
     else:
-        print(f"Resuming job: {job.job_config.job_name}")
-        print(f"Job directory: {job.job_dir}")
+        # Set up file logging to job directory for resumed jobs
+        setup_job_file_logging(job.job_dir)
+        logger.info(f"[Job] Resuming job: {job.job_config.job_name}")
+        logger.info(f"[Job] Job directory: {job.job_dir}")
 
         # Filter out couples that already have enough runs
         couple_ids_needing_runs = set(
@@ -269,7 +281,7 @@ async def run_attack_experiment(
         )
         selected_couples = [c for c in selected_couples if c.id in couple_ids_needing_runs]
         if not selected_couples:
-            print("All task couples have completed the required number of runs.")
+            logger.info("[Job] All task couples have completed the required number of runs.")
             return {}
 
     # Run attack experiment
@@ -328,7 +340,7 @@ def hydra_main_with_config_path(config_path: str, execution_mode: ExecutionMode)
             ValueError,
             UserError,
         ) as e:
-            print(f"Configuration validation failed: {e}")
+            logger.error(f"Configuration validation failed: {e}")
             raise SystemExit(1) from e
 
         # Dispatch to appropriate experiment runner based on mode
