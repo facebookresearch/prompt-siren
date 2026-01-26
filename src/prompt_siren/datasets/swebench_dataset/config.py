@@ -18,9 +18,6 @@ class SwebenchDatasetConfig(BaseModel):
     max_instances: int | None = None
     """Maximum number of instances to load (None = all). Useful for testing."""
 
-    instance_ids: list[str] | None = None
-    """Specific instance IDs to load (None = all). Takes precedence over max_instances."""
-
     # Build options
     use_cache: bool = True
     """Whether to use Docker build cache."""
