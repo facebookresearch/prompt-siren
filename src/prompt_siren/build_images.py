@@ -492,7 +492,6 @@ async def run_build(
     rebuild_existing: bool = False,
     registry: str | None = None,
     max_instances: int | None = None,
-    instance_ids: list[str] | None = None,
     dataset_name: str = "SWE-bench/SWE-bench_Lite",
     skip_benign: bool = False,
     skip_malicious: bool = False,
@@ -521,7 +520,6 @@ async def run_build(
         dataset_name=dataset_name,
         cache_dir=cache_dir,
         max_instances=max_instances,
-        instance_ids=instance_ids,
     )
 
     # Load and filter instances
@@ -534,10 +532,7 @@ async def run_build(
     ]
     logger.info(f"Found {len(supported_instances)} supported instances")
 
-    # Apply filters
-    if instance_ids:
-        instances = [i for i in supported_instances if i["instance_id"] in instance_ids]
-    elif max_instances:
+    if max_instances:
         logger.warning(
             f"The parameter max_instances was specified, ignoring some instance_ids, and building up to {max_instances}. This is probably only desired for testing!"
         )
@@ -673,7 +668,6 @@ def main(
     rebuild_existing: bool,
     registry: str | None,
     max_instances: int | None,
-    instance_ids: tuple[str, ...],
     dataset: str,
     skip_benign: bool,
     skip_malicious: bool,
@@ -693,9 +687,6 @@ def main(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # Convert tuple to list or None
-    instance_id_list = list(instance_ids) if instance_ids else None
-
     try:
         asyncio.run(
             run_build(
@@ -703,7 +694,6 @@ def main(
                 rebuild_existing=rebuild_existing,
                 registry=registry,
                 max_instances=max_instances,
-                instance_ids=instance_id_list,
                 dataset_name=dataset,
                 skip_benign=skip_benign,
                 skip_malicious=skip_malicious,
