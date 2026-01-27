@@ -8,11 +8,14 @@ through protocols and factory functions rather than inheritance.
 
 import importlib.metadata
 import inspect
+import logging
 import typing
 from collections.abc import Callable
 from typing import Any, Generic, TypeAlias, TypeVar
 
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 ComponentT = TypeVar("ComponentT")
 ConfigT = TypeVar("ConfigT", bound=BaseModel)
@@ -73,6 +76,7 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
             entry_point_group: Entry point group name for automatic discovery (e.g., 'prompt_siren.agents')
         """
         self._registry: dict[str, tuple[type[BaseModel] | None, ComponentFactory]] = {}
+        self._component_classes: dict[str, type] = {}
         self._component_name = component_name
         self._entry_point_group = entry_point_group
         self._entry_points_loaded = False
@@ -86,8 +90,10 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
         - A tuple of (factory_fn, component_class) - for components that need class-level access
         - A factory function directly - for simpler component types
 
-        Failed entry points are stored silently and re-raised when the plugin is actually requested.
-        This avoids warning users about missing optional dependencies they don't intend to use.
+        Failed entry points are handled as follows:
+        - ImportError: Stored silently and re-raised when the plugin is actually requested.
+          This avoids warning users about missing optional dependencies they don't intend to use.
+        - Other exceptions: Logged as warnings and stored in _failed_entry_points.
         """
         if self._entry_points_loaded or not self._entry_point_group:
             return
@@ -100,8 +106,16 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
                     entry = ep.load()
 
                     # Handle tuple format: (factory_fn, component_class)
-                    if isinstance(entry, tuple) and len(entry) == 2:
-                        factory: Callable[..., Any] = entry[0]
+                    if isinstance(entry, tuple):
+                        if len(entry) == 2:
+                            factory: Callable[..., Any] = entry[0]
+                            self._component_classes[ep.name] = entry[1]
+                        else:
+                            logger.warning(
+                                f"Entry point '{ep.name}' returned tuple of length {len(entry)}, "
+                                f"expected 2; treating entire tuple as factory"
+                            )
+                            factory = entry
                     else:
                         factory = entry
 
@@ -116,10 +130,11 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
                     # Store the import error silently - will be raised when plugin is actually requested
                     self._failed_entry_points[ep.name] = e
                 except Exception as e:
-                    print(f"Warning: Failed to load entry point {ep.name}: {e}")
+                    logger.warning(f"Failed to load entry point '{ep.name}': {e}")
+                    self._failed_entry_points[ep.name] = e
 
         except Exception as e:
-            print(f"Warning: Failed to load entry points for {self._entry_point_group}: {e}")
+            logger.error(f"Failed to load entry points for {self._entry_point_group}: {e}")
 
         self._entry_points_loaded = True
 
@@ -161,8 +176,10 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
                     param_name = first_param.name
                     if param_name in type_hints:
                         return type_hints[param_name]
-                except Exception:
-                    pass
+                except Exception as resolve_error:
+                    raise ValueError(
+                        f"Cannot resolve string annotation '{annotation}' for {name}: {resolve_error}"
+                    ) from resolve_error
             raise ValueError(f"Cannot resolve string annotation '{annotation}' for {name}")
 
         return annotation
@@ -172,6 +189,7 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
         component_type: str,
         config_class: type[ConfigT] | None,
         factory: Callable[..., ComponentT],
+        component_class: type | None = None,
     ) -> None:
         """Register a new component type with optional config class and factory function.
 
@@ -181,6 +199,7 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
             factory: Factory function that creates component instances.
                      If config_class is None, factory should have signature: () -> ComponentT
                      If config_class is provided, factory should have signature: (ConfigT, ContextT | None) -> ComponentT
+            component_class: Optional component class for class-level access (e.g., image building)
 
         Raises:
             ValueError: If the component type is already registered
@@ -190,6 +209,8 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
                 f"{self._component_name.title()} type '{component_type}' is already registered"
             )
         self._registry[component_type] = (config_class, factory)
+        if component_class is not None:
+            self._component_classes[component_type] = component_class
 
     def get_config_class(self, component_type: str) -> type[BaseModel] | None:
         """Get the config class for a given component type.
@@ -279,6 +300,15 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
         """
         self._load_entry_points()  # Ensure entry points are loaded
         return list(self._registry.keys())
+
+    def get_component_classes(self) -> dict[str, type]:
+        """Get component classes stored from tuple entry points or programmatic registration.
+
+        Returns:
+            Dictionary mapping component type names to their classes
+        """
+        self._load_entry_points()  # Ensure entry points are loaded
+        return dict(self._component_classes)
 
     def get_registry_info(self) -> dict[str, dict[str, Any]]:
         """Get detailed information about registered components.

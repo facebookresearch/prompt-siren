@@ -13,9 +13,6 @@ import pytest
 if sys.version_info < (3, 11):
     from exceptiongroup import ExceptionGroup
 
-# Skip this entire module if swebench is not installed
-pytest.importorskip("swebench")
-
 from prompt_siren.build_images import _handle_build_failures, BuildError, ImageBuilder
 from prompt_siren.sandbox_managers.docker.plugins.errors import DockerClientError
 from prompt_siren.sandbox_managers.image_spec import (

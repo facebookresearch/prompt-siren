@@ -122,8 +122,6 @@ class ImageCache:
             f"{type(spec).__name__}"
         )
 
-        tag: ImageTag = ""
-
         # Handle image based on type
         match spec:
             case PullImageSpec():

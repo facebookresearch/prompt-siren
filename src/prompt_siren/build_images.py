@@ -1,9 +1,9 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Script for building Docker images.
 
-This script pre-builds all Docker images needed for running datasets that
-use Docker containers, including:
-- SWE-bench: benign task images, malicious service containers, pair images
+Pre-builds all Docker images needed for running datasets that use Docker
+containers. Uses the ImageBuildableDataset protocol to discover which images
+each dataset needs, then builds them with proper dependency ordering.
 
 Usage:
     # Build images for a specific dataset
@@ -11,9 +11,6 @@ Usage:
 
     # Build images for all datasets
     prompt-siren-build-images --all-datasets [OPTIONS]
-
-The script uses the ImageBuildableDataset protocol to discover which images each
-dataset needs, then builds them with proper dependency ordering.
 """
 
 from __future__ import annotations
@@ -24,15 +21,12 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import click
 
 # ExceptionGroup is built-in in Python 3.11+, needs backport for 3.10
 if sys.version_info < (3, 11):
     from exceptiongroup import ExceptionGroup
-
-from pydantic import ValidationError
 
 from .datasets import (
     get_dataset_config_class,
@@ -403,29 +397,24 @@ class ImageBuilder:
 async def build_dataset_images(
     dataset_name: str,
     builder: ImageBuilder,
-    **config_overrides: Any,
 ) -> list[BuildError]:
-    """Build all images for a specific dataset.
+    """Build all images for a specific dataset using default configuration.
 
     Args:
         dataset_name: Name of the dataset to build images for
         builder: Image builder instance
-        **config_overrides: Optional configuration overrides for the dataset
 
     Returns:
         List of build errors (empty if all succeeded)
 
     Raises:
-        ValueError: If dataset doesn't support image building or config is invalid
+        ValueError: If dataset doesn't support image building
     """
     logger.info(f"Building images for dataset: {dataset_name}")
 
-    # Get the dataset's config class and create config
+    # Get the dataset's config class and create default config
     config_class = get_dataset_config_class(dataset_name)
-    try:
-        config = config_class(**config_overrides)
-    except ValidationError as e:
-        raise ValueError(f"Invalid configuration for dataset '{dataset_name}': {e}") from e
+    config = config_class()
 
     # Get image build specs directly from the dataset class (no instance needed)
     specs = get_image_build_specs(dataset_name, config)

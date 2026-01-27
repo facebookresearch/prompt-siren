@@ -125,7 +125,7 @@ class MultiStageBuildImageSpec(BaseModel):
 
     @property
     def tag(self) -> ImageTag:
-        """Final image tag (for compatibility with setup_task)."""
+        """Alias for final_tag, providing a uniform .tag interface across all ImageBuildSpec types."""
         return self.final_tag
 
 

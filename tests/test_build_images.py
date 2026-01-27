@@ -187,7 +187,7 @@ class TestImageTagFunctions:
 
 
 class TestBuildDatasetImagesValidation:
-    """Tests for build_dataset_images config validation."""
+    """Tests for build_dataset_images."""
 
     @pytest.fixture
     def mock_docker(self) -> MockDockerClient:
@@ -201,11 +201,11 @@ class TestBuildDatasetImagesValidation:
         )
 
     @pytest.mark.anyio
-    async def test_raises_value_error_on_invalid_config(self, builder: ImageBuilder) -> None:
-        """Verify ValueError when config overrides are invalid."""
-        with pytest.raises(ValueError, match="Invalid configuration"):
-            await build_dataset_images(
-                "swebench",
-                builder,
-                max_instances="not-an-integer",  # Invalid: should be int
-            )
+    async def test_uses_default_config(self, builder: ImageBuilder) -> None:
+        """Verify build_dataset_images uses default config and returns specs."""
+        # build_dataset_images uses default config, so it should return specs
+        # without any config overrides
+        errors = await build_dataset_images("swebench", builder)
+        # With default config and mock docker client, all builds fail with
+        # mock errors, but the function should complete without raising
+        assert isinstance(errors, list)
