@@ -21,6 +21,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import click
 
@@ -29,10 +30,12 @@ if sys.version_info < (3, 11):
     from exceptiongroup import ExceptionGroup
 
 from .datasets import (
+    dataset_registry,
     get_dataset_config_class,
     get_datasets_with_image_specs,
     get_image_build_specs,
 )
+from .datasets.registry import ImageBuildableDataset
 from .sandbox_managers.docker.manager import create_docker_client_from_config
 from .sandbox_managers.docker.plugins import AbstractDockerClient
 from .sandbox_managers.docker.plugins.errors import DockerClientError
@@ -52,6 +55,7 @@ class BuildError:
 
     image_tag: str
     error: Exception
+    phase: Literal["build", "push"] = "build"
 
 
 def _handle_build_failures(
@@ -121,7 +125,6 @@ class ImageBuilder:
             return True
         except DockerClientError as e:
             if e.status == 404:
-                logger.debug(f"Image '{tag}' does not exist (404)")
                 return False
             logger.error(f"Docker error while checking if image '{tag}' exists: {e}")
             raise
@@ -132,7 +135,6 @@ class ImageBuilder:
         Args:
             tag: Image tag to delete
         """
-        logger.info(f"Deleting existing image {tag}")
         await self._docker.delete_image(tag, force=True)
 
     async def _prepare_for_build(self, tag: str) -> bool:
@@ -151,14 +153,12 @@ class ImageBuilder:
             True if the caller should proceed with the build, False to skip
         """
         if tag in self._built_images:
-            logger.debug(f"Image {tag} already built in this session, skipping")
             return False
 
         if await self.image_exists(tag):
             if self._rebuild_existing:
                 await self.delete_image(tag)
                 return True
-            logger.info(f"Image {tag} already exists, skipping")
             self._built_images.add(tag)
             return False
 
@@ -174,10 +174,8 @@ class ImageBuilder:
             return
 
         registry_tag = f"{self._registry}/{tag}"
-        logger.info(f"Tagging image {tag} as {registry_tag}")
+        logger.info(f"Tagging and pushing image {registry_tag}")
         await self._docker.tag_image(tag, registry_tag)
-
-        logger.info(f"Pushing image {registry_tag}")
         await self._docker.push_image(registry_tag)
         logger.info(f"Successfully pushed image {registry_tag}")
 
@@ -250,11 +248,8 @@ class ImageBuilder:
         """
         if not await self._prepare_for_build(target_tag):
             return
-
-        logger.info(f"Tagging image {source_tag} as {target_tag}")
         await self._docker.tag_image(source_tag, target_tag)
         self._built_images.add(target_tag)
-        logger.info(f"Successfully tagged image {target_tag}")
 
     async def _build_single_spec(self, spec: BuildImageSpec | MultiStageBuildImageSpec) -> None:
         """Build a single non-derived image spec.
@@ -276,7 +271,6 @@ class ImageBuilder:
                 )
             return
 
-        # BuildImageSpec handling
         if not await self._prepare_for_build(spec.tag):
             return
 
@@ -351,14 +345,14 @@ class ImageBuilder:
         errors: list[BuildError] = []
         failed_base_tags: set[str] = set()
 
+        _recoverable = (RuntimeError, DockerClientError, OSError)
+
         # Phase 1: Build non-derived specs (base images)
         base_specs = [s for s in specs if not isinstance(s, DerivedImageSpec)]
-        logger.info(f"Phase 1: Building {len(base_specs)} base image(s)")
-
         for spec in base_specs:
             try:
                 await self._build_single_spec(spec)
-            except Exception as e:
+            except _recoverable as e:
                 logger.error(
                     f"Failed to build image {spec.tag}: {type(e).__name__}: {e}",
                     exc_info=e,
@@ -369,24 +363,22 @@ class ImageBuilder:
 
             try:
                 await self.push_to_registry(spec.tag)
-            except Exception as e:
+            except _recoverable as e:
                 logger.error(
                     f"Failed to push image {spec.tag}: {type(e).__name__}: {e}",
                     exc_info=e,
                 )
-                errors.append(BuildError(image_tag=spec.tag, error=e))
+                errors.append(BuildError(image_tag=spec.tag, error=e, phase="push"))
 
         # Phase 2: Build derived specs (depend on base images)
         derived_specs = [s for s in specs if isinstance(s, DerivedImageSpec)]
-        logger.info(f"Phase 2: Building {len(derived_specs)} derived image(s)")
 
         for spec in derived_specs:
-            # Skip derived images whose base image failed to build
+            # Skip derived images whose base image failed to build.
+            # Note: failed_base_tags tracks the final tag of MultiStageBuildImageSpec
+            # (not intermediate stage tags). This works because current consumers only
+            # reference final tags in DerivedImageSpec.base_image_tag.
             if spec.base_image_tag in failed_base_tags:
-                logger.warning(
-                    f"Skipping derived image {spec.tag}: "
-                    f"base image {spec.base_image_tag} failed to build"
-                )
                 errors.append(
                     BuildError(
                         image_tag=spec.tag,
@@ -394,14 +386,13 @@ class ImageBuilder:
                     )
                 )
                 continue
-
             try:
                 await self.build_modified_image(
                     base_tag=spec.base_image_tag,
                     dockerfile_extra=spec.dockerfile_extra,
                     output_tag=spec.tag,
                 )
-            except Exception as e:
+            except _recoverable as e:
                 logger.error(
                     f"Failed to build derived image {spec.tag}: {type(e).__name__}: {e}",
                     exc_info=e,
@@ -411,12 +402,12 @@ class ImageBuilder:
 
             try:
                 await self.push_to_registry(spec.tag)
-            except Exception as e:
+            except _recoverable as e:
                 logger.error(
                     f"Failed to push derived image {spec.tag}: {type(e).__name__}: {e}",
                     exc_info=e,
                 )
-                errors.append(BuildError(image_tag=spec.tag, error=e))
+                errors.append(BuildError(image_tag=spec.tag, error=e, phase="push"))
 
         return errors
 
@@ -437,8 +428,6 @@ async def build_dataset_images(
     Raises:
         ValueError: If dataset doesn't support image building
     """
-    logger.info(f"Building images for dataset: {dataset_name}")
-
     # Get the dataset's config class and create default config
     config_class = get_dataset_config_class(dataset_name)
     config = config_class()
@@ -449,6 +438,32 @@ async def build_dataset_images(
 
     # Build all specs
     return await builder.build_all_specs(specs)
+
+
+def _validate_datasets(datasets: list[str]) -> None:
+    """Validate that all dataset names exist and support image building.
+
+    Performs upfront validation so input errors fail fast before any
+    Docker operations begin.
+
+    Args:
+        datasets: List of dataset names to validate
+
+    Raises:
+        UnknownComponentError: If a dataset name is not registered
+        ImportError: If a dataset's dependencies are not installed
+        ValueError: If a dataset doesn't support image building
+    """
+    for name in datasets:
+        # Triggers entry point loading + checks for failed entry points
+        get_dataset_config_class(name)
+        classes = dataset_registry.get_component_classes()
+        dataset_class = classes.get(name)
+        if dataset_class is None or not issubclass(dataset_class, ImageBuildableDataset):
+            raise ValueError(
+                f"Dataset '{name}' does not support image building. "
+                "Only datasets implementing ImageBuildableDataset can be used with this command."
+            )
 
 
 async def run_build(
@@ -467,7 +482,9 @@ async def run_build(
 
     Raises:
         ExceptionGroup: If any image builds failed
+        ValueError: If a dataset name is invalid or doesn't support image building
     """
+    _validate_datasets(datasets)
 
     # Create Docker client - always use local client for image building
     logger.warning(
@@ -489,18 +506,11 @@ async def run_build(
 
         # Build images for each dataset
         for dataset_name in datasets:
-            try:
-                errors = await build_dataset_images(
-                    dataset_name,
-                    builder,
-                )
-                all_build_errors.extend(errors)
-            except Exception as e:  # noqa: PERF203
-                logger.error(
-                    f"Failed to build images for dataset {dataset_name}: {type(e).__name__}: {e}",
-                    exc_info=e,
-                )
-                all_build_errors.append(BuildError(image_tag=f"dataset:{dataset_name}", error=e))
+            errors = await build_dataset_images(
+                dataset_name,
+                builder,
+            )
+            all_build_errors.extend(errors)
 
         if all_build_errors:
             logger.warning(f"Image building completed with {len(all_build_errors)} error(s)")
@@ -571,14 +581,12 @@ def main(
         # Build images for all supported datasets
         prompt-siren-build-images --all-datasets
     """
-    # Configure logging
     log_level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # Determine which datasets to build
     if all_datasets:
         datasets_to_build = get_datasets_with_image_specs()
         if not datasets_to_build:

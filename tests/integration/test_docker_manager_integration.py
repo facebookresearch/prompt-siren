@@ -951,7 +951,7 @@ class TestMultiStageBuild:
             ),
         ]
 
-        multi_stage_spec = MultiStageBuildImageSpec(stages=stages, final_tag=instance_tag)
+        multi_stage_spec = MultiStageBuildImageSpec(stages=stages)
 
         container_spec = ContainerSpec(image_spec=multi_stage_spec)
         agent_container = ContainerSetup(name="agent", spec=container_spec)
@@ -1034,7 +1034,7 @@ class TestMultiStageBuild:
             ),
         ]
 
-        multi_stage_spec = MultiStageBuildImageSpec(stages=stages, final_tag=instance_tag)
+        multi_stage_spec = MultiStageBuildImageSpec(stages=stages)
 
         container_spec = ContainerSpec(image_spec=multi_stage_spec)
         agent_container = ContainerSetup(name="agent", spec=container_spec)
@@ -1136,7 +1136,6 @@ class TestMultiStageBuild:
                     parent_tag=env_tag,
                 ),
             ],
-            final_tag=instance1_tag,
         )
 
         spec2 = MultiStageBuildImageSpec(
@@ -1158,7 +1157,6 @@ class TestMultiStageBuild:
                     parent_tag=env_tag,
                 ),
             ],
-            final_tag=instance2_tag,
         )
 
         task_setups = [
