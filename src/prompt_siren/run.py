@@ -375,7 +375,7 @@ async def run_attack(
     Returns:
         AttackResults containing all couple results
     """
-    # Create the executor with all dependencies
+    # Create the executor with all dependencies, including persistence for incremental saving
     executor = DefaultRolloutExecutor(
         agent=agent,
         environment=env,
@@ -384,31 +384,10 @@ async def run_attack(
         usage_limits=usage_limits or UsageLimits(),
         max_concurrency=max_concurrency,
         instrument=instrument,
+        persistence=persistence,
     )
 
     # Let the attack drive the execution
+    # Persistence happens incrementally within the executor as each rollout completes
     async with env.create_batch_context(couples):
-        results = await attack.run(couples, executor)
-
-    # Persist results if configured
-    if persistence:
-        for couple_result in results.couple_results:
-            couple = couple_result.couple
-            # Get the best rollout result for persistence
-            if couple_result.rollout_results:
-                best_result = max(
-                    couple_result.rollout_results,
-                    key=lambda r: _calculate_evaluation_score(r.malicious_eval),
-                )
-                persistence.save_couple_run(
-                    couple=couple,
-                    benign_eval=best_result.benign_eval,
-                    malicious_eval=best_result.malicious_eval,
-                    messages=list(best_result.messages),
-                    usage=best_result.usage,
-                    task_span=None,  # TODO: capture span in rollout
-                    started_at=datetime.now(),
-                    generated_attacks=couple_result.generated_attacks,
-                )
-
-    return results
+        return await attack.run(couples, executor)

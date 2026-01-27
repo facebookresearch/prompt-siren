@@ -16,6 +16,7 @@ from pydantic_ai.messages import ModelMessage, ModelResponse
 
 from ..providers import infer_model
 from ..tasks import TaskCouple
+from ..telemetry.workbench_spans import create_task_span
 from ..types import (
     InjectionAttacksDict,
     InjectionVectorID,
@@ -274,16 +275,26 @@ class MiniGoatAttack(Generic[EnvStateT]):
                     )
                     continue
 
-                # Generate refined attack for this checkpoint
-                attacks, rollouts = await self._generate_attack_for_checkpoint(checkpoint, executor)
-
-                couple_results.append(
-                    CoupleAttackResult(
-                        couple=checkpoint.couple,
-                        rollout_results=rollouts,
-                        generated_attacks=attacks,
+                # Wrap entire attack generation and rollouts in a task span
+                with create_task_span(
+                    checkpoint.couple.id,
+                    environment_name="mini-goat",
+                    agent_name=checkpoint.agent_name,
+                    agent_type="attack",
+                    benign_only=False,
+                ):
+                    # Generate refined attack for this checkpoint
+                    attacks, rollouts = await self._generate_attack_for_checkpoint(
+                        checkpoint, executor
                     )
-                )
+
+                    couple_results.append(
+                        CoupleAttackResult(
+                            couple=checkpoint.couple,
+                            rollout_results=rollouts,
+                            generated_attacks=attacks,
+                        )
+                    )
 
         finally:
             # Release all checkpoints
