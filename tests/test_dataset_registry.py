@@ -6,13 +6,13 @@ import pytest
 # Skip this entire module if swebench is not installed
 pytest.importorskip("swebench")
 
-from prompt_siren.datasets import registry
 from prompt_siren.datasets.registry import (
     get_datasets_with_image_specs,
     get_image_build_specs,
 )
 from prompt_siren.datasets.swebench_dataset.config import SwebenchDatasetConfig
 from prompt_siren.datasets.swebench_dataset.dataset import SwebenchDataset
+from prompt_siren.registry_base import UnknownComponentError
 from prompt_siren.sandbox_managers.image_spec import (
     BuildImageSpec,
     DerivedImageSpec,
@@ -32,10 +32,15 @@ class TestGetDatasetsWithImageSpecs:
 class TestGetImageBuildSpecs:
     """Tests for get_image_build_specs function."""
 
-    def test_raises_for_unsupported_dataset(self) -> None:
-        """Verify ValueError when dataset doesn't support image building."""
-        with pytest.raises(ValueError, match="does not support image building"):
+    def test_raises_for_nonexistent_dataset(self) -> None:
+        """Verify UnknownComponentError when dataset doesn't exist."""
+        with pytest.raises(UnknownComponentError):
             get_image_build_specs("nonexistent-dataset", SwebenchDatasetConfig())
+
+    def test_raises_for_dataset_without_image_support(self) -> None:
+        """Verify ValueError when dataset exists but doesn't support image building."""
+        with pytest.raises(ValueError, match="does not support image building"):
+            get_image_build_specs("agentdojo", SwebenchDatasetConfig())
 
 
 class TestSwebenchDatasetGetImageBuildSpecs:
@@ -86,57 +91,3 @@ class TestSwebenchDatasetGetImageBuildSpecs:
                 f"Derived spec {spec.tag} references base_image_tag={spec.base_image_tag!r} "
                 f"which is not produced by any base spec. Available tags: {base_tags}"
             )
-
-
-class TestRegistryEntryPointLoadingErrors:
-    """Tests for error handling when entry point loading fails."""
-
-    @pytest.fixture(autouse=True)
-    def reset_registry_state(self):
-        """Reset registry state before and after each test."""
-        # Save original state
-        original_loaded = registry._image_buildable_classes_loaded
-        original_error = registry._image_buildable_load_error
-        original_classes = registry._image_buildable_classes.copy()
-        original_failed = registry._image_buildable_failed_entry_points.copy()
-
-        yield
-
-        # Restore original state
-        registry._image_buildable_classes_loaded = original_loaded
-        registry._image_buildable_load_error = original_error
-        registry._image_buildable_classes.clear()
-        registry._image_buildable_classes.update(original_classes)
-        registry._image_buildable_failed_entry_points.clear()
-        registry._image_buildable_failed_entry_points.update(original_failed)
-
-    def test_get_image_build_specs_raises_when_entry_point_loading_failed(
-        self,
-    ) -> None:
-        """Verify RuntimeError raised when entry point loading failed completely."""
-        registry._image_buildable_classes_loaded = True
-        registry._image_buildable_load_error = ValueError("Metadata error")
-
-        with pytest.raises(RuntimeError, match="entry point loading failed"):
-            get_image_build_specs("any-dataset", SwebenchDatasetConfig())
-
-    def test_get_datasets_with_image_specs_raises_when_entry_point_loading_failed(
-        self,
-    ) -> None:
-        """Verify RuntimeError raised when entry point loading failed completely."""
-        registry._image_buildable_classes_loaded = True
-        registry._image_buildable_load_error = ImportError("System error")
-
-        with pytest.raises(RuntimeError, match="entry point loading failed"):
-            get_datasets_with_image_specs()
-
-    def test_error_chaining_preserves_original_error(self) -> None:
-        """Verify original error is chained as __cause__."""
-        original_error = RuntimeError("Original failure")
-        registry._image_buildable_classes_loaded = True
-        registry._image_buildable_load_error = original_error
-
-        with pytest.raises(RuntimeError) as exc_info:
-            get_datasets_with_image_specs()
-
-        assert exc_info.value.__cause__ is original_error
