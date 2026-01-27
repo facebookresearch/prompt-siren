@@ -22,6 +22,7 @@ from ...sandbox_managers.abstract import AbstractSandboxManager
 from ...sandbox_managers.image_spec import (
     DerivedImageSpec,
     ImageBuildSpec,
+    MultiStageBuildImageSpec,
     PullImageSpec,
 )
 from ...sandbox_managers.sandbox_task_setup import ContainerSpec
@@ -113,8 +114,19 @@ class SwebenchDataset(AbstractDataset[BashEnvState, str, str, StrContentAttack])
         specs: list[ImageBuildSpec] = []
 
         # 1. Add multi-stage build specs for benign task images
+        #    prepare_build_context uses SWE-bench's native tag as final_tag
+        #    (e.g., "sweb.eval.x86_64.django__django-11179:latest").
+        #    Re-tag to standardized naming so derived specs can reference it.
         for instance in instances:
             multi_stage_spec, _ = prepare_build_context(instance, config)
+            benign_tag = get_benign_image_tag(instance["instance_id"])
+            if multi_stage_spec.final_tag != benign_tag:
+                updated_stages = list(multi_stage_spec.stages)
+                updated_stages[-1] = updated_stages[-1].model_copy(update={"tag": benign_tag})
+                multi_stage_spec = MultiStageBuildImageSpec(
+                    stages=updated_stages,
+                    final_tag=benign_tag,
+                )
             specs.append(multi_stage_spec)
 
         # 2. Add build specs for malicious task service containers
