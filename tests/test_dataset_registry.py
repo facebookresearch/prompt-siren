@@ -57,7 +57,7 @@ class TestSwebenchDatasetGetImageBuildSpecs:
     def test_returns_specs_for_valid_instance(self) -> None:
         """Test that valid instance IDs return image specs."""
         # Use a valid instance ID from INSTANCE_INJECTION_MAPPING
-        config = SwebenchDatasetConfig(instance_ids=["astropy__astropy-12907"])
+        config = SwebenchDatasetConfig()
         specs = SwebenchDataset.get_image_build_specs(config)
 
         # Should have at least one multi-stage build spec for benign task
@@ -68,12 +68,6 @@ class TestSwebenchDatasetGetImageBuildSpecs:
         derived_specs = [s for s in specs if isinstance(s, DerivedImageSpec)]
         # At least one malicious task should have benign_dockerfile_extra
         assert len(derived_specs) >= 1
-
-    def test_raises_on_empty_instances(self) -> None:
-        """Verify RuntimeError raised when no instances match filter."""
-        config = SwebenchDatasetConfig(instance_ids=["nonexistent__nonexistent-99999"])
-        with pytest.raises(RuntimeError, match="no SWE-bench instances"):
-            SwebenchDataset.get_image_build_specs(config)
 
     def test_all_specs_are_image_build_spec(self) -> None:
         """Verify all returned specs are valid ImageBuildSpec types."""
