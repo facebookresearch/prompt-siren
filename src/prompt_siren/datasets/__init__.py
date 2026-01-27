@@ -6,7 +6,10 @@ from .registry import (
     create_dataset,
     dataset_registry,
     get_dataset_config_class,
+    get_datasets_with_image_specs,
+    get_image_build_specs,
     get_registered_datasets,
+    has_image_spec_factory,
     register_dataset,
 )
 
@@ -15,6 +18,9 @@ __all__ = [
     "create_dataset",
     "dataset_registry",
     "get_dataset_config_class",
+    "get_datasets_with_image_specs",
+    "get_image_build_specs",
     "get_registered_datasets",
+    "has_image_spec_factory",
     "register_dataset",
 ]

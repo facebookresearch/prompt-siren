@@ -18,6 +18,12 @@ pytest.importorskip("swebench")
 
 from prompt_siren.build_images import _handle_build_failures, BuildError, ImageBuilder
 from prompt_siren.sandbox_managers.docker.plugins.errors import DockerClientError
+from prompt_siren.sandbox_managers.image_spec import (
+    BuildImageSpec,
+    BuildStage,
+    DerivedImageSpec,
+    MultiStageBuildImageSpec,
+)
 
 
 class MockDockerClient:
@@ -256,3 +262,233 @@ class TestHandleBuildFailures:
         assert "2 image build(s) failed" in str(exc_info.value)
         assert "image1:latest" in str(exc_info.value)
         assert "image2:v1" in str(exc_info.value)
+
+
+class TestImageBuilderBuildAllSpecs:
+    """Tests for ImageBuilder.build_all_specs method."""
+
+    @pytest.fixture
+    def mock_docker(self) -> MockDockerClient:
+        return MockDockerClient()
+
+    @pytest.fixture
+    def builder(self, mock_docker: MockDockerClient, tmp_path: Path) -> ImageBuilder:
+        return ImageBuilder(
+            docker_client=mock_docker,  # type: ignore[arg-type]
+            cache_dir=tmp_path,
+        )
+
+    @pytest.mark.anyio
+    async def test_build_all_specs_orders_base_before_derived(
+        self, mock_docker: MockDockerClient, tmp_path: Path
+    ) -> None:
+        """Verify derived specs are built after all base specs complete."""
+        builder = ImageBuilder(
+            docker_client=mock_docker,  # type: ignore[arg-type]
+            cache_dir=tmp_path,
+        )
+
+        # Track build order at the _build_single_spec and build_modified_image level
+        build_order: list[str] = []
+
+        # Create context dir with Dockerfile
+        context_dir = tmp_path / "context"
+        context_dir.mkdir()
+        (context_dir / "Dockerfile").write_text("FROM alpine")
+
+        # Set up mock to track calls and simulate successful builds
+        mock_docker.inspect_image.side_effect = DockerClientError("Not found", status=404)
+        mock_docker.set_build_results([{"stream": "Done\n"}])
+
+        original_build_single = builder._build_single_spec
+
+        async def tracking_build_single(
+            spec: BuildImageSpec | MultiStageBuildImageSpec,
+        ) -> None:
+            build_order.append(f"base:{spec.tag}")
+            await original_build_single(spec)
+
+        original_modified = builder.build_modified_image
+
+        async def tracking_modified(base_tag: str, dockerfile_extra: str, output_tag: str) -> None:
+            build_order.append(f"derived:{output_tag}")
+            await original_modified(base_tag, dockerfile_extra, output_tag)
+
+        builder._build_single_spec = tracking_build_single  # type: ignore[method-assign]
+        builder.build_modified_image = tracking_modified  # type: ignore[method-assign]
+
+        # Create specs: 2 base specs and 2 derived specs
+        specs = [
+            BuildImageSpec(
+                context_path=str(context_dir),
+                tag="base1:latest",
+            ),
+            DerivedImageSpec(
+                base_image_tag="base1:latest",
+                dockerfile_extra="RUN echo 'derived1'",
+                tag="derived1:latest",
+            ),
+            BuildImageSpec(
+                context_path=str(context_dir),
+                tag="base2:latest",
+            ),
+            DerivedImageSpec(
+                base_image_tag="base2:latest",
+                dockerfile_extra="RUN echo 'derived2'",
+                tag="derived2:latest",
+            ),
+        ]
+
+        errors = await builder.build_all_specs(specs)
+
+        assert errors == []
+        # All base specs should be built before any derived specs
+        assert build_order == [
+            "base:base1:latest",
+            "base:base2:latest",
+            "derived:derived1:latest",
+            "derived:derived2:latest",
+        ]
+
+    @pytest.mark.anyio
+    async def test_build_all_specs_handles_multi_stage_specs(
+        self, mock_docker: MockDockerClient, tmp_path: Path
+    ) -> None:
+        """Verify multi-stage build specs are handled correctly."""
+        builder = ImageBuilder(
+            docker_client=mock_docker,  # type: ignore[arg-type]
+            cache_dir=tmp_path,
+        )
+
+        # Create context dir with Dockerfile
+        context_dir = tmp_path / "context"
+        context_dir.mkdir()
+        (context_dir / "Dockerfile").write_text("FROM alpine")
+
+        mock_docker.inspect_image.side_effect = DockerClientError("Not found", status=404)
+        mock_docker.set_build_results([{"stream": "Done\n"}])
+
+        specs = [
+            MultiStageBuildImageSpec(
+                stages=[
+                    BuildStage(
+                        context_path=str(context_dir),
+                        tag="stage1:latest",
+                        dockerfile_path=None,
+                        parent_tag=None,
+                        build_args=None,
+                    ),
+                    BuildStage(
+                        context_path=str(context_dir),
+                        tag="stage2:latest",
+                        dockerfile_path=None,
+                        parent_tag="stage1:latest",
+                        build_args=None,
+                    ),
+                ],
+                final_tag="stage2:latest",
+            ),
+        ]
+
+        errors = await builder.build_all_specs(specs)
+
+        assert errors == []
+        # Both stages should be built
+        assert "stage1:latest" in builder._built_images
+        assert "stage2:latest" in builder._built_images
+
+    @pytest.mark.anyio
+    async def test_build_all_specs_collects_errors_without_stopping(
+        self, mock_docker: MockDockerClient, tmp_path: Path
+    ) -> None:
+        """Verify build errors are collected but don't stop other builds."""
+        builder = ImageBuilder(
+            docker_client=mock_docker,  # type: ignore[arg-type]
+            cache_dir=tmp_path,
+        )
+
+        # Create context dir with Dockerfile
+        context_dir = tmp_path / "context"
+        context_dir.mkdir()
+        (context_dir / "Dockerfile").write_text("FROM alpine")
+
+        mock_docker.inspect_image.side_effect = DockerClientError("Not found", status=404)
+
+        # First build fails, second succeeds
+        async def build_side_effect(*args: Any, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+            tag = kwargs.get("tag", args[1] if len(args) > 1 else None)
+            if tag == "fail:latest":
+                yield {"error": "Build failed"}
+            else:
+                yield {"stream": "Done\n"}
+
+        mock_docker.build_image = build_side_effect  # type: ignore[method-assign]
+
+        specs = [
+            BuildImageSpec(context_path=str(context_dir), tag="fail:latest"),
+            BuildImageSpec(context_path=str(context_dir), tag="success:latest"),
+        ]
+
+        errors = await builder.build_all_specs(specs)
+
+        assert len(errors) == 1
+        assert errors[0].image_tag == "fail:latest"
+        # Second image should still have been built
+        assert "success:latest" in builder._built_images
+
+    @pytest.mark.anyio
+    async def test_build_all_specs_skips_derived_when_base_fails(
+        self, mock_docker: MockDockerClient, tmp_path: Path
+    ) -> None:
+        """Verify derived specs are skipped when their base image fails to build."""
+        builder = ImageBuilder(
+            docker_client=mock_docker,  # type: ignore[arg-type]
+            cache_dir=tmp_path,
+        )
+
+        # Create context dir with Dockerfile
+        context_dir = tmp_path / "context"
+        context_dir.mkdir()
+        (context_dir / "Dockerfile").write_text("FROM alpine")
+
+        mock_docker.inspect_image.side_effect = DockerClientError("Not found", status=404)
+
+        # First base build fails, second succeeds
+        async def build_side_effect(*args: Any, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+            tag = kwargs.get("tag", args[1] if len(args) > 1 else None)
+            if tag == "fail-base:latest":
+                yield {"error": "Build failed"}
+            else:
+                yield {"stream": "Done\n"}
+
+        mock_docker.build_image = build_side_effect  # type: ignore[method-assign]
+
+        specs = [
+            BuildImageSpec(context_path=str(context_dir), tag="fail-base:latest"),
+            BuildImageSpec(context_path=str(context_dir), tag="success-base:latest"),
+            DerivedImageSpec(
+                base_image_tag="fail-base:latest",
+                dockerfile_extra="RUN echo derived-from-fail",
+                tag="derived-from-fail:latest",
+            ),
+            DerivedImageSpec(
+                base_image_tag="success-base:latest",
+                dockerfile_extra="RUN echo derived-from-success",
+                tag="derived-from-success:latest",
+            ),
+        ]
+
+        errors = await builder.build_all_specs(specs)
+
+        # Should have 2 errors: fail-base and derived-from-fail (skipped because base failed)
+        assert len(errors) == 2
+        error_tags = {e.image_tag for e in errors}
+        assert "fail-base:latest" in error_tags
+        assert "derived-from-fail:latest" in error_tags
+        # The derived-from-fail error should mention the base image
+        derived_error = next(e for e in errors if e.image_tag == "derived-from-fail:latest")
+        assert "fail-base:latest" in str(derived_error.error)
+
+        # success-base and derived-from-success should have been built
+        assert "success-base:latest" in builder._built_images
+        assert "derived-from-success:latest" in builder._built_images
