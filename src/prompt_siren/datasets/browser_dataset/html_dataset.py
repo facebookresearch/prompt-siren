@@ -14,6 +14,7 @@ from pydantic_ai.tools import Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from ...environments.browser_env import apply_injections, BrowserEnvState
+from ...registry_base import ComponentEntryPoint
 from ...sandbox_managers.abstract import AbstractSandboxManager
 from ...types import InjectionAttacksDict, StrContentAttack
 from .base import (
@@ -199,6 +200,7 @@ def create_html_browser_dataset(
     )
 
 
-# Entry point tuple: (factory_fn, dataset_class)
 # HTMLBrowserDataset implements ImageBuildableDataset via BaseBrowserDataset
-html_entry = (create_html_browser_dataset, HTMLBrowserDataset)
+html_entry = ComponentEntryPoint(
+    create_html_browser_dataset, HTMLDatasetConfig, HTMLBrowserDataset
+)

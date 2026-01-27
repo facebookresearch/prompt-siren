@@ -30,7 +30,7 @@ from prompt_siren.sandbox_managers.sandbox_state import SandboxState
 from prompt_siren.sandbox_managers.sandbox_task_setup import (
     ContainerSetup,
     ContainerSpec,
-    SandboxTaskSetup,
+    TaskSetup,
 )
 from pydantic_ai import RunContext
 from pydantic_ai.models.test import TestModel
@@ -44,7 +44,7 @@ async def sandbox_manager(
     test_image: str,
     docker_client_type: str,
     create_manager_config,
-) -> AsyncIterator[tuple[AbstractSandboxManager, str, SandboxTaskSetup]]:
+) -> AsyncIterator[tuple[AbstractSandboxManager, str, TaskSetup]]:
     """Create a sandbox manager for tool testing.
 
     Returns tuple of (sandbox_manager, test_image, task_setup) for use by dependent fixtures.
@@ -57,7 +57,7 @@ async def sandbox_manager(
     # Create TaskSetup for API
     container_spec = ContainerSpec(image_spec=PullImageSpec(tag=test_image))
     agent_container = ContainerSetup(name="agent", spec=container_spec)
-    task_setup = SandboxTaskSetup(
+    task_setup = TaskSetup(
         task_id="tool-test",
         agent_container=agent_container,
         service_containers={},
@@ -71,7 +71,7 @@ async def sandbox_manager(
 
 @pytest.fixture(scope="module")
 async def container_id(
-    sandbox_manager: tuple[AbstractSandboxManager, str, SandboxTaskSetup],
+    sandbox_manager: tuple[AbstractSandboxManager, str, TaskSetup],
 ) -> AsyncIterator[str]:
     """Create a container for tool testing.
 
@@ -86,7 +86,7 @@ async def container_id(
 
 @pytest.fixture(scope="module")
 async def run_context(
-    sandbox_manager: tuple[AbstractSandboxManager, str, SandboxTaskSetup], container_id: str
+    sandbox_manager: tuple[AbstractSandboxManager, str, TaskSetup], container_id: str
 ) -> RunContext[BashEnvState]:
     """Create a RunContext for tool testing.
 

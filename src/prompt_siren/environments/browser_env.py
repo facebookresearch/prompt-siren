@@ -40,7 +40,7 @@ from ..sandbox_managers.sandbox_task_setup import (
     ContainerSetup,
     ContainerSpec,
     NetworkConfig,
-    SandboxTaskSetup,
+    TaskSetup,
 )
 from ..tasks import BenignTask, MaliciousTask, TaskCouple
 from ..types import InjectionAttacksDict, InjectionVectorID, StrContentAttack
@@ -216,7 +216,7 @@ class BrowserEnvState:
     playwright: Playwright
     sandbox_state: SandboxState
     sandbox_manager: AbstractSandboxManager
-    task_setup: SandboxTaskSetup
+    task_setup: TaskSetup
     start_url: str
     _captured_requests: list[CapturedRequest] = field(default_factory=list)
 
@@ -290,7 +290,7 @@ class BrowserEnvironment(
     _render_fn: RenderFn[OutputT]
 
     # Task setups prepared during batch context
-    _task_setups: list[SandboxTaskSetup]
+    _task_setups: list[TaskSetup]
 
     def __init__(
         self,
@@ -490,7 +490,7 @@ class BrowserEnvironment(
         task: TaskCouple[BrowserEnvState]
         | BenignTask[BrowserEnvState]
         | MaliciousTask[BrowserEnvState],
-    ) -> SandboxTaskSetup:
+    ) -> TaskSetup:
         """Create TaskSetup for a single task with browser + required site containers."""
         task_id = task.id
         sites = self._get_sites_from_task(task)
@@ -512,7 +512,7 @@ class BrowserEnvironment(
         # Sanitize task ID for network name
         safe_task_id = task_id.replace(":", "-").replace("/", "-")
 
-        return SandboxTaskSetup(
+        return TaskSetup(
             task_id=task_id,
             agent_container=ContainerSetup(
                 name="browser",

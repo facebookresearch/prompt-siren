@@ -41,7 +41,7 @@ class NetworkConfig:
 
 
 @dataclass(frozen=True)
-class SandboxTaskSetup:
+class TaskSetup:
     """Setup for tasks with one agent container and optional service containers.
 
     The agent container is always required and has a dedicated field.

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from ..abstract import ExecOutput
 from ..sandbox_state import ContainerID, SandboxState
-from ..sandbox_task_setup import ContainerSetup, SandboxTaskSetup
+from ..sandbox_task_setup import ContainerSetup, TaskSetup
 from .contexts import BatchState, TaskSandboxContext
 from .exec_utils import exec_in_container
 from .image_cache import ImageCache
@@ -94,7 +94,7 @@ class DockerSandboxManager:
         self._batch_state: BatchState | None = None
 
     @asynccontextmanager
-    async def setup_batch(self, task_setups: Sequence[SandboxTaskSetup]) -> AsyncIterator[None]:
+    async def setup_batch(self, task_setups: Sequence[TaskSetup]) -> AsyncIterator[None]:
         """Prepare all images and resources for the batch.
 
         Creates Docker client based on config, builds/pulls all images
@@ -181,7 +181,7 @@ class DockerSandboxManager:
             logger.debug("[DockerSandboxManager] setup_batch: Cleanup completed")
 
     @asynccontextmanager
-    async def setup_task(self, task_setup: SandboxTaskSetup) -> AsyncIterator[SandboxState]:
+    async def setup_task(self, task_setup: TaskSetup) -> AsyncIterator[SandboxState]:
         """Create containers and network for a task.
 
         Creates a TaskSandboxContext, sets up all containers and network,
@@ -297,7 +297,7 @@ class DockerSandboxManager:
             shell_path=shell_path,
         )
 
-    async def create_sandbox(self, task_setup: SandboxTaskSetup) -> SandboxState:
+    async def create_sandbox(self, task_setup: TaskSetup) -> SandboxState:
         """Create containers and network for a task without context manager.
 
         Unlike setup_task(), this method does not manage cleanup automatically.

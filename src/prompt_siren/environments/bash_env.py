@@ -14,7 +14,7 @@ from ..sandbox_managers.sandbox_task_setup import (
     ContainerSetup,
     ContainerSpec,
     NetworkConfig,
-    SandboxTaskSetup,
+    TaskSetup,
 )
 from ..tasks import BenignTask, MaliciousTask, TaskCouple
 from ..types import InjectionAttacksDict, InjectionVectorID, StrContentAttack
@@ -84,7 +84,7 @@ class MaliciousTaskBashEnvMetadataProtocol(Protocol):
 
 def _create_benign_task_setup(
     task: BenignTask[BashEnvState] | MaliciousTask[BashEnvState],
-) -> SandboxTaskSetup:
+) -> TaskSetup:
     """Creates setup for benign or malicious task with optional service containers.
 
     For benign tasks, uses the benign metadata directly.
@@ -122,7 +122,7 @@ def _create_benign_task_setup(
         safe_task_id = task.id.replace(":", "-").replace("/", "-")
         network_config = NetworkConfig(name=f"net-{safe_task_id}", internal=True)
 
-    return SandboxTaskSetup(
+    return TaskSetup(
         task_id=task.id,
         agent_container=ContainerSetup(
             name="agent",
@@ -133,7 +133,7 @@ def _create_benign_task_setup(
     )
 
 
-def _create_task_couple_setup(task: TaskCouple[BashEnvState]) -> SandboxTaskSetup:
+def _create_task_couple_setup(task: TaskCouple[BashEnvState]) -> TaskSetup:
     """Creates multi-container setup for task couple with agent + service containers.
 
     Merges benign and malicious service containers. If there are naming conflicts,
@@ -185,7 +185,7 @@ def _create_task_couple_setup(task: TaskCouple[BashEnvState]) -> SandboxTaskSetu
             spec=benign_meta.agent_container_spec,
         )
 
-    return SandboxTaskSetup(
+    return TaskSetup(
         task_id=task.id,
         agent_container=agent_container,
         service_containers=merged_service_containers,
@@ -195,7 +195,7 @@ def _create_task_couple_setup(task: TaskCouple[BashEnvState]) -> SandboxTaskSetu
 
 def _create_task_setup_from_task(
     task: TaskCouple[BashEnvState] | BenignTask[BashEnvState] | MaliciousTask[BashEnvState],
-) -> SandboxTaskSetup:
+) -> TaskSetup:
     """Convert task to unified setup structure.
 
     For TaskCouple: creates multi-container setup with benign + attack containers

@@ -25,7 +25,7 @@ from prompt_siren.environments.abstract import (
     NonSnapshottableAbstractEnvironment,
     SnapshottableAbstractEnvironment,
 )
-from prompt_siren.sandbox_managers.sandbox_task_setup import SandboxTaskSetup
+from prompt_siren.sandbox_managers.sandbox_task_setup import TaskSetup
 from prompt_siren.tasks import BenignTask, MaliciousTask, TaskCouple, TaskResult
 from prompt_siren.types import (
     InjectableUserContent,
@@ -628,7 +628,7 @@ class MockSandboxManager:
         yield  # pragma: no cover
 
     @asynccontextmanager
-    async def setup_task(self, task_setup: SandboxTaskSetup) -> AsyncIterator:
+    async def setup_task(self, task_setup: TaskSetup) -> AsyncIterator:
         """Mock setup_task for testing."""
         raise NotImplementedError("Mock sandbox manager for testing only")
         yield  # pragma: no cover
@@ -651,7 +651,7 @@ class MockSandboxManager:
         """Mock clone_sandbox for testing."""
         raise NotImplementedError("Mock sandbox manager for testing only")
 
-    async def create_sandbox(self, task_setup: SandboxTaskSetup):
+    async def create_sandbox(self, task_setup: TaskSetup):
         """Mock create_sandbox for testing."""
         raise NotImplementedError("Mock sandbox manager for testing only")
 

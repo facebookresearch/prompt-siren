@@ -23,7 +23,7 @@ from prompt_siren.datasets.swebench_dataset.tools import (
 from prompt_siren.environments.bash_env import BashEnvState
 from prompt_siren.sandbox_managers.abstract import ExecOutput
 from prompt_siren.sandbox_managers.sandbox_state import SandboxState
-from prompt_siren.sandbox_managers.sandbox_task_setup import SandboxTaskSetup
+from prompt_siren.sandbox_managers.sandbox_task_setup import TaskSetup
 from pydantic_ai import RunContext
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
@@ -43,7 +43,7 @@ class MockSandboxManager:
         yield
 
     @asynccontextmanager
-    async def setup_task(self, task_setup: SandboxTaskSetup) -> AsyncIterator[SandboxState]:
+    async def setup_task(self, task_setup: TaskSetup) -> AsyncIterator[SandboxState]:
         """Mock setup_task - not used in tool tests."""
         yield SandboxState(
             agent_container_id="test-container",
@@ -56,7 +56,7 @@ class MockSandboxManager:
         """Mock clone_sandbox - not used in tool tests."""
         return source_state
 
-    async def create_sandbox(self, task_setup: SandboxTaskSetup) -> SandboxState:
+    async def create_sandbox(self, task_setup: TaskSetup) -> SandboxState:
         """Mock create_sandbox - not used in tool tests."""
         return SandboxState(
             agent_container_id="test-container",

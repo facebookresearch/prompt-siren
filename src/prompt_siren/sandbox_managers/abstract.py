@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Protocol, TypeAlias
 
 from .sandbox_state import ContainerID, SandboxState
-from .sandbox_task_setup import SandboxTaskSetup
+from .sandbox_task_setup import TaskSetup
 
 
 @dataclass(frozen=True)
@@ -97,7 +97,7 @@ class AbstractSandboxManager(Protocol):
 
     @asynccontextmanager
     @abstractmethod
-    async def setup_batch(self, task_setups: Sequence[SandboxTaskSetup]) -> AsyncIterator[None]:
+    async def setup_batch(self, task_setups: Sequence[TaskSetup]) -> AsyncIterator[None]:
         """Prepare all images (with modifications) for the batch.
 
         Responsibilities:
@@ -110,7 +110,7 @@ class AbstractSandboxManager(Protocol):
 
     @asynccontextmanager
     @abstractmethod
-    async def setup_task(self, task_setup: SandboxTaskSetup) -> AsyncIterator[SandboxState]:
+    async def setup_task(self, task_setup: TaskSetup) -> AsyncIterator[SandboxState]:
         """Create sandbox (containers and network) for a task.
 
         Uses configuration from task_setup to create containers and network.
@@ -168,7 +168,7 @@ class AbstractSandboxManager(Protocol):
         raise NotImplementedError()
 
     @abstractmethod
-    async def create_sandbox(self, task_setup: SandboxTaskSetup) -> SandboxState:
+    async def create_sandbox(self, task_setup: TaskSetup) -> SandboxState:
         """Create a sandbox (containers and network) for a task without context manager.
 
         Unlike setup_task(), this method does not manage cleanup automatically.

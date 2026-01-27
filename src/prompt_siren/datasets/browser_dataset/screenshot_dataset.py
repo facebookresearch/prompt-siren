@@ -14,6 +14,7 @@ from pydantic_ai.tools import Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from ...environments.browser_env import apply_injections, BrowserEnvState
+from ...registry_base import ComponentEntryPoint
 from ...sandbox_managers.abstract import AbstractSandboxManager
 from ...types import InjectionAttacksDict, StrContentAttack
 from .base import (
@@ -126,6 +127,7 @@ def create_screenshot_browser_dataset(
     )
 
 
-# Entry point tuple: (factory_fn, dataset_class)
 # ScreenshotBrowserDataset implements ImageBuildableDataset via BaseBrowserDataset
-screenshot_entry = (create_screenshot_browser_dataset, ScreenshotBrowserDataset)
+screenshot_entry = ComponentEntryPoint(
+    create_screenshot_browser_dataset, BrowserDatasetConfig, ScreenshotBrowserDataset
+)

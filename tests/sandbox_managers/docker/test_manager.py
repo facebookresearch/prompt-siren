@@ -21,7 +21,7 @@ from prompt_siren.sandbox_managers.sandbox_state import SandboxState
 from prompt_siren.sandbox_managers.sandbox_task_setup import (
     ContainerSetup,
     ContainerSpec,
-    SandboxTaskSetup,
+    TaskSetup,
 )
 
 pytestmark = pytest.mark.anyio
@@ -35,11 +35,11 @@ def manager() -> DockerSandboxManager:
 
 
 @pytest.fixture
-def task_setup() -> SandboxTaskSetup:
+def task_setup() -> TaskSetup:
     """Create a basic task setup."""
     container_spec = ContainerSpec(image_spec=PullImageSpec(tag="python:3.10-slim"))
     agent_container = ContainerSetup(name="agent", spec=container_spec)
-    return SandboxTaskSetup(
+    return TaskSetup(
         task_id="test-task",
         agent_container=agent_container,
         service_containers={},
@@ -52,7 +52,7 @@ class TestDockerSandboxManagerCleanup:
 
     @patch("prompt_siren.sandbox_managers.docker.manager.create_docker_client_from_config")
     async def test_setup_batch_cleans_up_contexts(
-        self, mock_get_client, manager: DockerSandboxManager, task_setup: SandboxTaskSetup
+        self, mock_get_client, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that setup_batch cleans up all task contexts on exit."""
         mock_docker = AsyncMock()
@@ -85,7 +85,7 @@ class TestDockerSandboxManagerGuardConditions:
     """Tests for guard conditions (RuntimeError when called outside batch)."""
 
     async def test_setup_task_outside_batch_raises_error(
-        self, manager: DockerSandboxManager, task_setup: SandboxTaskSetup
+        self, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that calling setup_task outside setup_batch raises RuntimeError."""
         with pytest.raises(RuntimeError, match="setup_task called outside of setup_batch context"):
@@ -117,7 +117,7 @@ class TestDockerSandboxManagerContextLookup:
 
     @patch("prompt_siren.sandbox_managers.docker.manager.create_docker_client_from_config")
     async def test_clone_invalid_execution_id_raises_error(
-        self, mock_get_client, manager: DockerSandboxManager, task_setup: SandboxTaskSetup
+        self, mock_get_client, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that cloning with invalid execution_id raises ValueError."""
         mock_docker = AsyncMock()
@@ -142,7 +142,7 @@ class TestDockerSandboxManagerConcurrency:
 
     @patch("prompt_siren.sandbox_managers.docker.manager.create_docker_client_from_config")
     async def test_parallel_tasks_with_same_task_id(
-        self, mock_get_client, manager: DockerSandboxManager, task_setup: SandboxTaskSetup
+        self, mock_get_client, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that parallel tasks with same task_id get unique execution_ids."""
         mock_docker = AsyncMock()
@@ -188,7 +188,7 @@ class TestDockerSandboxManagerCloning:
 
     @patch("prompt_siren.sandbox_managers.docker.manager.create_docker_client_from_config")
     async def test_clone_preserves_custom_command(
-        self, mock_get_client, manager: DockerSandboxManager, task_setup: SandboxTaskSetup
+        self, mock_get_client, manager: DockerSandboxManager, task_setup: TaskSetup
     ):
         """Test that cloning a container preserves custom command."""
         # Setup mock Docker client (AbstractDockerClient interface)

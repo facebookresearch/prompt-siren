@@ -19,7 +19,7 @@ from prompt_siren.datasets.browser_dataset import (
     ScreenshotBrowserDataset,
 )
 from prompt_siren.sandbox_managers.docker.manager import DockerSandboxManager
-from prompt_siren.sandbox_managers.sandbox_task_setup import SandboxTaskSetup
+from prompt_siren.sandbox_managers.sandbox_task_setup import TaskSetup
 
 pytestmark = [pytest.mark.anyio, pytest.mark.docker_integration]
 
@@ -30,7 +30,7 @@ class TestBrowserContainerIntegration:
     async def test_browser_container_starts(
         self,
         docker_sandbox_manager: DockerSandboxManager,
-        browser_task_setup: SandboxTaskSetup,
+        browser_task_setup: TaskSetup,
     ) -> None:
         """Test that browser container starts and CDP port is accessible."""
         async with docker_sandbox_manager.setup_batch([browser_task_setup]):
@@ -53,7 +53,7 @@ class TestBrowserContainerIntegration:
     async def test_browser_cdp_connection(
         self,
         docker_sandbox_manager: DockerSandboxManager,
-        browser_task_setup: SandboxTaskSetup,
+        browser_task_setup: TaskSetup,
     ) -> None:
         """Test that we can connect to browser via CDP using Playwright."""
         pytest.importorskip("playwright")
@@ -88,7 +88,7 @@ class TestBrowserContainerIntegration:
     async def test_browser_page_screenshot(
         self,
         docker_sandbox_manager: DockerSandboxManager,
-        browser_task_setup: SandboxTaskSetup,
+        browser_task_setup: TaskSetup,
     ) -> None:
         """Test that we can take screenshots from browser pages."""
         pytest.importorskip("playwright")

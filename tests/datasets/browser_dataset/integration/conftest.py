@@ -19,7 +19,7 @@ from prompt_siren.sandbox_managers.sandbox_task_setup import (
     ContainerSetup,
     ContainerSpec,
     NetworkConfig,
-    SandboxTaskSetup,
+    TaskSetup,
 )
 
 # Browser container image (Headless Chrome with CDP support)
@@ -68,7 +68,7 @@ def docker_sandbox_manager(docker_sandbox_config: DockerSandboxConfig) -> Docker
 
 
 @pytest.fixture(scope="module")
-def browser_task_setup(browser_image: str) -> SandboxTaskSetup:
+def browser_task_setup(browser_image: str) -> TaskSetup:
     """Create a TaskSetup for browser container tests.
 
     Note: chromedp/headless-shell has a built-in ENTRYPOINT that runs
@@ -80,7 +80,7 @@ def browser_task_setup(browser_image: str) -> SandboxTaskSetup:
         ports={CDP_PORT: CDP_PORT},
     )
 
-    return SandboxTaskSetup(
+    return TaskSetup(
         task_id="browser-integration-test",
         agent_container=ContainerSetup(name="browser", spec=browser_spec),
         service_containers={},

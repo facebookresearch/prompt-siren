@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..sandbox_state import ContainerID, PortBindings, SandboxState
-from ..sandbox_task_setup import ContainerSetup, SandboxTaskSetup
+from ..sandbox_task_setup import ContainerSetup, TaskSetup
 from .image_cache import ImageCache
 from .plugins import AbstractContainer, AbstractDockerClient
 
@@ -68,7 +68,7 @@ class TaskSandboxContext:
 
     async def create_containers(
         self,
-        task_setup: SandboxTaskSetup,
+        task_setup: TaskSetup,
         network_enabled: bool = True,
     ) -> SandboxState:
         """Create all containers for this task.
@@ -196,7 +196,7 @@ class TaskSandboxContext:
                 return_exceptions=True,  # Continue cleanup even if one fails
             )
 
-    async def _create_network(self, task_setup: SandboxTaskSetup, network_enabled: bool) -> str:
+    async def _create_network(self, task_setup: TaskSetup, network_enabled: bool) -> str:
         """Create a network for multi-container setup.
 
         Args:
