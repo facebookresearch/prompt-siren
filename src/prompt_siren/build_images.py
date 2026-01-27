@@ -553,18 +553,6 @@ async def run_build(
     help="Registry to tag and push images to (e.g., 'my-registry.com/myrepo')",
 )
 @click.option(
-    "--max-instances",
-    type=int,
-    default=None,
-    help="Maximum number of instances to build (for swebench dataset)",
-)
-@click.option(
-    "--instance-ids",
-    multiple=True,
-    default=None,
-    help="Specific instance IDs to build (for swebench dataset, can be specified multiple times)",
-)
-@click.option(
     "-v",
     "--verbose",
     is_flag=True,
@@ -577,8 +565,6 @@ def main(
     cache_dir: str,
     rebuild_existing: bool,
     registry: str | None,
-    max_instances: int | None,
-    instance_ids: tuple[str, ...],
     verbose: bool,
 ) -> None:
     """Build Docker images for datasets.
@@ -591,14 +577,8 @@ def main(
         # Build images for SWE-bench dataset
         prompt-siren-build-images --dataset swebench
 
-        # Build images for browser-screenshot dataset
-        prompt-siren-build-images --dataset browser-screenshot
-
         # Build images for all supported datasets
         prompt-siren-build-images --all-datasets
-
-        # Build with a limited number of instances (for testing)
-        prompt-siren-build-images --dataset swebench --max-instances 5
     """
     # Configure logging
     log_level = logging.DEBUG if verbose else logging.INFO
@@ -620,16 +600,6 @@ def main(
         logger.error("Must specify --dataset or --all-datasets")
         sys.exit(1)
 
-    # Build config overrides for swebench
-    config_overrides: dict[str, dict[str, Any]] = {}
-    if max_instances is not None or instance_ids:
-        swebench_overrides: dict[str, Any] = {"cache_dir": cache_dir}
-        if max_instances is not None:
-            swebench_overrides["max_instances"] = max_instances
-        if instance_ids:
-            swebench_overrides["instance_ids"] = list(instance_ids)
-        config_overrides["swebench"] = swebench_overrides
-
     try:
         asyncio.run(
             run_build(
@@ -637,7 +607,6 @@ def main(
                 cache_dir=cache_dir,
                 rebuild_existing=rebuild_existing,
                 registry=registry,
-                config_overrides=config_overrides,
             )
         )
     except ExceptionGroup as eg:
