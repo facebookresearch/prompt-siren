@@ -35,6 +35,7 @@ from pydantic_ai.tools import Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 from ..environments.agentdojo_env import AgentDojoEnv, make_agentdojo_env
+from ..registry_base import ComponentEntryPoint
 from ..tasks import (
     BenignTask,
     MaliciousTask,
@@ -309,4 +310,6 @@ def create_agentdojo_dataset(
     return load_agentdojo_dataset(config)
 
 
-agentdojo_entry = (create_agentdojo_dataset, AgentDojoDatasetConfig, AgentDojoDataset)
+agentdojo_entry = ComponentEntryPoint(
+    create_agentdojo_dataset, AgentDojoDatasetConfig, AgentDojoDataset
+)

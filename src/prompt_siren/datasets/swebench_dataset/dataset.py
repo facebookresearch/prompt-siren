@@ -18,6 +18,7 @@ except ImportError as e:
 
 from ...environments.abstract import AbstractEnvironment
 from ...environments.bash_env import BashEnvironment, BashEnvState
+from ...registry_base import ComponentEntryPoint
 from ...sandbox_managers.abstract import AbstractSandboxManager
 from ...sandbox_managers.image_spec import (
     DerivedImageSpec,
@@ -348,6 +349,7 @@ def create_swebench_dataset(
     )
 
 
-# Entry point tuple: (factory_fn, config_class, component_class)
 # SwebenchDataset implements ImageBuildableDataset via get_image_build_specs classmethod
-swebench_entry = (create_swebench_dataset, SwebenchDatasetConfig, SwebenchDataset)
+swebench_entry = ComponentEntryPoint(
+    create_swebench_dataset, SwebenchDatasetConfig, SwebenchDataset
+)

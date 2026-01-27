@@ -5,7 +5,7 @@ import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
-from prompt_siren.registry_base import BaseRegistry
+from prompt_siren.registry_base import BaseRegistry, ComponentEntryPoint
 from pydantic import BaseModel
 
 
@@ -22,7 +22,7 @@ def dummy_factory(config: DummyConfig) -> DummyComponent:
 
 
 class TestTupleEntryPointHandling:
-    """Tests for entry point formats: 3-tuple (factory, config_class, component_class) vs plain factory."""
+    """Tests for entry point formats: ComponentEntryPoint / plain tuple vs plain factory."""
 
     def _make_entry_point(self, name: str, load_result: object) -> MagicMock:
         ep = MagicMock()
@@ -30,11 +30,13 @@ class TestTupleEntryPointHandling:
         ep.load.return_value = load_result
         return ep
 
-    def test_tuple_entry_stores_component_class(self) -> None:
-        """3-tuple entry point stores the component class in _component_classes."""
+    def test_component_entry_point_stores_component_class(self) -> None:
+        """ComponentEntryPoint entry stores the component class in _component_classes."""
         registry = BaseRegistry[DummyComponent, None]("test", "test.group")
 
-        ep = self._make_entry_point("my_plugin", (dummy_factory, DummyConfig, DummyComponent))
+        ep = self._make_entry_point(
+            "my_plugin", ComponentEntryPoint(dummy_factory, DummyConfig, DummyComponent)
+        )
 
         with patch("importlib.metadata.entry_points", return_value=[ep]):
             classes = registry.get_component_classes()
@@ -42,15 +44,31 @@ class TestTupleEntryPointHandling:
         assert "my_plugin" in classes
         assert classes["my_plugin"] is DummyComponent
 
-    def test_tuple_entry_extracts_config_class(self) -> None:
-        """3-tuple entry point uses the second element as the config class."""
+    def test_component_entry_point_extracts_config_class(self) -> None:
+        """ComponentEntryPoint entry uses the second element as the config class."""
+        registry = BaseRegistry[DummyComponent, None]("test", "test.group")
+
+        ep = self._make_entry_point(
+            "my_plugin", ComponentEntryPoint(dummy_factory, DummyConfig, DummyComponent)
+        )
+
+        with patch("importlib.metadata.entry_points", return_value=[ep]):
+            config_class = registry.get_config_class("my_plugin")
+
+        assert config_class is DummyConfig
+
+    def test_plain_tuple_still_works(self) -> None:
+        """Plain 3-tuple entry points still work for backward compatibility."""
         registry = BaseRegistry[DummyComponent, None]("test", "test.group")
 
         ep = self._make_entry_point("my_plugin", (dummy_factory, DummyConfig, DummyComponent))
 
         with patch("importlib.metadata.entry_points", return_value=[ep]):
+            classes = registry.get_component_classes()
             config_class = registry.get_config_class("my_plugin")
 
+        assert "my_plugin" in classes
+        assert classes["my_plugin"] is DummyComponent
         assert config_class is DummyConfig
 
     def test_plain_factory_entry_not_in_component_classes(self) -> None:

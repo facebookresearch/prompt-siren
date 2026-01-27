@@ -32,6 +32,13 @@ class ImageBuildableDataset(Protocol):
     Dataset classes can implement this protocol by providing a
     `get_image_build_specs` classmethod that returns the image specs
     needed for the dataset.
+
+    Note:
+        The ``config`` parameter is typed as ``BaseModel`` here so that
+        ``issubclass(SomeDataset, ImageBuildableDataset)`` works at runtime
+        (``runtime_checkable`` requires the protocol signature to be compatible
+        with all implementors). Concrete implementations should narrow the type
+        to their specific config class (e.g., ``SwebenchDatasetConfig``).
     """
 
     @classmethod
@@ -116,10 +123,17 @@ def get_image_build_specs(dataset_type: str, config: BaseModel) -> list[ImageBui
     get_dataset_config_class(dataset_type)
     classes = dataset_registry.get_component_classes()
     dataset_class = classes.get(dataset_type)
-    if dataset_class is None or not issubclass(dataset_class, ImageBuildableDataset):
+    if dataset_class is None:
         raise ValueError(
             f"Dataset type '{dataset_type}' does not support image building. "
-            "The dataset class must have a get_image_build_specs classmethod."
+            "The entry point must be a 3-tuple (factory, config_class, component_class) "
+            "to provide a component class."
+        )
+    if not issubclass(dataset_class, ImageBuildableDataset):
+        raise ValueError(
+            f"Dataset type '{dataset_type}' does not support image building. "
+            "The dataset class must implement the ImageBuildableDataset protocol "
+            "(provide a get_image_build_specs classmethod)."
         )
     return dataset_class.get_image_build_specs(config)
 
