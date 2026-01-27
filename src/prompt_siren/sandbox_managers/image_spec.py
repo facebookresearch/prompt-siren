@@ -124,6 +124,17 @@ class MultiStageBuildImageSpec(BaseModel):
         description="Tag of the final image to use for containers (typically the last stage's tag)"
     )
 
+    @model_validator(mode="after")
+    def _validate_final_tag_matches_last_stage(self) -> Self:
+        if not self.stages:
+            raise ValueError("stages must not be empty")
+        if self.final_tag != self.stages[-1].tag:
+            raise ValueError(
+                f"final_tag must match the last stage's tag: "
+                f"final_tag={self.final_tag!r}, last stage tag={self.stages[-1].tag!r}"
+            )
+        return self
+
     @property
     def tag(self) -> ImageTag:
         """Alias for final_tag, providing a uniform .tag interface across all ImageBuildSpec types."""

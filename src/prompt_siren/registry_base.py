@@ -96,6 +96,15 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
         # Store errors from failed entry point loads to re-raise when plugin is actually requested
         self._failed_entry_points: dict[str, Exception] = {}
 
+    @property
+    def failed_entry_points(self) -> dict[str, Exception]:
+        """Return a copy of entry points that failed to load.
+
+        Triggers entry point loading if not already done.
+        """
+        self._load_entry_points()
+        return dict(self._failed_entry_points)
+
     def _load_entry_points(self) -> None:
         """Load components from entry points if not already loaded.
 

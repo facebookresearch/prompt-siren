@@ -16,6 +16,7 @@ from prompt_siren.sandbox_managers.image_spec import (
     MultiStageBuildImageSpec,
     PullImageSpec,
 )
+from pydantic import ValidationError
 
 
 class MockDockerClient:
@@ -198,7 +199,7 @@ class TestImageCacheGetCacheKey:
     def test_get_cache_key_multi_stage_spec(self) -> None:
         """Test cache key generation for MultiStageBuildImageSpec."""
         spec = MultiStageBuildImageSpec(
-            stages=[BuildStage(context_path="/stage1", tag="stage1:latest")],
+            stages=[BuildStage(context_path="/stage1", tag="final:v1")],
             final_tag="final:v1",
         )
         key = ImageCache._get_cache_key(spec)
@@ -219,3 +220,70 @@ class TestImageCacheGetCacheKey:
         spec = PullImageSpec(tag="alpine:3.18")
         key = ImageCache._get_cache_key(spec)
         assert key == "pull:alpine:3.18"
+
+
+class TestDerivedImageSpecValidation:
+    """Tests for DerivedImageSpec validators."""
+
+    def test_empty_dockerfile_extra_raises(self) -> None:
+        """Empty dockerfile_extra should be rejected."""
+        with pytest.raises(ValidationError):
+            DerivedImageSpec(
+                base_image_tag="base:v1",
+                dockerfile_extra="",
+                tag="derived:v1",
+            )
+
+    def test_tag_same_as_base_image_tag_raises(self) -> None:
+        """tag must differ from base_image_tag."""
+        with pytest.raises(ValidationError, match="must differ from"):
+            DerivedImageSpec(
+                base_image_tag="same:v1",
+                dockerfile_extra="RUN echo x",
+                tag="same:v1",
+            )
+
+    def test_valid_derived_image_spec(self) -> None:
+        """Valid construction succeeds."""
+        spec = DerivedImageSpec(
+            base_image_tag="base:v1",
+            dockerfile_extra="RUN echo x",
+            tag="derived:v1",
+        )
+        assert spec.tag == "derived:v1"
+        assert spec.base_image_tag == "base:v1"
+
+
+class TestMultiStageBuildImageSpecValidation:
+    """Tests for MultiStageBuildImageSpec validators."""
+
+    def test_empty_stages_raises(self) -> None:
+        """Empty stages list should be rejected."""
+        with pytest.raises(ValidationError, match="stages must not be empty"):
+            MultiStageBuildImageSpec(stages=[], final_tag="app:latest")
+
+    def test_final_tag_mismatch_raises(self) -> None:
+        """final_tag must match the last stage's tag."""
+        with pytest.raises(ValidationError, match="final_tag must match"):
+            MultiStageBuildImageSpec(
+                stages=[
+                    BuildStage(context_path="/stage1", tag="stage1:latest"),
+                ],
+                final_tag="wrong:latest",
+            )
+
+    def test_valid_multi_stage_spec(self) -> None:
+        """Valid construction succeeds."""
+        spec = MultiStageBuildImageSpec(
+            stages=[
+                BuildStage(context_path="/base", tag="base:latest"),
+                BuildStage(
+                    context_path="/app",
+                    tag="app:latest",
+                    parent_tag="base:latest",
+                ),
+            ],
+            final_tag="app:latest",
+        )
+        assert spec.tag == "app:latest"
+        assert len(spec.stages) == 2

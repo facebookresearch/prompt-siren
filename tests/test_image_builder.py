@@ -489,3 +489,161 @@ class TestImageBuilderBuildAllSpecs:
         # success-base and derived-from-success should have been built
         assert "success-base:latest" in builder._built_images
         assert "derived-from-success:latest" in builder._built_images
+
+
+class TestBuildAllSpecsPushToRegistry:
+    """Tests for push-to-registry behavior in build_all_specs."""
+
+    @pytest.fixture
+    def mock_docker(self) -> MockDockerClient:
+        return MockDockerClient()
+
+    @pytest.mark.anyio
+    async def test_push_called_for_each_successful_spec(
+        self, mock_docker: MockDockerClient, tmp_path: Path
+    ) -> None:
+        """push_image is called for each successfully built spec."""
+        builder = ImageBuilder(
+            docker_client=mock_docker,  # type: ignore[arg-type]
+            cache_dir=tmp_path,
+            registry="test-registry",
+        )
+
+        context_dir = tmp_path / "context"
+        context_dir.mkdir()
+        (context_dir / "Dockerfile").write_text("FROM alpine")
+
+        mock_docker.inspect_image.side_effect = DockerClientError("Not found", status=404)
+        mock_docker.set_build_results([{"stream": "Done\n"}])
+
+        specs = [
+            BuildImageSpec(context_path=str(context_dir), tag="img1:latest"),
+            BuildImageSpec(context_path=str(context_dir), tag="img2:latest"),
+        ]
+
+        errors = await builder.build_all_specs(specs)
+
+        assert errors == []
+        assert mock_docker.push_image.call_count == 2
+        pushed_tags = [call.args[0] for call in mock_docker.push_image.call_args_list]
+        assert "test-registry/img1:latest" in pushed_tags
+        assert "test-registry/img2:latest" in pushed_tags
+
+    @pytest.mark.anyio
+    async def test_push_not_called_for_failed_specs(
+        self, mock_docker: MockDockerClient, tmp_path: Path
+    ) -> None:
+        """push_image is NOT called for specs that failed to build."""
+        builder = ImageBuilder(
+            docker_client=mock_docker,  # type: ignore[arg-type]
+            cache_dir=tmp_path,
+            registry="test-registry",
+        )
+
+        context_dir = tmp_path / "context"
+        context_dir.mkdir()
+        (context_dir / "Dockerfile").write_text("FROM alpine")
+
+        mock_docker.inspect_image.side_effect = DockerClientError("Not found", status=404)
+
+        async def build_side_effect(*args: Any, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+            tag = kwargs.get("tag", args[1] if len(args) > 1 else None)
+            if tag == "fail:latest":
+                yield {"error": "Build failed"}
+            else:
+                yield {"stream": "Done\n"}
+
+        mock_docker.build_image = build_side_effect  # type: ignore[method-assign]
+
+        specs = [
+            BuildImageSpec(context_path=str(context_dir), tag="fail:latest"),
+            BuildImageSpec(context_path=str(context_dir), tag="success:latest"),
+        ]
+
+        errors = await builder.build_all_specs(specs)
+
+        assert len(errors) == 1
+        assert errors[0].image_tag == "fail:latest"
+        # Only pushed for the successful spec
+        assert mock_docker.push_image.call_count == 1
+        mock_docker.push_image.assert_called_once_with("test-registry/success:latest")
+
+    @pytest.mark.anyio
+    async def test_push_not_called_for_skipped_derived_specs(
+        self, mock_docker: MockDockerClient, tmp_path: Path
+    ) -> None:
+        """push_image is NOT called for derived specs skipped due to base failure."""
+        builder = ImageBuilder(
+            docker_client=mock_docker,  # type: ignore[arg-type]
+            cache_dir=tmp_path,
+            registry="test-registry",
+        )
+
+        context_dir = tmp_path / "context"
+        context_dir.mkdir()
+        (context_dir / "Dockerfile").write_text("FROM alpine")
+
+        mock_docker.inspect_image.side_effect = DockerClientError("Not found", status=404)
+
+        # Base build always fails
+        async def build_side_effect(*args: Any, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+            yield {"error": "Build failed"}
+
+        mock_docker.build_image = build_side_effect  # type: ignore[method-assign]
+
+        specs = [
+            BuildImageSpec(context_path=str(context_dir), tag="base:latest"),
+            DerivedImageSpec(
+                base_image_tag="base:latest",
+                dockerfile_extra="RUN echo derived",
+                tag="derived:latest",
+            ),
+        ]
+
+        errors = await builder.build_all_specs(specs)
+
+        # Both should have errors (base failed, derived skipped)
+        assert len(errors) == 2
+        # push_image should never have been called
+        mock_docker.push_image.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_push_failure_does_not_mark_base_as_failed(
+        self, mock_docker: MockDockerClient, tmp_path: Path
+    ) -> None:
+        """A push failure should NOT cause derived images to be skipped."""
+        builder = ImageBuilder(
+            docker_client=mock_docker,  # type: ignore[arg-type]
+            cache_dir=tmp_path,
+            registry="test-registry",
+        )
+
+        context_dir = tmp_path / "context"
+        context_dir.mkdir()
+        (context_dir / "Dockerfile").write_text("FROM alpine")
+
+        mock_docker.inspect_image.side_effect = DockerClientError("Not found", status=404)
+        mock_docker.set_build_results([{"stream": "Done\n"}])
+        # Push always fails
+        mock_docker.push_image.side_effect = RuntimeError("Push failed")
+
+        specs = [
+            BuildImageSpec(context_path=str(context_dir), tag="base:latest"),
+            DerivedImageSpec(
+                base_image_tag="base:latest",
+                dockerfile_extra="RUN echo derived",
+                tag="derived:latest",
+            ),
+        ]
+
+        errors = await builder.build_all_specs(specs)
+
+        # Both push errors, but the derived image should have been built (not skipped)
+        error_tags = [e.image_tag for e in errors]
+        assert "base:latest" in error_tags
+        assert "derived:latest" in error_tags
+        # Derived should be built successfully (the error is from push, not build skip)
+        assert "derived:latest" in builder._built_images
+        # The derived error should be the push error, not "base image failed to build"
+        derived_error = next(e for e in errors if e.image_tag == "derived:latest")
+        assert "Push failed" in str(derived_error.error)

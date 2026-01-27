@@ -144,6 +144,9 @@ def get_datasets_with_image_specs() -> list[str]:
     Returns:
         List of dataset type names that support image building
     """
+    dataset_registry.get_registered_components()  # trigger entry point loading
+    for name, error in dataset_registry.failed_entry_points.items():
+        logger.warning(f"Dataset '{name}' could not be loaded: {error}")
     return [
         name
         for name, cls in dataset_registry.get_component_classes().items()

@@ -300,7 +300,7 @@ class ImageBuilder:
         dockerfile_path: str | None = None,
         build_args: dict[str, str] | None = None,
     ) -> None:
-        """Execute the actual Docker build (assumes _should_build check already done).
+        """Execute the actual Docker build (assumes _prepare_for_build check already done).
 
         Args:
             context_path: Path to the build context directory
@@ -358,14 +358,23 @@ class ImageBuilder:
         for spec in base_specs:
             try:
                 await self._build_single_spec(spec)
-                await self.push_to_registry(spec.tag)
-            except Exception as e:  # noqa: PERF203
+            except Exception as e:
                 logger.error(
                     f"Failed to build image {spec.tag}: {type(e).__name__}: {e}",
                     exc_info=e,
                 )
                 errors.append(BuildError(image_tag=spec.tag, error=e))
                 failed_base_tags.add(spec.tag)
+                continue
+
+            try:
+                await self.push_to_registry(spec.tag)
+            except Exception as e:
+                logger.error(
+                    f"Failed to push image {spec.tag}: {type(e).__name__}: {e}",
+                    exc_info=e,
+                )
+                errors.append(BuildError(image_tag=spec.tag, error=e))
 
         # Phase 2: Build derived specs (depend on base images)
         derived_specs = [s for s in specs if isinstance(s, DerivedImageSpec)]
@@ -392,10 +401,19 @@ class ImageBuilder:
                     dockerfile_extra=spec.dockerfile_extra,
                     output_tag=spec.tag,
                 )
-                await self.push_to_registry(spec.tag)
             except Exception as e:
                 logger.error(
                     f"Failed to build derived image {spec.tag}: {type(e).__name__}: {e}",
+                    exc_info=e,
+                )
+                errors.append(BuildError(image_tag=spec.tag, error=e))
+                continue
+
+            try:
+                await self.push_to_registry(spec.tag)
+            except Exception as e:
+                logger.error(
+                    f"Failed to push derived image {spec.tag}: {type(e).__name__}: {e}",
                     exc_info=e,
                 )
                 errors.append(BuildError(image_tag=spec.tag, error=e))
