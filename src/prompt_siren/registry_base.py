@@ -11,7 +11,7 @@ import inspect
 import logging
 import typing
 from collections.abc import Callable
-from typing import Any, Generic, TypeAlias, TypeVar
+from typing import Any, Generic, NamedTuple, TypeAlias, TypeVar
 
 from pydantic import BaseModel
 
@@ -20,6 +20,19 @@ logger = logging.getLogger(__name__)
 ComponentT = TypeVar("ComponentT")
 ConfigT = TypeVar("ConfigT", bound=BaseModel)
 ContextT = TypeVar("ContextT")
+
+
+class ComponentEntryPoint(NamedTuple):
+    """Named tuple for entry point tuples: (factory, config_class, component_class).
+
+    This provides a structured alternative to bare tuples for entry point definitions.
+    Both bare tuples and ComponentEntryPoint instances are accepted by the registry.
+    """
+
+    factory: Callable[..., Any]
+    config_class: type[BaseModel]
+    component_class: type
+
 
 # Type alias for factory functions with optional context parameter
 # Note: Actual signature depends on whether config is needed - see register() for details
@@ -87,7 +100,7 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
         """Load components from entry points if not already loaded.
 
         Entry points can be either:
-        - A tuple of (factory_fn, component_class) - for components that need class-level access
+        - A tuple of (factory_fn, config_class, component_class) - for components that need class-level access
         - A factory function directly - for simpler component types
 
         Failed entry points are handled as follows:
@@ -126,6 +139,7 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
 
         except Exception as e:
             logger.error(f"Failed to load entry points for {self._entry_point_group}: {e}")
+            raise
 
         self._entry_points_loaded = True
 

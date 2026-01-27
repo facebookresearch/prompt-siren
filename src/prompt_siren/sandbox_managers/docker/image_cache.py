@@ -138,7 +138,7 @@ class ImageCache:
                 )
                 tag = await self._verify_image_exists(spec.final_tag)
             case DerivedImageSpec():
-                # DerivedImageSpec should have been pre-built (pair images)
+                # DerivedImageSpec should have been pre-built
                 logger.debug(f"[ImageCache] Verifying pre-built derived image exists: {spec.tag}")
                 tag = await self._verify_image_exists(spec.tag)
             case _:
@@ -238,13 +238,10 @@ class ImageCache:
             case PullImageSpec():
                 return f"pull:{spec.tag}"
             case BuildImageSpec():
-                # For pre-built images, just use the tag
                 return f"build:{spec.tag}"
             case MultiStageBuildImageSpec():
-                # For pre-built multi-stage images, just use the final tag
                 return f"multistage:{spec.final_tag}"
             case DerivedImageSpec():
-                # For pre-built derived images, use the tag
                 return f"derived:{spec.tag}"
             case _:
                 assert_never(spec)

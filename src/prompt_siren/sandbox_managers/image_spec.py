@@ -1,8 +1,9 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 from collections.abc import Awaitable, Callable
-from typing import TypeAlias
+from typing import Annotated, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator, StringConstraints
+from typing_extensions import Self
 
 ImageTag: TypeAlias = str
 
@@ -132,22 +133,30 @@ class MultiStageBuildImageSpec(BaseModel):
 class DerivedImageSpec(BaseModel):
     """Specification for an image derived from a base image with modifications.
 
-    Used for creating pair images where additional Dockerfile instructions
+    Used for creating images where additional Dockerfile instructions
     are applied on top of a pre-built base image.
 
     Examples:
         DerivedImageSpec(
-            base_image_tag="siren-swebench-benign:django__django-11179",
-            dockerfile_extra="RUN pip install evil-package",
-            tag="siren-swebench-pair:django__django-11179__malicious_task"
+            base_image_tag="myproject-base:latest",
+            dockerfile_extra="RUN pip install extra-package",
+            tag="myproject-derived:latest"
         )
     """
 
     base_image_tag: ImageTag = Field(
         description="Tag of the base image to derive from (must be built first)"
     )
-    dockerfile_extra: str = Field(description="Additional Dockerfile instructions to append")
+    dockerfile_extra: Annotated[str, StringConstraints(min_length=1)] = Field(
+        description="Additional Dockerfile instructions to append"
+    )
     tag: ImageTag = Field(description="Tag for the derived image")
+
+    @model_validator(mode="after")
+    def _validate_tag_differs_from_base(self) -> Self:
+        if self.tag == self.base_image_tag:
+            raise ValueError(f"'tag' must differ from 'base_image_tag', got '{self.tag}' for both")
+        return self
 
 
 # Type alias for specs that require building (excludes PullImageSpec)

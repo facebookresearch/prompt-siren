@@ -135,17 +135,20 @@ class ImageBuilder:
         logger.info(f"Deleting existing image {tag}")
         await self._docker.delete_image(tag, force=True)
 
-    async def _should_build(self, tag: str) -> bool:
-        """Check if an image should be built, handling already-built and existing images.
+    async def _prepare_for_build(self, tag: str) -> bool:
+        """Decide whether to build an image, with side effects.
 
-        Returns True if the image should be built, False if it should be skipped.
-        If rebuild_existing is True and image exists, deletes it first.
+        Checks whether the image was already built in this session or already
+        exists locally. When ``rebuild_existing`` is True and the image exists,
+        it is **deleted** so that the caller can rebuild it. The tag is added
+        to ``_built_images`` when the image already exists and is being kept
+        (i.e. skipped).
 
         Args:
             tag: Image tag to check
 
         Returns:
-            True if the image should be built, False to skip
+            True if the caller should proceed with the build, False to skip
         """
         if tag in self._built_images:
             logger.debug(f"Image {tag} already built in this session, skipping")
@@ -196,7 +199,7 @@ class ImageBuilder:
         Raises:
             RuntimeError: If build fails
         """
-        if not await self._should_build(tag):
+        if not await self._prepare_for_build(tag):
             return
 
         await self._do_build(
@@ -219,7 +222,7 @@ class ImageBuilder:
             dockerfile_extra: Additional Dockerfile instructions
             output_tag: Tag for the output image
         """
-        if not await self._should_build(output_tag):
+        if not await self._prepare_for_build(output_tag):
             return
 
         logger.info(f"Building modified image {output_tag} from {base_tag}")
@@ -245,7 +248,7 @@ class ImageBuilder:
             source_tag: Source image tag
             target_tag: Target image tag
         """
-        if not await self._should_build(target_tag):
+        if not await self._prepare_for_build(target_tag):
             return
 
         logger.info(f"Tagging image {source_tag} as {target_tag}")
@@ -274,7 +277,7 @@ class ImageBuilder:
             return
 
         # BuildImageSpec handling
-        if not await self._should_build(spec.tag):
+        if not await self._prepare_for_build(spec.tag):
             return
 
         # Run seeder before building if defined
@@ -357,7 +360,10 @@ class ImageBuilder:
                 await self._build_single_spec(spec)
                 await self.push_to_registry(spec.tag)
             except Exception as e:  # noqa: PERF203
-                logger.error(f"Failed to build image {spec.tag}: {type(e).__name__}: {e}")
+                logger.error(
+                    f"Failed to build image {spec.tag}: {type(e).__name__}: {e}",
+                    exc_info=e,
+                )
                 errors.append(BuildError(image_tag=spec.tag, error=e))
                 failed_base_tags.add(spec.tag)
 
@@ -388,7 +394,10 @@ class ImageBuilder:
                 )
                 await self.push_to_registry(spec.tag)
             except Exception as e:
-                logger.error(f"Failed to build derived image {spec.tag}: {type(e).__name__}: {e}")
+                logger.error(
+                    f"Failed to build derived image {spec.tag}: {type(e).__name__}: {e}",
+                    exc_info=e,
+                )
                 errors.append(BuildError(image_tag=spec.tag, error=e))
 
         return errors
@@ -470,7 +479,8 @@ async def run_build(
                 all_build_errors.extend(errors)
             except Exception as e:  # noqa: PERF203
                 logger.error(
-                    f"Failed to build images for dataset {dataset_name}: {type(e).__name__}: {e}"
+                    f"Failed to build images for dataset {dataset_name}: {type(e).__name__}: {e}",
+                    exc_info=e,
                 )
                 all_build_errors.append(BuildError(image_tag=f"dataset:{dataset_name}", error=e))
 
