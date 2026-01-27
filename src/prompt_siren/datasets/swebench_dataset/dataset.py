@@ -107,8 +107,7 @@ class SwebenchDataset(AbstractDataset[BashEnvState, str, str, StrContentAttack])
 
         if not instances:
             raise RuntimeError(
-                "Cannot get image build specs: no SWE-bench instances match the filter criteria. "
-                "Check instance_ids or max_instances in the dataset configuration."
+                "Cannot get image build specs: no SWE-bench instances have known injection mappings."
             )
 
         specs: list[ImageBuildSpec] = []
