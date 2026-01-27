@@ -651,6 +651,14 @@ class MockSandboxManager:
         """Mock clone_sandbox for testing."""
         raise NotImplementedError("Mock sandbox manager for testing only")
 
+    async def create_sandbox(self, task_setup: SandboxTaskSetup):
+        """Mock create_sandbox for testing."""
+        raise NotImplementedError("Mock sandbox manager for testing only")
+
+    async def destroy_sandbox(self, sandbox_state) -> None:
+        """Mock destroy_sandbox for testing."""
+        raise NotImplementedError("Mock sandbox manager for testing only")
+
 
 def create_mock_sandbox(config: MockSandboxConfig, context: None = None) -> MockSandboxManager:
     """Factory function to create mock sandbox for registry.

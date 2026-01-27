@@ -56,6 +56,18 @@ class MockSandboxManager:
         """Mock clone_sandbox - not used in tool tests."""
         return source_state
 
+    async def create_sandbox(self, task_setup: SandboxTaskSetup) -> SandboxState:
+        """Mock create_sandbox - not used in tool tests."""
+        return SandboxState(
+            agent_container_id="test-container",
+            service_containers={},
+            execution_id="",
+            network_id=None,
+        )
+
+    async def destroy_sandbox(self, sandbox_state: SandboxState) -> None:
+        """Mock destroy_sandbox - not used in tool tests."""
+
     async def exec(
         self,
         container_id: str,

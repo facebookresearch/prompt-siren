@@ -29,7 +29,6 @@ from .sandbox_task_setup import (
     ContainerSpec,
     NetworkConfig,
     SandboxTaskSetup,
-    TaskSetup,
 )
 
 __all__ = [
@@ -51,7 +50,6 @@ __all__ = [
     "SandboxTaskSetup",
     "StderrChunk",
     "StdoutChunk",
-    "TaskSetup",
     "create_sandbox_manager",
     "get_registered_sandbox_managers",
     "get_sandbox_config_class",

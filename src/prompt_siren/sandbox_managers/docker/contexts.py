@@ -9,8 +9,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..sandbox_state import ContainerID, SandboxState
-from ..sandbox_task_setup import ContainerSetup, TaskSetup
+from ..sandbox_state import ContainerID, PortBindings, SandboxState
+from ..sandbox_task_setup import ContainerSetup, SandboxTaskSetup
 from .image_cache import ImageCache
 from .plugins import AbstractContainer, AbstractDockerClient
 
@@ -68,7 +68,7 @@ class TaskSandboxContext:
 
     async def create_containers(
         self,
-        task_setup: TaskSetup,
+        task_setup: SandboxTaskSetup,
         network_enabled: bool = True,
     ) -> SandboxState:
         """Create all containers for this task.
@@ -88,17 +88,17 @@ class TaskSandboxContext:
             async with self._lock:
                 self._networks.add(network_id)
 
-        # Create agent container
-        agent_container_id = await self._create_single_container(
+        # Create agent container (we need port bindings for the agent)
+        agent_container_id, agent_port_bindings = await self._create_single_container(
             container_setup=task_setup.agent_container,
             task_id=task_setup.task_id,
             network_id=network_id,
             network_enabled=network_enabled,
         )
 
-        # Create service containers in parallel
+        # Create service containers in parallel (we don't need their port bindings)
         service_items = list(task_setup.service_containers.items())
-        service_ids = await asyncio.gather(
+        service_results = await asyncio.gather(
             *[
                 self._create_single_container(
                     container_setup=service_setup,
@@ -106,11 +106,12 @@ class TaskSandboxContext:
                     network_id=network_id,
                     network_enabled=network_enabled,
                 )
-                for service_name, service_setup in service_items
+                for _, service_setup in service_items
             ]
         )
+        # Extract just the container IDs (first element of each tuple)
         service_container_ids = dict(
-            zip([name for name, _ in service_items], service_ids, strict=False)
+            zip([name for name, _ in service_items], [r[0] for r in service_results], strict=False)
         )
 
         return SandboxState(
@@ -118,6 +119,7 @@ class TaskSandboxContext:
             service_containers=service_container_ids,
             network_id=network_id,
             execution_id=self.execution_id,
+            agent_port_bindings=agent_port_bindings,
         )
 
     async def clone(self, source_state: SandboxState) -> SandboxState:
@@ -155,16 +157,19 @@ class TaskSandboxContext:
                     service_id,
                     network_id=new_network_id,
                 )
-                for service_name, service_id in service_items
+                for _, service_id in service_items
             ]
         )
         new_service_ids = dict(zip([name for name, _ in service_items], cloned_ids, strict=False))
 
+        # Note: Cloned containers inherit port bindings from source, but since cloning
+        # is used for snapshottable environments (not browser), we don't track them.
         return SandboxState(
             agent_container_id=new_agent_id,
             service_containers=new_service_ids,
             network_id=new_network_id,
             execution_id=self.execution_id,
+            agent_port_bindings=source_state.agent_port_bindings,
         )
 
     async def cleanup(self) -> None:
@@ -191,7 +196,7 @@ class TaskSandboxContext:
                 return_exceptions=True,  # Continue cleanup even if one fails
             )
 
-    async def _create_network(self, task_setup: TaskSetup, network_enabled: bool) -> str:
+    async def _create_network(self, task_setup: SandboxTaskSetup, network_enabled: bool) -> str:
         """Create a network for multi-container setup.
 
         Args:
@@ -258,7 +263,7 @@ class TaskSandboxContext:
         task_id: str,
         network_id: str | None,
         network_enabled: bool,
-    ) -> ContainerID:
+    ) -> tuple[ContainerID, PortBindings]:
         """Create and start a single container.
 
         Args:
@@ -268,7 +273,7 @@ class TaskSandboxContext:
             network_enabled: Whether networking is enabled
 
         Returns:
-            Container ID
+            Tuple of (Container ID, port bindings as container_port -> host_port)
         """
         logger.debug(
             f"Creating container for task_id={task_id}, container_name={container_setup.name}, "
@@ -354,8 +359,18 @@ class TaskSandboxContext:
         async with self._lock:
             self._containers[container_id] = ContainerInfo(container=container, temp_image=None)
 
+        # Extract actual port bindings (container_port -> host_port)
+        # NetworkSettings.Ports is like {"9222/tcp": [{"HostIp": "0.0.0.0", "HostPort": "32768"}]}
+        port_bindings: PortBindings = {}
+        network_ports = container_info.get("NetworkSettings", {}).get("Ports", {})
+        for port_proto, bindings in network_ports.items():
+            if bindings:  # bindings can be None if port is exposed but not bound
+                container_port = int(port_proto.split("/")[0])
+                host_port = int(bindings[0]["HostPort"])
+                port_bindings[container_port] = host_port
+
         logger.debug(f"Successfully created and tracked container {container_name}")
-        return container_id
+        return container_id, port_bindings
 
     async def _clone_container(
         self,
@@ -467,9 +482,14 @@ class TaskSandboxContext:
         Returns:
             Docker container configuration dict
         """
-        config: dict[str, Any] = {"Image": image_tag}
+        config: dict[str, Any] = {"Image": image_tag, "HostConfig": {}}
 
-        # Set command (default to sleep infinity to keep container running)
+        # Set command
+        # - command=None: default to "sleep infinity" to keep container running
+        # - command=[...]: use the specified command
+        # Note: "sleep infinity" is needed for images without a CMD (e.g., SWE-bench instances).
+        # Images with their own ENTRYPOINT (e.g., chromedp/headless-shell) still work because
+        # Docker runs ENTRYPOINT + CMD, and our CMD gets ignored if ENTRYPOINT handles it.
         if container_setup.spec.command:
             config["Cmd"] = container_setup.spec.command
         else:
@@ -484,6 +504,12 @@ class TaskSandboxContext:
         # Set hostname
         if container_setup.spec.hostname:
             config["Hostname"] = container_setup.spec.hostname
+
+        # Set port bindings
+        config["ExposedPorts"] = {f"{cp}/tcp": {} for cp in container_setup.spec.ports.values()}
+        config["HostConfig"]["PortBindings"] = {
+            f"{cp}/tcp": [{"HostPort": str(hp)}] for hp, cp in container_setup.spec.ports.items()
+        }
 
         # Apply network configuration
         # Network isolation has two modes:
@@ -507,7 +533,7 @@ class TaskSandboxContext:
             }
         elif not network_enabled:
             # No network_id and networking disabled: isolate container completely
-            config["HostConfig"] = {"NetworkMode": "none"}
+            config["HostConfig"]["NetworkMode"] = "none"
 
         return config
 

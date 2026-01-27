@@ -297,6 +297,64 @@ class DockerSandboxManager:
             shell_path=shell_path,
         )
 
+    async def create_sandbox(self, task_setup: SandboxTaskSetup) -> SandboxState:
+        """Create containers and network for a task without context manager.
+
+        Unlike setup_task(), this method does not manage cleanup automatically.
+        The caller is responsible for calling destroy_sandbox() when done.
+
+        Args:
+            task_setup: Task setup specification
+
+        Returns:
+            SandboxState with container IDs and network ID
+        """
+        if self._batch_state is None:
+            raise RuntimeError("create_sandbox called outside of setup_batch context")
+
+        # Generate unique execution ID
+        execution_id = uuid.uuid4().hex
+
+        # Create task context
+        context = TaskSandboxContext(
+            task_id=task_setup.task_id,
+            execution_id=execution_id,
+            batch_state=self._batch_state,
+        )
+
+        # Register context in batch state
+        async with self._batch_state._lock:
+            self._batch_state.contexts[execution_id] = context
+
+        # Create containers and network
+        return await context.create_containers(
+            task_setup, network_enabled=self._config.network_enabled
+        )
+
+    async def destroy_sandbox(self, sandbox_state: SandboxState) -> None:
+        """Destroy containers and network for a sandbox.
+
+        Cleans up all containers and network associated with the sandbox state.
+        Safe to call multiple times (idempotent).
+
+        Args:
+            sandbox_state: Sandbox state to destroy
+        """
+        if self._batch_state is None:
+            # Already cleaned up or never initialized - nothing to do
+            return
+
+        # Look up the context that owns the containers
+        async with self._batch_state._lock:
+            context = self._batch_state.contexts.pop(sandbox_state.execution_id, None)
+
+        if context is None:
+            # Already cleaned up - nothing to do
+            return
+
+        # Cleanup all resources
+        await context.cleanup()
+
 
 def create_docker_sandbox_manager(
     config: DockerSandboxConfig, context: None = None

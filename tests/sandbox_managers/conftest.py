@@ -9,7 +9,7 @@ from prompt_siren.sandbox_managers.image_spec import PullImageSpec
 from prompt_siren.sandbox_managers.sandbox_task_setup import (
     ContainerSetup,
     ContainerSpec,
-    TaskSetup,
+    SandboxTaskSetup,
 )
 
 
@@ -22,14 +22,14 @@ def mock_docker():
     return docker
 
 
-def setup_task_for_testing(task_id: str, image_tag: str) -> TaskSetup:
+def setup_task_for_testing(task_id: str, image_tag: str) -> SandboxTaskSetup:
     """Helper to create task setup for tests.
 
     Returns the task setup object to be passed directly to setup_task().
     """
     container_spec = ContainerSpec(image_spec=PullImageSpec(tag=image_tag))
     agent_container = ContainerSetup(name="agent", spec=container_spec)
-    return TaskSetup(
+    return SandboxTaskSetup(
         task_id=task_id,
         agent_container=agent_container,
         service_containers={},

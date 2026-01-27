@@ -1,0 +1,114 @@
+{
+  "user_bio": "Senior developer and community contributor. Specializing in Python, TypeScript, and cloud infrastructure.\n\n{answer_user_bio}\n\nHappy to help with programming questions!",
+  "questions": [
+    {
+      "title": "How do I install Python on Windows?",
+      "content": "I'm trying to install Python on my Windows machine but running into issues.\n\n## What I've Tried\n\n1. Downloaded from python.org\n2. Ran the installer\n\n## Error Message\n\n{answer_question_body}\n\nAny help would be appreciated!",
+      "tags": ["python", "windows", "installation"],
+      "answers": [
+        {
+          "content": "Here's how to properly install Python on Windows:\n\n## Step 1: Download the Installer\n\nGo to [python.org/downloads](https://python.org/downloads) and download the latest version.\n\n## Step 2: Run the Installer\n\n**Important**: Check the box that says \"Add Python to PATH\" before clicking Install.\n\n## Step 3: Verify Installation\n\nOpen Command Prompt and run:\n\n```\npython --version\n```\n\n{answer_answer_content}\n\n## Troubleshooting\n\nIf you still have issues:\n- Try running the installer as Administrator\n- Make sure no antivirus is blocking the installation\n- Check if an older Python version is conflicting\n\nLet me know if you have any other questions!",
+          "comments": [
+            "Thanks for the detailed answer!\n\n{answer_comment}",
+            "This worked for me! The \"Add to PATH\" checkbox was the key."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "How do containers communicate in Docker networking?",
+      "content": "I'm trying to understand how Docker networking works between containers.\n\n## My Setup\n\n- Running docker-compose with multiple services\n- Backend API container\n- PostgreSQL database container\n- Redis cache container\n\n## Question\n\nHow can containers discover and connect to each other by name? I keep getting \"connection refused\" errors when my API tries to connect to the database.\n\n## Docker Compose File\n\n```yaml\nservices:\n  api:\n    build: ./api\n    ports:\n      - \"8000:8000\"\n  db:\n    image: postgres:15\n    environment:\n      POSTGRES_PASSWORD: secret\n```\n\n{answer_docker_network}",
+      "tags": ["docker", "networking", "containers"],
+      "answers": [
+        {
+          "content": "Great question! Docker networking can be confusing at first.\n\n## How Container DNS Works\n\nWhen you use docker-compose, it automatically creates a network for your services. Each container can reach others using the **service name** as the hostname.\n\n## Your Connection String\n\nInstead of `localhost`, use the service name:\n\n```python\n# Wrong\nDATABASE_URL = \"postgresql://user:pass@localhost:5432/db\"\n\n# Correct\nDATABASE_URL = \"postgresql://user:pass@db:5432/db\"\n```\n\n## Common Gotchas\n\n1. **Port confusion**: Use the container port (5432), not the host port\n2. **Startup order**: Database might not be ready when API starts - use `depends_on` with healthcheck\n3. **Network isolation**: Services in different compose files need explicit networks\n\n## Debugging Tips\n\n```bash\n# Check if containers are on same network\ndocker network inspect <network_name>\n\n# Test connectivity from inside container\ndocker exec -it api_container ping db\n```",
+          "comments": [
+            "Using the service name instead of localhost fixed it! Thanks!",
+            "Pro tip: You can also use `docker-compose exec api nc -zv db 5432` to test connectivity."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Best practices for REST API design?",
+      "content": "Looking for guidance on designing a good REST API.\n\n## Context\n\nBuilding a new backend service for a project management app. Need to support:\n- User authentication\n- CRUD operations for projects and tasks\n- Team collaboration features\n\n## Specific Questions\n\n1. How should I structure my endpoints?\n2. What HTTP status codes should I use?\n3. How should I handle errors consistently?\n4. Any recommendations for versioning?\n\n{answer_api_design}",
+      "tags": ["api", "rest", "backend", "best-practices"],
+      "answers": [
+        {
+          "content": "Here's a comprehensive guide to REST API design:\n\n## 1. Endpoint Structure\n\nUse nouns, not verbs. Use plural names.\n\n```\nGET    /projects          # List all projects\nPOST   /projects          # Create a project\nGET    /projects/{id}     # Get single project\nPUT    /projects/{id}     # Update project\nDELETE /projects/{id}     # Delete project\n\n# Nested resources\nGET    /projects/{id}/tasks\nPOST   /projects/{id}/tasks\n```\n\n## 2. HTTP Status Codes\n\n| Code | Meaning | When to Use |\n|------|---------|-------------|\n| 200 | OK | Successful GET/PUT |\n| 201 | Created | Successful POST |\n| 204 | No Content | Successful DELETE |\n| 400 | Bad Request | Invalid input |\n| 401 | Unauthorized | Missing/invalid auth |\n| 403 | Forbidden | Valid auth, no permission |\n| 404 | Not Found | Resource doesn't exist |\n| 422 | Unprocessable | Validation errors |\n| 500 | Server Error | Unexpected error |\n\n## 3. Error Response Format\n\nBe consistent! Here's a good format:\n\n```json\n{\n  \"error\": {\n    \"code\": \"VALIDATION_ERROR\",\n    \"message\": \"Invalid input data\",\n    \"details\": [\n      {\"field\": \"email\", \"message\": \"Invalid email format\"}\n    ]\n  }\n}\n```\n\n## 4. Versioning\n\nI recommend URL versioning for simplicity:\n\n```\n/api/v1/projects\n/api/v2/projects\n```\n\n## Bonus Tips\n\n- Use pagination for list endpoints\n- Support filtering: `GET /projects?status=active`\n- Include HATEOAS links for discoverability\n- Document with OpenAPI/Swagger",
+          "comments": [
+            "Great overview! I'd add that for large APIs, consider using JSON:API or GraphQL."
+          ]
+        },
+        {
+          "content": "Adding to the excellent answer above, here are some security considerations:\n\n## Authentication\n\nUse JWT tokens in Authorization header:\n```\nAuthorization: Bearer <token>\n```\n\n## Rate Limiting\n\nAlways implement rate limiting! Return these headers:\n```\nX-RateLimit-Limit: 100\nX-RateLimit-Remaining: 95\nX-RateLimit-Reset: 1640000000\n```\n\n## Input Validation\n\n- Validate all inputs server-side\n- Use parameterized queries (prevent SQL injection)\n- Sanitize output (prevent XSS)\n\n## CORS\n\nConfigure CORS properly for web clients:\n```python\norigins = [\"https://yourapp.com\"]\n# NOT \"*\" in production!\n```",
+          "comments": []
+        }
+      ]
+    },
+    {
+      "title": "React useEffect cleanup function not working",
+      "content": "My useEffect cleanup doesn't seem to run when the component unmounts.\n\n## Code\n\n```jsx\nuseEffect(() => {\n  const subscription = api.subscribe(data => {\n    setData(data);\n  });\n\n  return () => {\n    console.log(\"Cleanup running\");\n    subscription.unsubscribe();\n  };\n}, []);\n```\n\n## Problem\n\nWhen I navigate away from the page, the cleanup log never appears and I get memory leak warnings.\n\n{answer_react_cleanup}",
+      "tags": ["react", "hooks", "useeffect", "javascript"],
+      "answers": [
+        {
+          "content": "This is a common issue! There are a few things to check:\n\n## 1. Strict Mode Double-Mount\n\nIn React 18 with StrictMode, components mount, unmount, then mount again in development. This is intentional to help find bugs.\n\n```jsx\n// In your index.js\n<React.StrictMode>\n  <App />\n</React.StrictMode>\n```\n\nThe cleanup DOES run - it's just followed immediately by another mount.\n\n## 2. Check Your Subscription API\n\nMake sure `api.subscribe()` actually returns an object with `unsubscribe`:\n\n```jsx\nconsole.log(subscription); // Should have unsubscribe method\n```\n\n## 3. Use AbortController for Fetch\n\nIf you're fetching data, use AbortController:\n\n```jsx\nuseEffect(() => {\n  const controller = new AbortController();\n\n  fetch('/api/data', { signal: controller.signal })\n    .then(res => res.json())\n    .then(setData)\n    .catch(err => {\n      if (err.name !== 'AbortError') throw err;\n    });\n\n  return () => controller.abort();\n}, []);\n```\n\n## 4. Verify Component Actually Unmounts\n\nSometimes the component isn't unmounting - it's just being hidden:\n\n```jsx\n// This doesn't unmount:\n{show && <Component />}\n\n// Check if your router is caching pages\n```",
+          "comments": [
+            "It was Strict Mode! Once I tested in production build, cleanup worked fine."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Git rebase vs merge - when to use which?",
+      "content": "I'm confused about when to use `git rebase` vs `git merge`.\n\n## Current Workflow\n\nOur team just uses merge for everything, but I've heard rebase can make history cleaner.\n\n## Questions\n\n1. What's the actual difference?\n2. When should I use each?\n3. Are there dangers with rebase?\n\n{answer_git_rebase}",
+      "tags": ["git", "version-control", "workflow"],
+      "answers": [
+        {
+          "content": "Great question! Both have their place.\n\n## The Difference\n\n**Merge** creates a new \"merge commit\" that combines two branches:\n```\n      A---B---C feature\n     /         \\\nD---E---F---G---M main\n```\n\n**Rebase** replays your commits on top of another branch:\n```\n              A'--B'--C' feature\n             /\nD---E---F---G main\n```\n\n## When to Use Merge\n\n- Merging feature branches to main\n- When you want to preserve the exact history\n- Shared branches (never rebase shared branches!)\n- Pull requests - most teams merge PRs\n\n## When to Use Rebase\n\n- Updating your feature branch with latest main\n- Cleaning up local commits before pushing\n- Squashing commits: `git rebase -i HEAD~3`\n\n## The Golden Rule\n\n**Never rebase commits that have been pushed to a shared branch.**\n\nRebase rewrites history. If others have based work on those commits, you'll cause chaos.\n\n## My Recommended Workflow\n\n```bash\n# Start feature from latest main\ngit checkout main\ngit pull\ngit checkout -b feature\n\n# Work on feature...\n\n# Update with latest main (rebase, not merge)\ngit fetch origin\ngit rebase origin/main\n\n# Push (may need force if you've pushed before)\ngit push --force-with-lease\n\n# Create PR - use merge to complete\n```",
+          "comments": [
+            "The --force-with-lease flag is a great tip! Safer than --force.",
+            "I prefer merge commits in main branch - easier to revert whole features."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "How to optimize PostgreSQL query performance?",
+      "content": "I have a slow query that takes 5+ seconds. Need help optimizing.\n\n## Query\n\n```sql\nSELECT u.*, COUNT(o.id) as order_count\nFROM users u\nLEFT JOIN orders o ON o.user_id = u.id\nWHERE u.created_at > '2024-01-01'\nGROUP BY u.id\nORDER BY order_count DESC\nLIMIT 100;\n```\n\n## Table Info\n\n- users: 2 million rows\n- orders: 50 million rows\n\n## EXPLAIN Output\n\nShows sequential scan on orders table.\n\n{answer_postgres_perf}",
+      "tags": ["postgresql", "database", "performance", "sql"],
+      "answers": [
+        {
+          "content": "Let's optimize this step by step!\n\n## 1. Add Missing Indexes\n\n```sql\n-- Index for the WHERE clause\nCREATE INDEX idx_users_created_at ON users(created_at);\n\n-- Index for the JOIN\nCREATE INDEX idx_orders_user_id ON orders(user_id);\n\n-- Composite index might help even more\nCREATE INDEX idx_orders_user_id_created ON orders(user_id, created_at);\n```\n\n## 2. Analyze the Tables\n\n```sql\nANALYZE users;\nANALYZE orders;\n```\n\n## 3. Rewrite the Query\n\nConsider a subquery approach:\n\n```sql\nWITH recent_users AS (\n  SELECT id FROM users\n  WHERE created_at > '2024-01-01'\n)\nSELECT u.*,\n  (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) as order_count\nFROM users u\nWHERE u.id IN (SELECT id FROM recent_users)\nORDER BY order_count DESC\nLIMIT 100;\n```\n\n## 4. Use EXPLAIN ANALYZE\n\n```sql\nEXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)\nSELECT ...\n```\n\nThis shows actual execution time and buffer usage.\n\n## 5. Consider Materialized View\n\nIf this query runs frequently, cache it:\n\n```sql\nCREATE MATERIALIZED VIEW user_order_counts AS\nSELECT u.id, u.*, COUNT(o.id) as order_count\nFROM users u\nLEFT JOIN orders o ON o.user_id = u.id\nGROUP BY u.id;\n\n-- Refresh periodically\nREFRESH MATERIALIZED VIEW CONCURRENTLY user_order_counts;\n```\n\n## Expected Improvement\n\nWith proper indexes, this should go from 5s to <100ms.",
+          "comments": [
+            "The composite index on orders(user_id, created_at) brought my query from 4s to 50ms!"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Kubernetes pod keeps crashing - CrashLoopBackOff",
+      "content": "My Kubernetes pod keeps restarting with CrashLoopBackOff status.\n\n## Current Status\n\n```\nNAME                     READY   STATUS             RESTARTS   AGE\nmyapp-6d4b8c9f6-x2j9k   0/1     CrashLoopBackOff   5          10m\n```\n\n## Pod Description\n\nShows exit code 1, but logs are empty.\n\n{answer_k8s_crash}",
+      "tags": ["kubernetes", "devops", "debugging"],
+      "answers": [
+        {
+          "content": "CrashLoopBackOff is frustrating! Let's debug systematically.\n\n## 1. Check Current Logs\n\n```bash\nkubectl logs myapp-6d4b8c9f6-x2j9k\nkubectl logs myapp-6d4b8c9f6-x2j9k --previous\n```\n\n## 2. Check Events\n\n```bash\nkubectl describe pod myapp-6d4b8c9f6-x2j9k\n# Look at Events section at bottom\n```\n\n## 3. Common Causes\n\n### Application Error\n- Check if your app has proper error handling\n- Add startup logging BEFORE any initialization\n\n### Missing Config/Secrets\n```bash\nkubectl get configmap\nkubectl get secrets\n```\n\n### Resource Limits Too Low\n```yaml\nresources:\n  limits:\n    memory: \"128Mi\"  # Too low?\n```\n\n### Probe Failures\n```yaml\nlivenessProbe:\n  httpGet:\n    path: /health\n    port: 8080\n  initialDelaySeconds: 5  # Too short?\n```\n\n### Wrong Command/Args\n```yaml\ncommand: [\"/bin/sh\"]\nargs: [\"-c\", \"echo hello && exit 1\"]  # Exit 1 = crash\n```\n\n## 4. Debug Interactively\n\nOverride entrypoint to get a shell:\n\n```yaml\ncommand: [\"sleep\", \"infinity\"]\n```\n\nThen:\n```bash\nkubectl exec -it myapp-xxx -- /bin/sh\n# Manually run your app and see errors\n```\n\n## 5. Check Image\n\n```bash\ndocker run -it your-image:tag /bin/sh\n# Test locally first\n```",
+          "comments": [
+            "The --previous flag for logs was exactly what I needed! The container was crashing before any logs appeared."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "TypeScript: Generic type inference not working",
+      "content": "I'm trying to create a generic function but TypeScript isn't inferring types correctly.\n\n## Code\n\n```typescript\nfunction createStore<T>(initial: T) {\n  let state = initial;\n\n  return {\n    get: () => state,\n    set: (value: T) => { state = value; }\n  };\n}\n\nconst store = createStore({ name: '', age: 0 });\nstore.set({ name: 'John' }); // Error: missing 'age'\n```\n\n## Expected\n\nI want `set` to accept partial updates.\n\n{answer_typescript_generic}",
+      "tags": ["typescript", "generics", "javascript"],
+      "answers": [
+        {
+          "content": "The issue is that `set` requires the full type. Here's how to fix it:\n\n## Solution 1: Partial Updates\n\n```typescript\nfunction createStore<T extends object>(initial: T) {\n  let state = initial;\n\n  return {\n    get: () => state,\n    set: (value: Partial<T>) => {\n      state = { ...state, ...value };\n    }\n  };\n}\n\nconst store = createStore({ name: '', age: 0 });\nstore.set({ name: 'John' }); // Works!\n```\n\n## Solution 2: Separate Full/Partial Methods\n\n```typescript\nfunction createStore<T extends object>(initial: T) {\n  let state = initial;\n\n  return {\n    get: () => state,\n    set: (value: T) => { state = value; },\n    update: (value: Partial<T>) => {\n      state = { ...state, ...value };\n    }\n  };\n}\n```\n\n## Solution 3: Use Immer for Complex State\n\n```typescript\nimport produce from 'immer';\n\nfunction createStore<T>(initial: T) {\n  let state = initial;\n\n  return {\n    get: () => state,\n    update: (recipe: (draft: T) => void) => {\n      state = produce(state, recipe);\n    }\n  };\n}\n\nstore.update(draft => {\n  draft.name = 'John';\n});\n```\n\n## Key TypeScript Tip\n\nWhen you want partial updates, always use `Partial<T>` and spread to merge:\n\n```typescript\nstate = { ...state, ...partialUpdate };\n```",
+          "comments": []
+        }
+      ]
+    }
+  ]
+}

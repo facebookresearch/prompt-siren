@@ -166,3 +166,33 @@ class AbstractSandboxManager(Protocol):
             New SandboxState with fresh container IDs (and network ID for multi-container)
         """
         raise NotImplementedError()
+
+    @abstractmethod
+    async def create_sandbox(self, task_setup: SandboxTaskSetup) -> SandboxState:
+        """Create a sandbox (containers and network) for a task without context manager.
+
+        Unlike setup_task(), this method does not manage cleanup automatically.
+        The caller is responsible for calling destroy_sandbox() when done.
+
+        This is useful for environments that need to recreate containers during
+        reset operations (e.g., NonSnapshottable environments).
+
+        Args:
+            task_setup: Task setup specification
+
+        Returns:
+            SandboxState with container IDs and network ID
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def destroy_sandbox(self, sandbox_state: SandboxState) -> None:
+        """Destroy a sandbox (containers and network).
+
+        Cleans up all containers and network associated with the sandbox state.
+        Safe to call multiple times (idempotent).
+
+        Args:
+            sandbox_state: Sandbox state to destroy
+        """
+        raise NotImplementedError()

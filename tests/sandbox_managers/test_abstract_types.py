@@ -7,7 +7,7 @@ from prompt_siren.sandbox_managers.sandbox_task_setup import (
     ContainerSetup,
     ContainerSpec,
     NetworkConfig,
-    TaskSetup,
+    SandboxTaskSetup,
 )
 
 
@@ -19,7 +19,7 @@ class TestTaskSetup:
         agent_spec = ContainerSpec(image_spec=PullImageSpec(tag="python:3.12"))
         agent_container = ContainerSetup(name="agent", spec=agent_spec)
 
-        setup = TaskSetup(
+        setup = SandboxTaskSetup(
             task_id="task1",
             agent_container=agent_container,
             service_containers={},
@@ -40,7 +40,7 @@ class TestTaskSetup:
         attack_container = ContainerSetup(name="attack_server", spec=attack_spec)
         network_config = NetworkConfig(name="test-network", internal=True)
 
-        setup = TaskSetup(
+        setup = SandboxTaskSetup(
             task_id="task1",
             agent_container=agent_container,
             service_containers={"attack_server": attack_container},

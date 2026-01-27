@@ -116,7 +116,7 @@ uv run prompt-siren run attack --config-dir=./my_config
    - `registry.py` - Environment plugin registration system
    - Key environments:
      - `agentdojo/` - AgentDojo environment integration
-     - `playwright.py` - Playwright-based web automation environment
+     - `browser_env.py` - Browser environment for web agent tasks (uses Playwright + Docker containers)
 
 4. **Attack System** (`src/prompt_siren/attacks/`)
    - `abstract.py` - Base attack abstractions
@@ -252,8 +252,9 @@ Environments are not registered as plugins; instead, datasets directly instantia
   - Used by: AgentDojo datasets
   - Features: Snapshottable environment state, placeholder injection, AgentDojo tool integration
 
-- **PlaywrightEnv** (`src/prompt_siren/environments/playwright.py`) - For web automation tasks
-  - Features: Non-snapshottable (uses tool replay), browser automation, webpage interaction
+- **BrowserEnvironment** (`src/prompt_siren/environments/browser_env.py`) - For web agent tasks
+  - Used by: Browser dataset
+  - Features: Non-snapshottable (uses tool replay), fresh Docker containers per task (SWE-bench pattern), Playwright browser automation, request capture for attack evaluation
 
 Datasets specify which environment implementation to use and configure it during initialization.
 
@@ -297,7 +298,7 @@ Install optional features with: `pip install 'prompt-siren[feature]'`
 | `[agentdojo]` | `agentdojo>=0.1.35` | AgentDojo dataset, environment, and attacks |
 | `[swebench]` | `swebench`, `jinja2>=3.1.6` | SWE-bench dataset for code editing benchmarks |
 | `[docker]` | `aiodocker>=0.24.0` | Docker sandbox manager |
-| `[playwright]` | `playwright>=1.54.0` | Web automation environment |
+| `[browser]` | `playwright>=1.57.0` | Browser dataset for web agent tasks |
 | `[all]` | All optional deps | Full installation with all features |
 
 **Examples:**

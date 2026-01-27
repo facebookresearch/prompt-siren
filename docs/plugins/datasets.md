@@ -16,7 +16,7 @@ Datasets are the primary way to organize and provide tasks for evaluation. They 
 **Example**: You might have:
 - `AgentDojoWorkspaceDataset` - Uses `AgentDojoEnv` with workspace tools
 - `AgentDojoBankingDataset` - Uses same `AgentDojoEnv` with banking tools
-- `CustomWebDataset` - Uses `PlaywrightEnv` with custom web tasks
+- `CustomWebDataset` - Uses `BrowserEnvironment` with custom web tasks
 
 ### 1. Create Dataset Configuration
 
