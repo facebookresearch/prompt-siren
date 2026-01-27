@@ -1,5 +1,9 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-"""Dictionary-based attack implementation."""
+"""Dictionary-based attack implementation.
+
+This attack uses pre-computed attack payloads from a dictionary,
+useful for replaying saved attacks or testing with known payloads.
+"""
 
 import json
 from collections.abc import Sequence
@@ -9,22 +13,17 @@ from typing import ClassVar, Generic, TypeVar
 
 import logfire
 from pydantic import BaseModel, Field
-from pydantic_ai import InstrumentationSettings
-from pydantic_ai.messages import ModelMessage
-from pydantic_ai.toolsets import AbstractToolset
-from pydantic_ai.usage import UsageLimits
 
-from ..agents.abstract import AbstractAgent
-from ..agents.states import EndState
-from ..environments.abstract import AbstractEnvironment
-from ..tasks import BenignTask, MaliciousTask
+from ..tasks import TaskCouple
 from ..types import (
     AttackFile,
     InjectionAttack,
     InjectionAttacksDict,
     TaskCoupleID,
 )
-from .abstract import AbstractAttack
+from .executor import RolloutExecutor
+from .results import AttackResults
+from .simple_attack_base import InjectionContext, SimpleAttackBase
 
 EnvStateT = TypeVar("EnvStateT")
 RawOutputT = TypeVar("RawOutputT")
@@ -49,16 +48,27 @@ class FileAttackConfig(BaseModel):
 
 @dataclass(frozen=True)
 class DictAttack(
-    AbstractAttack[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
+    SimpleAttackBase[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
     Generic[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
 ):
-    """Attack that uses pre-loaded attacks from a dictionary."""
+    """Attack that uses pre-loaded attacks from a dictionary.
+
+    This attack looks up pre-computed attack payloads by task couple ID.
+    Useful for:
+    - Replaying previously successful attacks
+    - Testing with known attack payloads
+    - Benchmarking with standardized attacks
+
+    If no attacks are found for a task couple, logs a warning and uses
+    an empty attack dictionary.
+    """
 
     name: ClassVar[str] = "dict"
     _config: DictAttackConfig[InjectionAttackT]
 
     @property
     def config(self) -> DictAttackConfig[InjectionAttackT]:
+        """Return the attack configuration."""
         return self._config
 
     @property
@@ -66,30 +76,22 @@ class DictAttack(
         """Get the attack name from the configuration."""
         return self._config.attack_name
 
-    async def attack(
+    def generate_attack(
         self,
-        agent: AbstractAgent,
-        environment: AbstractEnvironment[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
-        message_history: Sequence[ModelMessage],
-        env_state: EnvStateT,
-        toolsets: Sequence[AbstractToolset[EnvStateT]],
-        benign_task: BenignTask[EnvStateT],
-        malicious_task: MaliciousTask[EnvStateT],
-        usage_limits: UsageLimits,
-        instrument: InstrumentationSettings | bool | None = None,
-    ) -> tuple[
-        EndState[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
-        InjectionAttacksDict[InjectionAttackT],
-    ]:
-        """Execute attack using pre-loaded attacks from dictionary.
+        context: InjectionContext[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
+    ) -> InjectionAttacksDict[InjectionAttackT]:
+        """Look up pre-computed attacks for this task couple.
 
-        Simply runs the agent with the pre-computed attacks and returns all
-        attacks that were available for this task pair.
+        Args:
+            context: Information about the injection point
+
+        Returns:
+            Pre-computed attacks for this couple, or empty dict if none found
         """
-        # Create task couple ID (matching the format used in other parts of the system)
-        task_couple_id = f"{benign_task.id}:{malicious_task.id}"
+        # Get task couple ID
+        task_couple_id = context.couple.id
 
-        # Get pre-computed attacks for this task couple
+        # Look up pre-computed attacks
         attacks_for_task = self._config.attacks_by_task.get(task_couple_id, {})
 
         if not attacks_for_task:
@@ -98,29 +100,30 @@ class DictAttack(
                 available_tasks=list(self._config.attacks_by_task.keys()),
             )
 
-        # Simply run the agent with the attacks
-        end_state = None
+        return attacks_for_task
 
-        # Run the agent iterator to completion
-        async for state in agent.iter(
-            environment=environment,
-            env_state=env_state,
-            user_prompt=benign_task.prompt,
-            message_history=[*message_history, *(benign_task.message_history or [])],
-            toolsets=toolsets,
-            usage_limits=usage_limits,
-            attacks=attacks_for_task,
-            instrument=instrument,
-        ):
-            if isinstance(state, EndState):
-                end_state = state
-                break
+    async def run(
+        self,
+        couples: Sequence[TaskCouple[EnvStateT]],
+        executor: RolloutExecutor[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
+    ) -> AttackResults[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT]:
+        """Execute the dictionary attack across all couples.
 
-        if not isinstance(end_state, EndState):
-            raise RuntimeError("Agent iteration completed without reaching EndState")
+        Uses the SimpleAttackBase.run() implementation which handles:
+        - Checkpoint discovery
+        - Attack generation via generate_attack()
+        - Rollout execution
+        - Checkpoint cleanup
 
-        # Return the end state and all attacks that were available for this task
-        return end_state, attacks_for_task
+        Args:
+            couples: The task couples to attack
+            executor: The rollout executor
+
+        Returns:
+            Attack results for each couple
+        """
+        # Delegate to base class implementation
+        return await SimpleAttackBase.run(self, couples, executor)
 
 
 def create_dict_attack(config: DictAttackConfig, context: None = None) -> DictAttack:

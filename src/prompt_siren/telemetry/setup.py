@@ -4,11 +4,18 @@
 import logging
 import os
 from logging import basicConfig
+from pathlib import Path
 
 import logfire
 from logfire import ConsoleOptions
 
 from .pydantic_ai_processor.span_processor import OpenInferenceSpanProcessor
+
+# Module-level logger
+logger = logging.getLogger(__name__)
+
+# Track file handlers so we can remove them on subsequent calls
+_job_file_handler: logging.FileHandler | None = None
 
 
 def setup_telemetry(
@@ -56,3 +63,48 @@ def setup_telemetry(
     basicConfig(handlers=[logfire.LogfireLoggingHandler()], level="INFO")
     httpx_logger = logging.getLogger("httpx")
     httpx_logger.setLevel(logging.WARNING)
+
+
+def setup_job_file_logging(
+    job_dir: Path,
+    log_filename: str = "job.log",
+) -> Path:
+    """Set up file logging to write logs to the job directory.
+
+    This adds a file handler to the root logger that writes all INFO and above
+    logs to a file in the job directory. The file handler is formatted with
+    timestamps and log levels for easy debugging.
+
+    Args:
+        job_dir: Path to the job directory where logs will be written
+        log_filename: Name of the log file (default: "job.log")
+
+    Returns:
+        Path to the log file
+    """
+    global _job_file_handler
+
+    # Remove any existing job file handler
+    root_logger = logging.getLogger()
+    if _job_file_handler is not None:
+        root_logger.removeHandler(_job_file_handler)
+        _job_file_handler.close()
+        _job_file_handler = None
+
+    # Create file handler for job directory
+    log_path = job_dir / log_filename
+    _job_file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+    _job_file_handler.setLevel(logging.INFO)
+
+    # Create formatter with timestamp, level, logger name, and message
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    _job_file_handler.setFormatter(formatter)
+
+    # Add to root logger
+    root_logger.addHandler(_job_file_handler)
+
+    logger.info(f"Job logging initialized: {log_path}")
+    return log_path

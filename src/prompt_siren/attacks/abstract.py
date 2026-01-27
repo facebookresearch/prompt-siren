@@ -1,19 +1,20 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+"""Abstract base protocol for attack implementations.
+
+Attacks generate injection payloads that attempt to make agents complete
+malicious goals while ostensibly working on benign tasks.
+"""
+
 import abc
 from collections.abc import Sequence
 from typing import ClassVar, Protocol, TypeVar
 
 from pydantic import BaseModel
-from pydantic_ai import InstrumentationSettings
-from pydantic_ai.messages import ModelMessage
-from pydantic_ai.toolsets import AbstractToolset
-from pydantic_ai.usage import UsageLimits
 
-from ..agents.abstract import AbstractAgent
-from ..agents.states import EndState
-from ..environments.abstract import AbstractEnvironment
-from ..tasks import BenignTask, MaliciousTask
-from ..types import InjectionAttack, InjectionAttacksDict
+from ..tasks import TaskCouple
+from ..types import InjectionAttack
+from .executor import RolloutExecutor
+from .results import AttackResults
 
 EnvStateT = TypeVar("EnvStateT")
 RawOutputT = TypeVar("RawOutputT")
@@ -22,53 +23,77 @@ InjectionAttackT = TypeVar("InjectionAttackT", bound=InjectionAttack)
 
 
 class AbstractAttack(Protocol[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT]):
+    """Protocol for attack implementations.
+
+    Attacks operate on a batch of task couples using a RolloutExecutor that
+    handles infrastructure concerns (environment lifecycle, concurrency,
+    persistence, telemetry).
+
+    There are two typical implementation patterns:
+
+    1. Simple attacks (extend SimpleAttackBase):
+       - Discover injection points once per couple
+       - Generate a single attack payload per injection point
+       - Execute one rollout per couple
+
+    2. Batch-optimizing attacks (implement run() directly):
+       - Discover injection points across the batch
+       - Sample multiple attack candidates per checkpoint
+       - Execute many rollouts, using rewards to update a policy
+       - Return the best attacks found
+
+    Attributes:
+        name: Unique identifier for this attack type (used in registry)
+    """
+
     name: ClassVar[str]
 
     @property
     def config(self) -> BaseModel:
-        """Returns the config of the attack.
+        """Returns the configuration of the attack.
 
-        It has to be a property method and not an attribute as otherwise Python's type system breaks.
+        It has to be a property method and not an attribute as otherwise
+        Python's type system breaks.
+
+        Returns:
+            The attack's configuration as a Pydantic BaseModel
         """
         raise NotImplementedError()
 
     @abc.abstractmethod
-    async def attack(
+    async def run(
         self,
-        agent: AbstractAgent,
-        environment: AbstractEnvironment[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
-        message_history: Sequence[ModelMessage],
-        env_state: EnvStateT,
-        toolsets: Sequence[AbstractToolset[EnvStateT]],
-        # TODO: make this take TaskCouple as input instead
-        benign_task: BenignTask[EnvStateT],
-        malicious_task: MaliciousTask[EnvStateT],
-        usage_limits: UsageLimits,
-        instrument: InstrumentationSettings | bool | None = None,
-    ) -> tuple[
-        EndState[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
-        InjectionAttacksDict[InjectionAttackT],
-    ]:
-        """Execute the attack to generate injection payloads for the malicious task.
+        couples: Sequence[TaskCouple[EnvStateT]],
+        executor: RolloutExecutor[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT],
+    ) -> AttackResults[EnvStateT, RawOutputT, FinalOutputT, InjectionAttackT]:
+        """Execute the attack strategy across a batch of task couples.
 
-        This method runs the attack strategy to produce injection payloads that will
-        be injected into the agent's execution to attempt to make it complete the
-        malicious goal while ostensibly working on the benign task.
+        The attack uses the executor to:
+        1. Discover injection points (checkpoints) for each couple
+        2. Execute rollouts from checkpoints with specific attack payloads
+        3. Release checkpoint resources when done
+
+        Simple attacks typically:
+        - Discover all injection points
+        - Generate one attack per checkpoint
+        - Execute one rollout per couple
+        - Return results
+
+        Batch-optimizing attacks (e.g., GRPO) typically:
+        - Discover all injection points
+        - Iterate: sample attacks, execute rollouts, update policy
+        - Track best attacks per couple
+        - Return best results
 
         Args:
-            agent: The agent that will execute the tasks
-            environment: Environment for rendering and injection detection
-            message_history: Previous conversation history
-            env_state: Current environment state
-            toolsets: Available tools that the agent can use
-            benign_task: The benign task that serves as cover
-            malicious_task: The malicious goal to inject
-            usage_limits: Constraints on model usage
-            instrument: Optional instrumentation settings for logging
+            couples: The task couples to attack. Each couple pairs a benign
+                task (the cover) with a malicious task (the goal to inject).
+            executor: The rollout executor for checkpoint discovery and
+                rollout execution. Handles environment lifecycle, concurrency,
+                persistence, and telemetry.
 
         Returns:
-            A tuple of (end_state, attacks) where:
-                - end_state: The final execution state after the attack
-                - attacks: Dictionary mapping injection vector IDs to attack payloads
+            AttackResults containing the final state, attacks, and evaluations
+            for each couple that was successfully attacked.
         """
         raise NotImplementedError()

@@ -6,15 +6,13 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import ClassVar, TypeVar
+from typing import Any, ClassVar, TypeVar
 from unittest.mock import patch
 
 import pytest
 from prompt_siren.agents.abstract import AbstractAgent
 from prompt_siren.agents.states import (
-    EndState,
     ExecutionState,
-    FinishReason,
     InjectableModelRequestState,
     ModelRequestState,
 )
@@ -37,7 +35,6 @@ from prompt_siren.types import (
 from pydantic import BaseModel, Field
 from pydantic_ai import InstrumentationSettings, RunContext, UsageLimits
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserContent
-from pydantic_ai.models.test import TestModel
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.toolsets.abstract import AbstractToolset
 from pydantic_ai.usage import RunUsage
@@ -416,7 +413,11 @@ class MockAttackConfig(BaseModel):
 # Mock attack implementation
 @dataclass
 class MockAttack(AbstractAttack[MockEnvState, str, str, StrContentAttack]):
-    """Mock attack for testing."""
+    """Mock attack for testing.
+
+    This attack uses the executor to discover injection points and execute rollouts,
+    generating a simple attack payload for each available vector.
+    """
 
     # Class variable required by AbstractAttack protocol
     name: ClassVar[str] = "mock"
@@ -429,30 +430,61 @@ class MockAttack(AbstractAttack[MockEnvState, str, str, StrContentAttack]):
     def config(self) -> BaseModel:
         return self._config
 
-    async def attack(
+    async def run(
         self,
-        agent: AbstractAgent,
-        environment: AbstractEnvironment[MockEnvState, str, str, StrContentAttack],
-        message_history: Sequence[ModelMessage],
-        env_state: MockEnvState,
-        toolsets: Sequence[AbstractToolset[MockEnvState]],
-        benign_task: BenignTask[MockEnvState],
-        malicious_task: MaliciousTask[MockEnvState],
-        usage_limits: UsageLimits,
-        instrument: InstrumentationSettings | bool | None = None,
-    ) -> tuple[
-        EndState[MockEnvState, str, str, StrContentAttack],
-        InjectionAttacksDict[StrContentAttack],
-    ]:
-        """Mock attack method."""
-        attacks_dict = {}
-        end_state = EndState(
-            RunContext(deps=MockEnvState(value="mock"), model=TestModel(), usage=RunUsage()),
-            environment,
-            FinishReason.AGENT_LOOP_END,
-            None,  # type: ignore[arg-type] -- no need to add a full state here
-        )
-        return end_state, attacks_dict
+        couples: Sequence[TaskCouple[MockEnvState]],
+        executor: Any,
+    ) -> Any:
+        """Run the mock attack using the executor properly."""
+        from prompt_siren.attacks.executor import RolloutRequest
+        from prompt_siren.attacks.results import AttackResults, CoupleAttackResult
+
+        # Discover injection points for all couples
+        checkpoints = await executor.discover_injection_points(couples)
+
+        try:
+            # Build rollout requests with mock attack payloads
+            couple_data: dict[str, tuple[Any, dict[str, StrContentAttack]]] = {}
+            requests = []
+
+            for checkpoint in checkpoints:
+                if checkpoint.is_terminal:
+                    couple_data[checkpoint.couple.id] = (checkpoint, {})
+                    continue
+
+                # Generate simple attack for each vector
+                attacks = {
+                    vec_id: StrContentAttack(f"mock_attack_{vec_id}")
+                    for vec_id in checkpoint.available_vectors
+                }
+                couple_data[checkpoint.couple.id] = (checkpoint, attacks)
+
+                requests.append(RolloutRequest(checkpoint=checkpoint, attacks=attacks))
+
+            # Execute all rollouts
+            rollout_results_by_couple: dict[str, list] = {c.id: [] for c in couples}
+            if requests:
+                rollout_results = await executor.execute_from_checkpoints(requests)
+                for result in rollout_results:
+                    couple_id = result.request.checkpoint.couple.id
+                    rollout_results_by_couple[couple_id].append(result)
+
+            # Build results
+            couple_results = []
+            for couple in couples:
+                _, attacks = couple_data.get(couple.id, (None, {}))
+                couple_results.append(
+                    CoupleAttackResult(
+                        couple=couple,
+                        rollout_results=rollout_results_by_couple.get(couple.id, []),
+                        generated_attacks=attacks,
+                    )
+                )
+
+            return AttackResults(couple_results=couple_results)
+
+        finally:
+            await executor.release_checkpoints(checkpoints)
 
 
 def create_mock_attack(config: MockAttackConfig, context: None = None) -> MockAttack:

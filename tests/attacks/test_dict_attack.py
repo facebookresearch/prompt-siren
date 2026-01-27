@@ -20,6 +20,7 @@ from prompt_siren.attacks.dict_attack import (
     DictAttackConfig,
     FileAttackConfig,
 )
+from prompt_siren.attacks.executor import InjectionCheckpoint
 from prompt_siren.tasks import TaskCouple
 from prompt_siren.types import (
     AttackFile,
@@ -30,17 +31,14 @@ from prompt_siren.types import (
     InjectionAttacksDict,
     StrContentAttack,
 )
-from pydantic_ai import RunContext, UsageLimits
+from pydantic_ai import RunContext
 from pydantic_ai.messages import ModelRequest, ModelRequestPart
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.toolsets.abstract import AbstractToolset
 from pydantic_ai.usage import RunUsage
 
 from ..conftest import (
-    create_mock_environment,
     MockAgent,
-    MockAgentConfig,
-    MockDatasetConfig,
 )
 
 pytestmark = pytest.mark.anyio
@@ -325,136 +323,107 @@ class TestDictAttackCreation:
 
 
 class TestDictAttackExecution:
-    """Test DictAttack execution with mock agents and environments."""
+    """Test DictAttack execution with generate_attack method."""
+
+    def _make_mock_checkpoint(
+        self,
+        couple: TaskCouple,
+        available_vectors: list[str],
+        agent_name: str = "test-agent",
+    ) -> InjectionCheckpoint:
+        """Helper to create a mock checkpoint for testing."""
+        return InjectionCheckpoint(
+            couple=couple,
+            injectable_state=None,
+            available_vectors=available_vectors,
+            agent_name=agent_name,
+            _checkpoint_id="test-checkpoint",
+        )
 
     async def test_dict_attack_execution_with_attacks(
         self,
         sample_attacks_dict: dict[str, InjectionAttacksDict[StrContentAttack]],
         mock_task_couple: TaskCouple,
     ):
-        """Test DictAttack execution when attacks are available for the task."""
-
-        benign_task = mock_task_couple.benign
-        malicious_task = mock_task_couple.malicious
+        """Test DictAttack generates attacks when they're available for the task."""
+        from prompt_siren.attacks.simple_attack_base import InjectionContext
 
         # Create attack instance
         config = DictAttackConfig(attacks_by_task=sample_attacks_dict, attack_name="test-attack")
         attack = DictAttack(_config=config)
 
-        # Create mock environment
-        env_config = MockDatasetConfig(name="test-env")
-        environment = create_mock_environment(env_config)
-
-        # Use our enhanced testable agent
-        agent = _TestableAgent(
-            name="test-agent",
-            custom_parameter="test",
-            _config=MockAgentConfig(name="test-agent"),
-            should_find_injectable=True,
-            injectable_vector_ids=["vector1", "vector2"],
+        # Create a mock checkpoint
+        checkpoint = self._make_mock_checkpoint(
+            couple=mock_task_couple,
+            available_vectors=["vector1", "vector2"],
         )
 
-        # Execute the attack
-        async with environment.create_task_context(mock_task_couple) as env_state:
-            end_state, used_attacks = await attack.attack(
-                agent=agent,
-                environment=environment,
-                message_history=[],
-                env_state=env_state,
-                toolsets=[],
-                benign_task=benign_task,
-                malicious_task=malicious_task,
-                usage_limits=UsageLimits(),
-            )
+        # Create an injection context from the checkpoint
+        context = InjectionContext.from_checkpoint(checkpoint)
+
+        # Generate the attack
+        attacks = attack.generate_attack(context)
 
         # Verify the results
-        assert isinstance(end_state, EndState)
-        assert isinstance(used_attacks, dict)
+        assert isinstance(attacks, dict)
+        assert "vector1" in attacks
+        assert "vector2" in attacks
+        assert attacks["vector1"].content == "Test attack content"
+        assert attacks["vector2"].content == "Another test attack"
 
     async def test_dict_attack_from_file_execution(
         self, attack_file_path: Path, mock_task_couple: TaskCouple
     ):
-        """Test DictAttack loaded from file executes correctly."""
-        benign_task = mock_task_couple.benign
-        malicious_task = mock_task_couple.malicious
+        """Test DictAttack loaded from file generates attacks correctly."""
+        from prompt_siren.attacks.simple_attack_base import InjectionContext
 
         # Create attack instance from file
         config = FileAttackConfig(file_path=str(attack_file_path))
         attack = create_dict_attack_from_file(config)
 
-        # Create mock environment
-        env_config = MockDatasetConfig(name="test-env")
-        environment = create_mock_environment(env_config)
-
-        # Use our enhanced testable agent
-        agent = _TestableAgent(
-            name="test-agent",
-            custom_parameter="test",
-            _config=MockAgentConfig(name="test-agent"),
-            should_find_injectable=True,
-            injectable_vector_ids=["vector1", "vector2"],
+        # Create a mock checkpoint
+        checkpoint = self._make_mock_checkpoint(
+            couple=mock_task_couple,
+            available_vectors=["vector1", "vector2"],
         )
 
-        # Execute the attack
-        async with environment.create_task_context(mock_task_couple) as env_state:
-            end_state, used_attacks = await attack.attack(
-                agent=agent,
-                environment=environment,
-                message_history=[],
-                env_state=env_state,
-                toolsets=[],
-                benign_task=benign_task,
-                malicious_task=malicious_task,
-                usage_limits=UsageLimits(),
-            )
+        # Create an injection context from the checkpoint
+        context = InjectionContext.from_checkpoint(checkpoint)
+
+        # Generate the attack
+        attacks = attack.generate_attack(context)
 
         # Verify the results
-        assert isinstance(end_state, EndState)
-        assert isinstance(used_attacks, dict)
+        assert isinstance(attacks, dict)
+        assert len(attacks) == 2
 
     async def test_dict_attack_execution_no_injectable_states(
         self,
         sample_attacks_dict: dict[str, InjectionAttacksDict[StrContentAttack]],
         mock_task_couple: TaskCouple,
     ):
-        """Test DictAttack execution when agent doesn't find injectable states."""
-
-        benign_task = mock_task_couple.benign
-        malicious_task = mock_task_couple.malicious
+        """Test DictAttack returns all available attacks when generating."""
+        from prompt_siren.attacks.simple_attack_base import InjectionContext
 
         # Create attack instance
         config = DictAttackConfig(attacks_by_task=sample_attacks_dict, attack_name="test-attack")
         attack = DictAttack(_config=config)
 
-        # Create mock environment
-        env_config = MockDatasetConfig(name="test-env")
-        environment = create_mock_environment(env_config)
-
-        # Use agent that doesn't find injectable states
-        agent = _TestableAgent(
-            name="test-agent",
-            custom_parameter="test",
-            _config=MockAgentConfig(name="test-agent"),
-            should_find_injectable=False,  # No injectable states found
-            injectable_vector_ids=[],
+        # Create a mock checkpoint with no vectors
+        checkpoint = self._make_mock_checkpoint(
+            couple=mock_task_couple,
+            available_vectors=[],
         )
 
-        # Execute the attack
-        async with environment.create_task_context(mock_task_couple) as env_state:
-            end_state, attacks = await attack.attack(
-                agent=agent,
-                environment=environment,
-                message_history=[],
-                env_state=env_state,
-                toolsets=[],
-                benign_task=benign_task,
-                malicious_task=malicious_task,
-                usage_limits=UsageLimits(),
-            )
+        # Create an injection context from the checkpoint
+        context = InjectionContext.from_checkpoint(checkpoint)
 
-        assert isinstance(end_state, EndState)
+        # Generate the attack - should return available attacks for the couple
+        attacks = attack.generate_attack(context)
+
         assert isinstance(attacks, dict)
-        assert len(attacks) == 2  # All attacks available for mock_task_benign:mock_task_malicious
+        # DictAttack should still return its attacks based on couple ID
+        assert len(attacks) == 2
 
     def test_attack_name_property(
         self,
