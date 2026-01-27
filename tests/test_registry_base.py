@@ -22,7 +22,7 @@ def dummy_factory(config: DummyConfig) -> DummyComponent:
 
 
 class TestTupleEntryPointHandling:
-    """Tests for entry point formats: tuple (factory, class) vs plain factory."""
+    """Tests for entry point formats: 3-tuple (factory, config_class, component_class) vs plain factory."""
 
     def _make_entry_point(self, name: str, load_result: object) -> MagicMock:
         ep = MagicMock()
@@ -31,10 +31,10 @@ class TestTupleEntryPointHandling:
         return ep
 
     def test_tuple_entry_stores_component_class(self) -> None:
-        """2-tuple entry point stores the class in _component_classes."""
+        """3-tuple entry point stores the component class in _component_classes."""
         registry = BaseRegistry[DummyComponent, None]("test", "test.group")
 
-        ep = self._make_entry_point("my_plugin", (dummy_factory, DummyComponent))
+        ep = self._make_entry_point("my_plugin", (dummy_factory, DummyConfig, DummyComponent))
 
         with patch("importlib.metadata.entry_points", return_value=[ep]):
             classes = registry.get_component_classes()
@@ -42,11 +42,11 @@ class TestTupleEntryPointHandling:
         assert "my_plugin" in classes
         assert classes["my_plugin"] is DummyComponent
 
-    def test_tuple_entry_extracts_factory(self) -> None:
-        """2-tuple entry point uses the first element as the factory."""
+    def test_tuple_entry_extracts_config_class(self) -> None:
+        """3-tuple entry point uses the second element as the config class."""
         registry = BaseRegistry[DummyComponent, None]("test", "test.group")
 
-        ep = self._make_entry_point("my_plugin", (dummy_factory, DummyComponent))
+        ep = self._make_entry_point("my_plugin", (dummy_factory, DummyConfig, DummyComponent))
 
         with patch("importlib.metadata.entry_points", return_value=[ep]):
             config_class = registry.get_config_class("my_plugin")
@@ -65,23 +65,6 @@ class TestTupleEntryPointHandling:
         assert "plain_plugin" not in classes
         # But it should still be registered as a component
         assert "plain_plugin" in registry.get_registered_components()
-
-    def test_wrong_length_tuple_logs_warning(self, caplog: pytest.LogCaptureFixture) -> None:
-        """Tuple of length != 2 logs a warning."""
-        registry = BaseRegistry[DummyComponent, None]("test", "test.group")
-
-        three_tuple = (dummy_factory, DummyComponent, "extra")
-        ep = self._make_entry_point("bad_tuple", three_tuple)
-
-        with (
-            patch("importlib.metadata.entry_points", return_value=[ep]),
-            caplog.at_level(logging.WARNING, logger="prompt_siren.registry_base"),
-        ):
-            registry._load_entry_points()
-
-        assert any("tuple of length 3" in record.message for record in caplog.records)
-        # Should not be stored in component_classes
-        assert "bad_tuple" not in registry._component_classes
 
 
 class TestRegisterWithComponentClass:
