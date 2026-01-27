@@ -348,6 +348,6 @@ def create_swebench_dataset(
     )
 
 
-# Entry point tuple: (factory_fn, dataset_class)
+# Entry point tuple: (factory_fn, config_class, component_class)
 # SwebenchDataset implements ImageBuildableDataset via get_image_build_specs classmethod
-swebench_entry = (create_swebench_dataset, SwebenchDataset)
+swebench_entry = (create_swebench_dataset, SwebenchDatasetConfig, SwebenchDataset)

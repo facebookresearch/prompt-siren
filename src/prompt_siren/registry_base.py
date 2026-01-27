@@ -105,22 +105,13 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
                     # Load the entry point (may be a factory or a tuple)
                     entry = ep.load()
 
-                    # Handle tuple format: (factory_fn, component_class)
+                    # Handle tuple format: (factory_fn, config_class, component_class)
                     if isinstance(entry, tuple):
-                        if len(entry) == 2:
-                            factory: Callable[..., Any] = entry[0]
-                            self._component_classes[ep.name] = entry[1]
-                        else:
-                            logger.warning(
-                                f"Entry point '{ep.name}' returned tuple of length {len(entry)}, "
-                                f"expected 2; treating entire tuple as factory"
-                            )
-                            factory = entry
+                        factory, config_class, component_class = entry
+                        self._component_classes[ep.name] = component_class
                     else:
                         factory = entry
-
-                    # Get config class from factory function signature
-                    config_class = self._get_config_class_from_factory(factory, ep.name)
+                        config_class = self._get_config_class_from_factory(factory, ep.name)
 
                     # Register if not already present (manual registration takes precedence)
                     if ep.name not in self._registry:

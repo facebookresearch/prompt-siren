@@ -294,7 +294,7 @@ def load_agentdojo_dataset(
 
 def create_agentdojo_dataset(
     config: AgentDojoDatasetConfig, sandbox_manager: None = None
-) -> AbstractDataset:
+) -> AgentDojoDataset:
     """Factory function to create an AgentDojo dataset.
 
     This is the entry point used by the dataset registry.
@@ -307,3 +307,6 @@ def create_agentdojo_dataset(
         Loaded AgentDojo dataset
     """
     return load_agentdojo_dataset(config)
+
+
+agentdojo_entry = (create_agentdojo_dataset, AgentDojoDatasetConfig, AgentDojoDataset)
