@@ -1,9 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+from collections.abc import Awaitable, Callable
 from typing import TypeAlias
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 ImageTag: TypeAlias = str
+
+# Type alias for seeder functions (async functions with no parameters)
+SeederFn: TypeAlias = Callable[[], Awaitable[None]]
 
 
 class PullImageSpec(BaseModel):
@@ -32,7 +36,15 @@ class BuildImageSpec(BaseModel):
             tag="python-app:dev",
             build_args={"PYTHON_VERSION": "3.12", "ENV": "development"}
         )
+
+        BuildImageSpec(
+            context_path="./sites/gitea",
+            tag="prompt-siren/gitea:latest",
+            seeder=gitea_seeding.generate_seed  # Pre-build seeding function
+        )
     """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     context_path: str = Field(description="Path to the build context directory")
     dockerfile_path: str | None = Field(
@@ -42,6 +54,11 @@ class BuildImageSpec(BaseModel):
     tag: ImageTag = Field(description="Tag for the built image (e.g., 'my-env:latest')")
     build_args: dict[str, str] | None = Field(
         default=None, description="Build-time variables for Docker build"
+    )
+    seeder: SeederFn | None = Field(
+        default=None,
+        description="Async function to run before building (e.g., seed generation)",
+        exclude=True,  # Don't serialize
     )
 
 
@@ -112,4 +129,29 @@ class MultiStageBuildImageSpec(BaseModel):
         return self.final_tag
 
 
-ImageSpec = PullImageSpec | BuildImageSpec | MultiStageBuildImageSpec
+class DerivedImageSpec(BaseModel):
+    """Specification for an image derived from a base image with modifications.
+
+    Used for creating pair images where additional Dockerfile instructions
+    are applied on top of a pre-built base image.
+
+    Examples:
+        DerivedImageSpec(
+            base_image_tag="siren-swebench-benign:django__django-11179",
+            dockerfile_extra="RUN pip install evil-package",
+            tag="siren-swebench-pair:django__django-11179__malicious_task"
+        )
+    """
+
+    base_image_tag: ImageTag = Field(
+        description="Tag of the base image to derive from (must be built first)"
+    )
+    dockerfile_extra: str = Field(description="Additional Dockerfile instructions to append")
+    tag: ImageTag = Field(description="Tag for the derived image")
+
+
+# Type alias for specs that require building (excludes PullImageSpec)
+ImageBuildSpec = BuildImageSpec | MultiStageBuildImageSpec | DerivedImageSpec
+
+# Type alias for all image specs (includes PullImageSpec)
+ImageSpec = PullImageSpec | ImageBuildSpec

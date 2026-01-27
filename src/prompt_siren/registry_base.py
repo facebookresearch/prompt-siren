@@ -82,6 +82,10 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
     def _load_entry_points(self) -> None:
         """Load components from entry points if not already loaded.
 
+        Entry points can be either:
+        - A tuple of (factory_fn, dataset_class) - recommended for datasets
+        - A factory function directly - for other component types
+
         Failed entry points are stored silently and re-raised when the plugin is actually requested.
         This avoids warning users about missing optional dependencies they don't intend to use.
         """
@@ -92,8 +96,14 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
             entry_points = importlib.metadata.entry_points(group=self._entry_point_group)
             for ep in entry_points:
                 try:
-                    # Load the factory function
-                    factory = ep.load()
+                    # Load the entry point (may be a factory or a tuple)
+                    entry = ep.load()
+
+                    # Handle tuple format: (factory_fn, component_class)
+                    if isinstance(entry, tuple) and len(entry) == 2:
+                        factory: Callable[..., Any] = entry[0]
+                    else:
+                        factory = entry
 
                     # Get config class from factory function signature
                     config_class = self._get_config_class_from_factory(factory, ep.name)

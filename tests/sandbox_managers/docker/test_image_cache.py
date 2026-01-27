@@ -12,7 +12,9 @@ from prompt_siren.sandbox_managers.docker.plugins.errors import DockerClientErro
 from prompt_siren.sandbox_managers.image_spec import (
     BuildImageSpec,
     BuildStage,
+    DerivedImageSpec,
     MultiStageBuildImageSpec,
+    PullImageSpec,
 )
 
 
@@ -124,3 +126,96 @@ class TestImageCacheEnsureImageAvailable:
             await cache._ensure_image_available(spec)
 
         assert exc_info.value.tag == "stage2:latest"
+
+    @pytest.mark.anyio
+    async def test_derived_image_spec_raises_when_not_prebuilt(
+        self, cache: ImageCache, mock_docker: MockDockerClient
+    ) -> None:
+        """Test that DerivedImageSpec raises ImageNotFoundError when image is not pre-built."""
+        mock_docker.inspect_image.side_effect = DockerClientError("Image not found", status=404)
+        spec = DerivedImageSpec(
+            base_image_tag="base:latest",
+            dockerfile_extra="RUN pip install something",
+            tag="derived:latest",
+        )
+
+        with pytest.raises(ImageNotFoundError) as exc_info:
+            await cache._ensure_image_available(spec)
+
+        assert exc_info.value.tag == "derived:latest"
+
+
+class TestImageCacheNon404Errors:
+    """Tests for proper handling of non-404 Docker errors."""
+
+    @pytest.fixture
+    def mock_docker(self) -> MockDockerClient:
+        return MockDockerClient()
+
+    @pytest.fixture
+    def cache(self, mock_docker: MockDockerClient) -> ImageCache:
+        return ImageCache(
+            docker=mock_docker,  # type: ignore[arg-type]
+            batch_id="test-batch",
+        )
+
+    @pytest.mark.anyio
+    async def test_verify_image_raises_docker_error_for_non_404(
+        self, cache: ImageCache, mock_docker: MockDockerClient
+    ) -> None:
+        """Test that non-404 DockerClientError is re-raised, not converted to ImageNotFoundError."""
+        mock_docker.inspect_image.side_effect = DockerClientError("Permission denied", status=403)
+
+        with pytest.raises(DockerClientError) as exc_info:
+            await cache._verify_image_exists("test:latest")
+
+        assert exc_info.value.status == 403
+        assert "Permission denied" in str(exc_info.value)
+
+    @pytest.mark.anyio
+    async def test_pull_image_raises_docker_error_for_non_404(
+        self, cache: ImageCache, mock_docker: MockDockerClient
+    ) -> None:
+        """Test that non-404 errors during pull are propagated, not silently ignored."""
+        mock_docker.inspect_image.side_effect = DockerClientError("Daemon not running", status=500)
+        spec = PullImageSpec(tag="test:latest")
+
+        with pytest.raises(DockerClientError) as exc_info:
+            await cache._pull_image(spec)
+
+        assert exc_info.value.status == 500
+
+
+class TestImageCacheGetCacheKey:
+    """Tests for ImageCache._get_cache_key static method."""
+
+    def test_get_cache_key_build_image_spec(self) -> None:
+        """Test cache key generation for BuildImageSpec."""
+        spec = BuildImageSpec(context_path="/some/path", tag="build:v1")
+        key = ImageCache._get_cache_key(spec)
+        assert key == "build:build:v1"
+
+    def test_get_cache_key_multi_stage_spec(self) -> None:
+        """Test cache key generation for MultiStageBuildImageSpec."""
+        spec = MultiStageBuildImageSpec(
+            stages=[BuildStage(context_path="/stage1", tag="stage1:latest")],
+            final_tag="final:v1",
+        )
+        key = ImageCache._get_cache_key(spec)
+        assert key == "multistage:final:v1"
+
+    def test_get_cache_key_derived_image_spec(self) -> None:
+        """Test cache key generation for DerivedImageSpec."""
+        spec = DerivedImageSpec(
+            base_image_tag="base:v1",
+            dockerfile_extra="RUN echo test",
+            tag="derived:v1",
+        )
+        key = ImageCache._get_cache_key(spec)
+        assert key == "derived:derived:v1"
+
+    def test_get_cache_key_pull_image_spec(self) -> None:
+        """Test cache key generation for PullImageSpec."""
+        spec = PullImageSpec(tag="alpine:3.18")
+        key = ImageCache._get_cache_key(spec)
+        assert key == "pull:alpine:3.18"
