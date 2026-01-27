@@ -34,11 +34,11 @@ class ImageBuildableDataset(Protocol):
     needed for the dataset.
 
     Note:
-        The ``config`` parameter is typed as ``BaseModel`` here so that
-        ``issubclass(SomeDataset, ImageBuildableDataset)`` works at runtime
-        (``runtime_checkable`` requires the protocol signature to be compatible
-        with all implementors). Concrete implementations should narrow the type
-        to their specific config class (e.g., ``SwebenchDatasetConfig``).
+        The ``config`` parameter is typed as ``BaseModel`` here for structural
+        subtyping compatibility: the protocol method signature must be at least
+        as wide as any implementor's signature. Concrete implementations should
+        narrow the type to their specific config class (e.g.,
+        ``SwebenchDatasetConfig``).
     """
 
     @classmethod

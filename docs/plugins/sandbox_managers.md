@@ -96,7 +96,6 @@ spec = MultiStageBuildImageSpec(
             parent_tag="myproject-env:abc123"
         ),
     ],
-    final_tag="myproject-instance:xyz789"
 )
 ```
 
@@ -109,7 +108,7 @@ spec = MultiStageBuildImageSpec(
 **Multi-Stage Build Behavior**:
 - Stages are built sequentially in order
 - Each stage's Dockerfile should use `FROM <parent_tag>`
-- The `final_tag` is used as the container image
+- The last stage's tag is used as the container image (accessible via `.tag` or `.final_tag`)
 - All intermediate stage images remain available for caching
 
 ## Multi-Container Tasks

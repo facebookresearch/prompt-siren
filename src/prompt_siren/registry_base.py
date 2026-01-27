@@ -31,7 +31,7 @@ class ComponentEntryPoint(NamedTuple):
 
     factory: Callable[..., Any]
     config_class: type[BaseModel]
-    component_class: type
+    component_class: type | None
 
 
 # Type alias for factory functions with optional context parameter
@@ -98,12 +98,12 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
 
     @property
     def failed_entry_points(self) -> dict[str, Exception]:
-        """Return a copy of entry points that failed to load.
+        """Return entry points that failed to load.
 
         Triggers entry point loading if not already done.
         """
         self._load_entry_points()
-        return dict(self._failed_entry_points)
+        return self._failed_entry_points
 
     def _load_entry_points(self) -> None:
         """Load components from entry points if not already loaded.
@@ -130,7 +130,8 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
                     # Handle tuple format: (factory_fn, config_class, component_class)
                     if isinstance(entry, tuple):
                         factory, config_class, component_class = entry
-                        self._component_classes[ep.name] = component_class
+                        if component_class is not None:
+                            self._component_classes[ep.name] = component_class
                     else:
                         factory = entry
                         config_class = self._get_config_class_from_factory(factory, ep.name)
@@ -322,7 +323,7 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
             Dictionary mapping component type names to their classes
         """
         self._load_entry_points()  # Ensure entry points are loaded
-        return dict(self._component_classes)
+        return self._component_classes
 
     def get_registry_info(self) -> dict[str, dict[str, Any]]:
         """Get detailed information about registered components.

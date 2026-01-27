@@ -310,6 +310,4 @@ def create_agentdojo_dataset(
     return load_agentdojo_dataset(config)
 
 
-agentdojo_entry = ComponentEntryPoint(
-    create_agentdojo_dataset, AgentDojoDatasetConfig, AgentDojoDataset
-)
+agentdojo_entry = ComponentEntryPoint(create_agentdojo_dataset, AgentDojoDatasetConfig, None)

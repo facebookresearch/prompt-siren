@@ -383,7 +383,6 @@ class TestImageBuilderBuildAllSpecs:
                         build_args=None,
                     ),
                 ],
-                final_tag="stage2:latest",
             ),
         ]
 

@@ -137,9 +137,6 @@ def prepare_build_context(
     )
 
     return (
-        MultiStageBuildImageSpec(
-            stages=stages,
-            final_tag=test_spec.instance_image_key,
-        ),
+        MultiStageBuildImageSpec(stages=stages),
         test_spec,
     )

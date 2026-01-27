@@ -1,9 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 from collections.abc import Awaitable, Callable
-from typing import Annotated, TypeAlias
+from typing import TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator, StringConstraints
-from typing_extensions import Self
+from pydantic import BaseModel, ConfigDict, Field
 
 ImageTag: TypeAlias = str
 
@@ -104,7 +103,8 @@ class MultiStageBuildImageSpec(BaseModel):
     """Specification for multi-stage Docker builds with intermediate caching.
 
     Enables efficient builds where intermediate stages (e.g., base, environment)
-    can be cached and reused across multiple final images.
+    can be cached and reused across multiple final images. The final image tag
+    is derived from the last stage's tag.
 
     Examples:
         MultiStageBuildImageSpec(
@@ -113,32 +113,23 @@ class MultiStageBuildImageSpec(BaseModel):
                 BuildStage(tag="env:latest", context_path="./env", parent_tag="base:latest", cache_key="env_hash"),
                 BuildStage(tag="app:latest", context_path="./app", parent_tag="env:latest")
             ],
-            final_tag="app:latest"
         )
     """
 
     stages: list[BuildStage] = Field(
-        description="Ordered list of build stages. Each stage builds on the previous one."
-    )
-    final_tag: ImageTag = Field(
-        description="Tag of the final image to use for containers (typically the last stage's tag)"
+        min_length=1,
+        description="Ordered list of build stages. Each stage builds on the previous one.",
     )
 
-    @model_validator(mode="after")
-    def _validate_final_tag_matches_last_stage(self) -> Self:
-        if not self.stages:
-            raise ValueError("stages must not be empty")
-        if self.final_tag != self.stages[-1].tag:
-            raise ValueError(
-                f"final_tag must match the last stage's tag: "
-                f"final_tag={self.final_tag!r}, last stage tag={self.stages[-1].tag!r}"
-            )
-        return self
+    @property
+    def final_tag(self) -> ImageTag:
+        """The tag of the final (last) stage."""
+        return self.stages[-1].tag
 
     @property
     def tag(self) -> ImageTag:
-        """Alias for final_tag, providing a uniform .tag interface across all ImageBuildSpec types."""
-        return self.final_tag
+        """Uniform .tag interface across all ImageBuildSpec types."""
+        return self.stages[-1].tag
 
 
 class DerivedImageSpec(BaseModel):
@@ -158,16 +149,8 @@ class DerivedImageSpec(BaseModel):
     base_image_tag: ImageTag = Field(
         description="Tag of the base image to derive from (must be built first)"
     )
-    dockerfile_extra: Annotated[str, StringConstraints(min_length=1)] = Field(
-        description="Additional Dockerfile instructions to append"
-    )
+    dockerfile_extra: str = Field(description="Additional Dockerfile instructions to append")
     tag: ImageTag = Field(description="Tag for the derived image")
-
-    @model_validator(mode="after")
-    def _validate_tag_differs_from_base(self) -> Self:
-        if self.tag == self.base_image_tag:
-            raise ValueError(f"'tag' must differ from 'base_image_tag', got '{self.tag}' for both")
-        return self
 
 
 # Type alias for specs that require building (excludes PullImageSpec)
