@@ -9,7 +9,6 @@ from .registry import (
     get_datasets_with_image_specs,
     get_image_build_specs,
     get_registered_datasets,
-    has_image_spec_factory,
     register_dataset,
 )
 
@@ -21,6 +20,5 @@ __all__ = [
     "get_datasets_with_image_specs",
     "get_image_build_specs",
     "get_registered_datasets",
-    "has_image_spec_factory",
     "register_dataset",
 ]

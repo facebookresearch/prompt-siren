@@ -10,7 +10,6 @@ from prompt_siren.datasets import registry
 from prompt_siren.datasets.registry import (
     get_datasets_with_image_specs,
     get_image_build_specs,
-    has_image_spec_factory,
 )
 from prompt_siren.datasets.swebench_dataset.config import SwebenchDatasetConfig
 from prompt_siren.datasets.swebench_dataset.dataset import SwebenchDataset
@@ -19,18 +18,6 @@ from prompt_siren.sandbox_managers.image_spec import (
     DerivedImageSpec,
     MultiStageBuildImageSpec,
 )
-
-
-class TestHasImageSpecFactory:
-    """Tests for has_image_spec_factory function."""
-
-    def test_returns_true_for_swebench(self) -> None:
-        """Test that swebench is detected as image-buildable."""
-        assert has_image_spec_factory("swebench") is True
-
-    def test_returns_false_for_unknown_dataset(self) -> None:
-        """Test that unknown datasets return False."""
-        assert has_image_spec_factory("nonexistent-dataset") is False
 
 
 class TestGetDatasetsWithImageSpecs:
@@ -89,6 +76,7 @@ class TestRegistryEntryPointLoadingErrors:
         original_loaded = registry._image_buildable_classes_loaded
         original_error = registry._image_buildable_load_error
         original_classes = registry._image_buildable_classes.copy()
+        original_failed = registry._image_buildable_failed_entry_points.copy()
 
         yield
 
@@ -97,17 +85,8 @@ class TestRegistryEntryPointLoadingErrors:
         registry._image_buildable_load_error = original_error
         registry._image_buildable_classes.clear()
         registry._image_buildable_classes.update(original_classes)
-
-    def test_has_image_spec_factory_raises_when_entry_point_loading_failed(
-        self,
-    ) -> None:
-        """Verify RuntimeError raised when entry point loading failed completely."""
-        # Simulate a failed entry point loading
-        registry._image_buildable_classes_loaded = True
-        registry._image_buildable_load_error = RuntimeError("Entry point system broken")
-
-        with pytest.raises(RuntimeError, match="entry point loading failed"):
-            has_image_spec_factory("any-dataset")
+        registry._image_buildable_failed_entry_points.clear()
+        registry._image_buildable_failed_entry_points.update(original_failed)
 
     def test_get_image_build_specs_raises_when_entry_point_loading_failed(
         self,
@@ -136,6 +115,6 @@ class TestRegistryEntryPointLoadingErrors:
         registry._image_buildable_load_error = original_error
 
         with pytest.raises(RuntimeError) as exc_info:
-            has_image_spec_factory("any-dataset")
+            get_datasets_with_image_specs()
 
         assert exc_info.value.__cause__ is original_error

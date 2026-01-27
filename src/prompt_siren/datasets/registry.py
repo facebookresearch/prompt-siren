@@ -53,17 +53,28 @@ dataset_registry = BaseRegistry[AbstractDataset, AbstractSandboxManager | None](
 _image_buildable_classes: dict[str, type[ImageBuildableDataset]] = {}
 _image_buildable_classes_loaded: bool = False
 _image_buildable_load_error: Exception | None = None
+_image_buildable_failed_entry_points: dict[str, Exception] = {}
 
 
-def _load_image_buildable_classes() -> None:
-    """Load dataset classes from entry points.
+def _ensure_image_buildable_classes_loaded(operation: str) -> None:
+    """Load dataset classes from entry points and raise if loading failed.
 
-    Entry points must return a tuple of (factory_fn, dataset_class).
+    Entry points that return a tuple of (factory_fn, dataset_class) are inspected.
     If the dataset_class implements ImageBuildableDataset protocol,
     it is registered for image building.
+
+    Args:
+        operation: Description of the operation for error message
+
+    Raises:
+        RuntimeError: If entry point loading failed completely
     """
     global _image_buildable_classes_loaded, _image_buildable_load_error
     if _image_buildable_classes_loaded:
+        if _image_buildable_load_error is not None:
+            raise RuntimeError(
+                f"Cannot {operation}: entry point loading failed"
+            ) from _image_buildable_load_error
         return
 
     try:
@@ -73,12 +84,8 @@ def _load_image_buildable_classes() -> None:
                 continue
             try:
                 entry = ep.load()
-                # Entry must be a tuple of (factory, dataset_class)
+                # Only tuples of (factory, dataset_class) are inspected for image building
                 if not isinstance(entry, tuple) or len(entry) != 2:
-                    logger.warning(
-                        f"Dataset entry point '{ep.name}' must return a tuple of "
-                        "(factory_fn, dataset_class)"
-                    )
                     continue
                 _, dataset_class = entry
                 if issubclass(dataset_class, ImageBuildableDataset):
@@ -87,11 +94,12 @@ def _load_image_buildable_classes() -> None:
                 # Expected for optional dependencies - log at debug level
                 logger.debug(f"Skipping dataset '{ep.name}': missing dependency: {e}")
             except Exception as e:
-                # Unexpected error - log with full traceback for debugging
+                # Unexpected error - store for later retrieval and log
                 logger.error(
                     f"Failed to load dataset class for '{ep.name}': {type(e).__name__}: {e}",
                     exc_info=True,
                 )
+                _image_buildable_failed_entry_points[ep.name] = e
     except Exception as e:
         logger.error(
             f"Failed to load dataset entry points: {type(e).__name__}: {e}",
@@ -101,17 +109,6 @@ def _load_image_buildable_classes() -> None:
 
     _image_buildable_classes_loaded = True
 
-
-def _ensure_image_buildable_classes_loaded(operation: str) -> None:
-    """Load image buildable classes and raise if loading failed.
-
-    Args:
-        operation: Description of the operation for error message
-
-    Raises:
-        RuntimeError: If entry point loading failed completely
-    """
-    _load_image_buildable_classes()
     if _image_buildable_load_error is not None:
         raise RuntimeError(
             f"Cannot {operation}: entry point loading failed"
@@ -169,22 +166,6 @@ def get_registered_datasets() -> list[str]:
     return dataset_registry.get_registered_components()
 
 
-def has_image_spec_factory(dataset_type: str) -> bool:
-    """Check if a dataset type supports image building.
-
-    Args:
-        dataset_type: The type of dataset to check
-
-    Returns:
-        True if the dataset class is registered as image buildable
-
-    Raises:
-        RuntimeError: If entry point loading failed completely
-    """
-    _ensure_image_buildable_classes_loaded("check dataset")
-    return dataset_type in _image_buildable_classes
-
-
 def get_image_build_specs(dataset_type: str, config: BaseModel) -> list[ImageBuildSpec]:
     """Get image build specs for a dataset type.
 
@@ -203,6 +184,9 @@ def get_image_build_specs(dataset_type: str, config: BaseModel) -> list[ImageBui
         ValueError: If the dataset class doesn't support image building
     """
     _ensure_image_buildable_classes_loaded("get image specs")
+    # Check if this specific entry point failed to load
+    if dataset_type in _image_buildable_failed_entry_points:
+        raise _image_buildable_failed_entry_points[dataset_type]
     dataset_class = _image_buildable_classes.get(dataset_type)
     if dataset_class is None:
         raise ValueError(

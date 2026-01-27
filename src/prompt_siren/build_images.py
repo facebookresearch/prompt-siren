@@ -239,7 +239,7 @@ class ImageBuilder:
             dockerfile_content = f"FROM {base_tag}\n{dockerfile_extra}"
             dockerfile_path.write_text(dockerfile_content)
 
-            await self.build_from_context(
+            await self._do_build(
                 context_path=str(temp_path),
                 tag=output_tag,
             )
@@ -362,14 +362,7 @@ class ImageBuilder:
             try:
                 await self._build_single_spec(spec)
                 await self.push_to_registry(spec.tag)
-            except (  # noqa: PERF203
-                KeyboardInterrupt,
-                SystemExit,
-                asyncio.CancelledError,
-            ):
-                # Don't swallow cancellation - let it propagate
-                raise
-            except Exception as e:
+            except Exception as e:  # noqa: PERF203
                 logger.error(f"Failed to build image {spec.tag}: {type(e).__name__}: {e}")
                 errors.append(BuildError(image_tag=spec.tag, error=e))
                 failed_base_tags.add(spec.tag)
@@ -400,13 +393,6 @@ class ImageBuilder:
                     output_tag=spec.tag,
                 )
                 await self.push_to_registry(spec.tag)
-            except (
-                KeyboardInterrupt,
-                SystemExit,
-                asyncio.CancelledError,
-            ):
-                # Don't swallow cancellation - let it propagate
-                raise
             except Exception as e:
                 logger.error(f"Failed to build derived image {spec.tag}: {type(e).__name__}: {e}")
                 errors.append(BuildError(image_tag=spec.tag, error=e))
@@ -454,7 +440,6 @@ async def run_build(
     cache_dir: str = ".build_cache",
     rebuild_existing: bool = False,
     registry: str | None = None,
-    config_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """Run the image building process for specified datasets.
 
@@ -463,12 +448,10 @@ async def run_build(
         cache_dir: Directory for caching build contexts
         rebuild_existing: If True, delete and rebuild existing images.
         registry: Optional registry to tag and push images to
-        config_overrides: Optional configuration overrides per dataset
 
     Raises:
         ExceptionGroup: If any image builds failed
     """
-    config_overrides = config_overrides or {}
 
     # Create Docker client - always use local client for image building
     logger.warning(
@@ -491,21 +474,12 @@ async def run_build(
         # Build images for each dataset
         for dataset_name in datasets:
             try:
-                overrides: dict[str, Any] = config_overrides.get(dataset_name, {})
                 errors = await build_dataset_images(
                     dataset_name,
                     builder,
-                    **overrides,
                 )
                 all_build_errors.extend(errors)
-            except (  # noqa: PERF203
-                KeyboardInterrupt,
-                SystemExit,
-                asyncio.CancelledError,
-            ):
-                # Don't swallow cancellation - let it propagate
-                raise
-            except Exception as e:
+            except Exception as e:  # noqa: PERF203
                 logger.error(
                     f"Failed to build images for dataset {dataset_name}: {type(e).__name__}: {e}"
                 )
@@ -613,9 +587,6 @@ def main(
         # ExceptionGroup from _handle_build_failures - details already logged
         logger.error(f"Build completed with failures: {eg}")
         sys.exit(1)
-    except (KeyboardInterrupt, SystemExit):
-        # User cancellation - exit cleanly
-        raise
     except Exception as e:
         logger.error(f"Build failed unexpectedly: {e}", exc_info=True)
         sys.exit(1)

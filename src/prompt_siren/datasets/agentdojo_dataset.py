@@ -307,9 +307,3 @@ def create_agentdojo_dataset(
         Loaded AgentDojo dataset
     """
     return load_agentdojo_dataset(config)
-
-
-# Entry point tuple: (factory_fn, dataset_class)
-# AgentDojoDataset doesn't implement ImageBuildableDataset, so it won't be
-# registered for image building
-agentdojo_entry = (create_agentdojo_dataset, AgentDojoDataset)
