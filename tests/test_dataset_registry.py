@@ -65,6 +65,28 @@ class TestSwebenchDatasetGetImageBuildSpecs:
             # ImageBuildSpec = BuildImageSpec | MultiStageBuildImageSpec | DerivedImageSpec
             assert isinstance(spec, (BuildImageSpec, MultiStageBuildImageSpec, DerivedImageSpec))
 
+    def test_derived_specs_reference_existing_base_tags(self) -> None:
+        """Verify derived specs reference tags that are produced by base specs."""
+        config = SwebenchDatasetConfig(max_instances=1)
+        specs = SwebenchDataset.get_image_build_specs(config)
+
+        # Collect all tags produced by non-derived specs
+        base_tags: set[str] = set()
+        for spec in specs:
+            if isinstance(spec, MultiStageBuildImageSpec):
+                base_tags.add(spec.final_tag)
+            elif isinstance(spec, BuildImageSpec):
+                base_tags.add(spec.tag)
+
+        # Every derived spec's base_image_tag must reference a produced tag
+        derived_specs = [s for s in specs if isinstance(s, DerivedImageSpec)]
+        assert len(derived_specs) >= 1, "Expected at least one derived spec"
+        for spec in derived_specs:
+            assert spec.base_image_tag in base_tags, (
+                f"Derived spec {spec.tag} references base_image_tag={spec.base_image_tag!r} "
+                f"which is not produced by any base spec. Available tags: {base_tags}"
+            )
+
 
 class TestRegistryEntryPointLoadingErrors:
     """Tests for error handling when entry point loading fails."""
