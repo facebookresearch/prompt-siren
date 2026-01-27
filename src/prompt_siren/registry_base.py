@@ -83,8 +83,8 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
         """Load components from entry points if not already loaded.
 
         Entry points can be either:
-        - A tuple of (factory_fn, dataset_class) - recommended for datasets
-        - A factory function directly - for other component types
+        - A tuple of (factory_fn, component_class) - for components that need class-level access
+        - A factory function directly - for simpler component types
 
         Failed entry points are stored silently and re-raised when the plugin is actually requested.
         This avoids warning users about missing optional dependencies they don't intend to use.

@@ -64,7 +64,7 @@ file = "prompt_siren.attacks.dict_attack:create_dict_attack_from_file"
 mini-goat = "prompt_siren.attacks.mini_goat_attack:create_mini_goat_attack"
 
 [project.entry-points."prompt_siren.datasets"]
-agentdojo = "prompt_siren.datasets.agentdojo_dataset:agentdojo_entry"
+agentdojo = "prompt_siren.datasets.agentdojo_dataset:create_agentdojo_dataset"
 swebench = "prompt_siren.datasets.swebench_dataset:swebench_entry"
 
 [project.entry-points."prompt_siren.sandbox_managers"]
