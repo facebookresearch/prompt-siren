@@ -124,6 +124,10 @@ select = [
     "RUF",
 ]
 
+# HTTP server handlers require specific method names (do_GET, do_POST)
+[tool.ruff.lint.per-file-ignores]
+"src/prompt_siren/datasets/swebench_dataset/dockerfiles/**/server.py" = ["N802"]
+
 # Settings to ensure compatibility with Meta code style guides
 [tool.ruff.lint.isort]
 case-sensitive = false
