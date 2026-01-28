@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from functools import cache
 from typing import Annotated, Any, Generic, Literal, TypeAlias, TypeVar
 
 import pydantic
@@ -117,7 +116,6 @@ InjectableUserContent = Annotated[
 ]
 
 
-@cache
 def _get_injectable_user_part_vector_ids(
     part: InjectableUserPromptPart,
 ) -> list[InjectionVectorID]:
@@ -128,7 +126,7 @@ def _get_injectable_user_part_vector_ids(
     all_ids = []
     for content in part.content:
         if isinstance(content, InjectableStrContent | InjectableBinaryContent):
-            all_ids.append(content.vector_ids)
+            all_ids.extend(content.vector_ids)
             continue
 
     return all_ids

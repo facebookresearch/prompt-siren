@@ -1,4 +1,5 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
+from collections.abc import Sequence
+
 import pytest
 from prompt_siren.tasks import BenignTask, MaliciousTask
 from prompt_siren.types import InjectableUserContent
@@ -26,7 +27,7 @@ class TestBenignTaskValidation:
 
     def test_benign_task_empty_list_raises(self):
         """Test that empty list prompt raises ValueError."""
-        with pytest.raises(ValueError, match="prompt list cannot be empty"):
+        with pytest.raises(ValueError, match="prompt sequence cannot be empty"):
             BenignTask(id="test", prompt=[], evaluators={})
 
     def test_benign_task_valid_string(self):
@@ -43,7 +44,7 @@ class TestBenignTaskValidation:
     def test_benign_task_valid_list(self):
         """Test that valid list prompt works."""
 
-        prompt: str | list[UserContent | InjectableUserContent] = [
+        prompt: str | Sequence[UserContent | InjectableUserContent] = [
             BinaryContent(data=b"abc", media_type="image/png")
         ]
         task = BenignTask(id="test", prompt=prompt, evaluators={})
