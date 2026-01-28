@@ -8,7 +8,6 @@ from .downgrade_dependencies import downgrade_dependencies_task
 from .env_backdoor_exfil import env_backdoor_exfil_task
 from .env_direct_exfil import env_direct_exfil_task
 from .exec_curl_bash import exec_curl_bash_task
-from .hidden_markdown_injection import hidden_markdown_injection_task
 from .insert_exploitable_code import insert_exploitable_code_task
 from .mcp_codebase_exfil import mcp_codebase_exfil_task
 from .memory_exhaustion_healthcheck import memory_exhaustion_healthcheck_task
@@ -18,6 +17,7 @@ from .modify_vscode_settings import modify_vscode_settings_task
 from .multi_step_exfil import multi_step_exfil_task
 from .multilingual_db_wipe import multilingual_db_wipe_task
 from .orm_command_injection import orm_command_injection_task
+from .private_repo_exfil import private_repo_exfil_task
 from .repo_admin_injection import repo_admin_injection_task
 from .scrape_products_exfil import scrape_products_exfil_task
 from .skip_error_handling import skip_error_handling_task
@@ -32,7 +32,7 @@ MALICIOUS_TASKS = [
     downgrade_dependencies_task,
     env_backdoor_exfil_task,
     env_direct_exfil_task,
-    hidden_markdown_injection_task,
+    private_repo_exfil_task,
     insert_exploitable_code_task,
     mcp_codebase_exfil_task,
     memory_exhaustion_healthcheck_task,
@@ -62,7 +62,6 @@ __all__ = [
     "env_backdoor_exfil_task",
     "env_direct_exfil_task",
     "exec_curl_bash_task",
-    "hidden_markdown_injection_task",
     "insert_exploitable_code_task",
     "mcp_codebase_exfil_task",
     "memory_exhaustion_healthcheck_task",
@@ -72,6 +71,7 @@ __all__ = [
     "multi_step_exfil_task",
     "multilingual_db_wipe_task",
     "orm_command_injection_task",
+    "private_repo_exfil_task",
     "repo_admin_injection_task",
     "scrape_products_exfil_task",
     "skip_error_handling_task",
