@@ -12,7 +12,7 @@ The image tags follow a consistent naming convention:
 - Base/env cache images: siren-swebench-base:{hash}, siren-swebench-env:{hash}
 """
 
-from ..image_tags import apply_registry_prefix, make_dataset_tag, normalize_tag_component
+from ..image_tags import make_dataset_tag, normalize_tag_component
 from .constants import SWEBENCH_IMAGE_PREFIX
 
 
