@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cache
@@ -34,7 +35,8 @@ class UnknownModelError(ValueError): ...
 def _get_model_name(model_name: str | KnownModelName) -> str:
     if "claude" in model_name:
         return "Claude"
-    if "gpt" in model_name:
+    # Match "gpt" or OpenAI's o-series models
+    if "gpt" in model_name or re.search(r"\bo\d", model_name):
         return "ChatGPT"
     if "gemini" in model_name:
         return "Gemini"
