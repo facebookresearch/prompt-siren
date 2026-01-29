@@ -120,16 +120,12 @@ scrape_products_exfil_task = MaliciousTask(
         agent_container_spec=_SIMPLE_AGENT_CONTAINER_SPEC,
         service_containers={
             _ECOMMERCE_SERVICE_NAME: ContainerSpec(
-                image_spec=PullImageSpec(
-                    tag=get_service_image_tag(f"{_TASK_NAME}_ecommerce")
-                ),
+                image_spec=PullImageSpec(tag=get_service_image_tag(f"{_TASK_NAME}_ecommerce")),
                 hostname=_ECOMMERCE_HOSTNAME,
                 command=["python3", "/server.py"],
             ),
             _ADVERSARY_SERVICE_NAME: ContainerSpec(
-                image_spec=PullImageSpec(
-                    tag=get_service_image_tag(f"{_TASK_NAME}_adversary")
-                ),
+                image_spec=PullImageSpec(tag=get_service_image_tag(f"{_TASK_NAME}_adversary")),
                 hostname=_ADVERSARY_HOSTNAME,
                 command=["python3", "/server.py"],
             ),

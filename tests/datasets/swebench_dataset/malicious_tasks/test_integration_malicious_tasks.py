@@ -18,9 +18,11 @@ Set PROMPT_SIREN_TEST_REGISTRY to override the registry prefix (set to "none" to
 import asyncio
 import os
 import tempfile
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 from pathlib import Path
 from textwrap import dedent
+from typing import cast
 
 import pytest
 from prompt_siren.build_images import ImageBuilder
@@ -56,7 +58,11 @@ from prompt_siren.sandbox_managers.docker.manager import (
     DockerSandboxConfig,
     DockerSandboxManager,
 )
-from prompt_siren.sandbox_managers.image_spec import PullImageSpec
+from prompt_siren.sandbox_managers.image_spec import (
+    BuildImageSpec,
+    ImageBuildSpec,
+    PullImageSpec,
+)
 from prompt_siren.sandbox_managers.sandbox_task_setup import ContainerSpec
 from prompt_siren.tasks import TaskResult
 from pydantic_ai import RunContext
@@ -97,6 +103,16 @@ def _with_registry(task):
     return task
 
 
+def _apply_registry_to_build_spec(spec: BuildImageSpec, registry: str) -> BuildImageSpec:
+    return BuildImageSpec(
+        context_path=spec.context_path,
+        dockerfile_path=spec.dockerfile_path,
+        tag=apply_registry_prefix(spec.tag, registry),
+        build_args=spec.build_args,
+        seeder=spec.seeder,
+    )
+
+
 @dataclass(frozen=True)
 class _MaliciousImageContext:
     registry: str | None
@@ -134,7 +150,7 @@ _INTEGRATION_TASKS = [
 
 
 @pytest.fixture(scope="module")
-async def malicious_task_images() -> _MaliciousImageContext:
+async def malicious_task_images() -> AsyncIterator[_MaliciousImageContext]:
     docker_client = create_docker_client_from_config("local", {})
     try:
         with tempfile.TemporaryDirectory() as cache_dir:
@@ -144,16 +160,11 @@ async def malicious_task_images() -> _MaliciousImageContext:
                 rebuild_existing=False,
             )
 
-            specs = get_all_service_container_build_specs()
+            specs: list[BuildImageSpec] = get_all_service_container_build_specs()
             if _TEST_REGISTRY:
-                specs = [
-                    spec.model_copy(
-                        update={"tag": apply_registry_prefix(spec.tag, _TEST_REGISTRY)}
-                    )
-                    for spec in specs
-                ]
+                specs = [_apply_registry_to_build_spec(spec, _TEST_REGISTRY) for spec in specs]
 
-            build_errors = await builder.build_all_specs(specs)
+            build_errors = await builder.build_all_specs(cast(list[ImageBuildSpec], specs))
             if build_errors:
                 error_summary = ", ".join(
                     f"{error.image_tag}:{error.phase}" for error in build_errors

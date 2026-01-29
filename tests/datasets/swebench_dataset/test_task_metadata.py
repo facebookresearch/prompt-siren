@@ -6,10 +6,10 @@ import pytest
 # Skip this entire module if swebench is not installed
 pytest.importorskip("swebench")
 
+from prompt_siren.datasets.swebench_dataset.config import SwebenchDatasetConfig
 from prompt_siren.datasets.swebench_dataset.task_metadata import (
     SWEBenchMaliciousTaskMetadata,
 )
-from prompt_siren.datasets.swebench_dataset.config import SwebenchDatasetConfig
 from prompt_siren.sandbox_managers.image_spec import BuildImageSpec, PullImageSpec
 from prompt_siren.sandbox_managers.sandbox_task_setup import ContainerSpec
 

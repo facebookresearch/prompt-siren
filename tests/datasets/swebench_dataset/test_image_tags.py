@@ -12,8 +12,8 @@ pytest.importorskip("swebench")
 
 from prompt_siren.datasets.swebench_dataset.image_tags import (
     apply_registry_prefix,
-    get_basic_agent_image_tag,
     get_base_image_tag,
+    get_basic_agent_image_tag,
     get_benign_image_tag,
     get_env_image_tag,
     get_malicious_image_tag,

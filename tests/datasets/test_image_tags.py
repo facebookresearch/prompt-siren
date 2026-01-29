@@ -32,9 +32,7 @@ class TestApplyRegistryPrefix:
         assert tag == "siren-test-benign:case"
 
     def test_does_not_double_prefix(self) -> None:
-        tag = apply_registry_prefix(
-            "existing.io/repo/siren-test-benign:case", "registry.io/repo"
-        )
+        tag = apply_registry_prefix("existing.io/repo/siren-test-benign:case", "registry.io/repo")
         assert tag == "existing.io/repo/siren-test-benign:case"
 
 

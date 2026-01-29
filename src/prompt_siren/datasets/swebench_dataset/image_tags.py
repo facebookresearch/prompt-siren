@@ -11,8 +11,9 @@ The image tags follow a consistent naming convention:
 - Agent images: siren-swebench-agent:basic
 - Base/env cache images: siren-swebench-base:{hash}, siren-swebench-env:{hash}
 """
-from .constants import SWEBENCH_IMAGE_PREFIX
+
 from ..image_tags import apply_registry_prefix, make_dataset_tag, normalize_tag_component
+from .constants import SWEBENCH_IMAGE_PREFIX
 
 
 def normalize_tag(name: str) -> str:
