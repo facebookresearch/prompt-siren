@@ -5,5 +5,6 @@ config:
   use_cache: true # Cache build contexts
   build_timeout: 1800 # 30 minutes
   cache_dir: .swebench_cache # Cache directory
+  registry: ghcr.io/ethz-spylab/prompt-siren-images # Default registry (set to null to disable)
   include_hints: false # Don't include hints in prompts
   enable_network: false # No network access during execution

@@ -31,6 +31,7 @@ class MockDockerClient:
         self.delete_image = AsyncMock()
         self.tag_image = AsyncMock()
         self.push_image = AsyncMock()
+        self.pull_image = AsyncMock()
         self._build_results: list[dict[str, Any]] = []
 
     def set_build_results(self, results: list[dict[str, Any]]) -> None:
@@ -121,12 +122,32 @@ class TestImageBuilderPushToRegistry:
             registry="my-registry.com/repo",
         )
 
+        mock_docker.pull_image.side_effect = DockerClientError("Image not found", status=404)
+
         await builder.push_to_registry("test:latest")
 
         mock_docker.tag_image.assert_called_once_with(
             "test:latest", "my-registry.com/repo/test:latest"
         )
         mock_docker.push_image.assert_called_once_with("my-registry.com/repo/test:latest")
+
+    @pytest.mark.anyio
+    async def test_push_to_registry_skips_when_image_exists(
+        self, mock_docker: MockDockerClient, tmp_path: Path
+    ) -> None:
+        """Test that push_to_registry skips when image already exists in registry."""
+        builder = ImageBuilder(
+            docker_client=mock_docker,  # type: ignore[arg-type]
+            cache_dir=tmp_path,
+            registry="my-registry.com/repo",
+        )
+
+        mock_docker.pull_image.return_value = None
+
+        await builder.push_to_registry("test:latest")
+
+        mock_docker.tag_image.assert_not_called()
+        mock_docker.push_image.assert_not_called()
 
 
 class TestImageBuilderBuildFromContext:
@@ -495,7 +516,9 @@ class TestBuildAllSpecsPushToRegistry:
 
     @pytest.fixture
     def mock_docker(self) -> MockDockerClient:
-        return MockDockerClient()
+        mock = MockDockerClient()
+        mock.pull_image.side_effect = DockerClientError("Not found", status=404)
+        return mock
 
     @pytest.mark.anyio
     async def test_push_called_for_each_successful_spec(

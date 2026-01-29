@@ -19,6 +19,7 @@ class MockDockerClient:
         self.delete_image = AsyncMock()
         self.tag_image = AsyncMock()
         self.push_image = AsyncMock()
+        self.pull_image = AsyncMock()
         self.build_image = AsyncMock()
 
 

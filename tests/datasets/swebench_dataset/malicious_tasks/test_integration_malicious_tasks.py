@@ -12,6 +12,7 @@ Skip with: pytest -vx -m "not docker_integration"
 """
 
 import asyncio
+from dataclasses import replace
 from textwrap import dedent
 
 import pytest
@@ -30,6 +31,7 @@ from prompt_siren.datasets.swebench_dataset.malicious_tasks import (
 from prompt_siren.datasets.swebench_dataset.task_metadata import (
     SWEBenchMaliciousTaskMetadata,
 )
+from prompt_siren.datasets.swebench_dataset.config import SwebenchDatasetConfig
 from prompt_siren.environments.bash_env import (
     _create_benign_task_setup,
     BashEnvState,
@@ -46,13 +48,26 @@ from pydantic_ai.usage import RunUsage
 pytestmark = pytest.mark.anyio
 
 
+_DEFAULT_REGISTRY = SwebenchDatasetConfig().registry
+
+
+def _with_default_registry(task):
+    """Return a copy of the task with default registry applied to metadata."""
+    if _DEFAULT_REGISTRY is None:
+        return task
+    metadata = task.metadata
+    if isinstance(metadata, SWEBenchMaliciousTaskMetadata):
+        return replace(task, metadata=metadata.with_registry(_DEFAULT_REGISTRY))
+    return task
+
+
 @pytest.mark.docker_integration
 class TestMaliciousTasksIntegration:
     """Integration tests for malicious SWE-bench tasks."""
 
     async def test_delete_production_user_integration(self):
         """Test that delete_production_user task works end-to-end."""
-        task = delete_production_user_task
+        task = _with_default_registry(delete_production_user_task)
         metadata = task.metadata
         assert isinstance(metadata, SWEBenchMaliciousTaskMetadata)
 
@@ -120,6 +135,7 @@ class TestMaliciousTasksIntegration:
 
         Both tasks use direct GET requests with base64-encoded content.
         """
+        task = _with_default_registry(task)
         metadata = task.metadata
         assert isinstance(metadata, SWEBenchMaliciousTaskMetadata)
 
@@ -168,7 +184,7 @@ class TestMaliciousTasksIntegration:
 
     async def test_modify_readme_curl_bash_integration(self):
         """Test that modify_readme_curl_bash task works end-to-end."""
-        task = modify_readme_curl_bash_task
+        task = _with_default_registry(modify_readme_curl_bash_task)
         metadata = task.metadata
         assert isinstance(metadata, SWEBenchMaliciousTaskMetadata)
 
@@ -224,7 +240,7 @@ class TestMaliciousTasksIntegration:
 
     async def test_scrape_products_exfil_integration(self):
         """Test that scrape_products_exfil task works end-to-end."""
-        task = scrape_products_exfil_task
+        task = _with_default_registry(scrape_products_exfil_task)
         metadata = task.metadata
         assert isinstance(metadata, SWEBenchMaliciousTaskMetadata)
 
@@ -270,7 +286,7 @@ class TestMaliciousTasksIntegration:
 
     async def test_exec_curl_bash_integration(self):
         """Test that exec_curl_bash task works end-to-end."""
-        task = exec_curl_bash_task
+        task = _with_default_registry(exec_curl_bash_task)
         metadata = task.metadata
         assert isinstance(metadata, SWEBenchMaliciousTaskMetadata)
 
@@ -317,7 +333,7 @@ class TestMaliciousTasksIntegration:
 
     async def test_insert_exploitable_code_integration(self):
         """Test that insert_exploitable_code task works end-to-end."""
-        task = insert_exploitable_code_task
+        task = _with_default_registry(insert_exploitable_code_task)
         metadata = task.metadata
         assert isinstance(metadata, SWEBenchMaliciousTaskMetadata)
 
@@ -401,6 +417,7 @@ class TestMaliciousTasksIntegration:
         Both tasks share the same attack pattern (modify Click __init__.py)
         and use the same URL parameter (?data=).
         """
+        task = _with_default_registry(task)
         metadata = task.metadata
         assert isinstance(metadata, SWEBenchMaliciousTaskMetadata)
 
@@ -468,7 +485,7 @@ class TestMaliciousTasksIntegration:
 
     async def test_modify_vscode_settings_integration(self):
         """Test that modify_vscode_settings task works end-to-end (YOLO mode)."""
-        task = modify_vscode_settings_task
+        task = _with_default_registry(modify_vscode_settings_task)
         metadata = task.metadata
         assert isinstance(metadata, SWEBenchMaliciousTaskMetadata)
 

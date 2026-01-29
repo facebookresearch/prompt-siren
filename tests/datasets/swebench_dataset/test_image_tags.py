@@ -13,9 +13,12 @@ pytest.importorskip("swebench")
 from prompt_siren.datasets.swebench_dataset.image_tags import (
     apply_registry_prefix,
     get_basic_agent_image_tag,
+    get_base_image_tag,
     get_benign_image_tag,
+    get_env_image_tag,
     get_malicious_image_tag,
     get_pair_image_tag,
+    get_service_image_tag,
     normalize_tag,
 )
 
@@ -89,18 +92,23 @@ class TestGetBenignImageTag:
         assert tag == "my-registry.com/repo/siren-swebench-benign:django__django-11179"
 
 
-class TestGetMaliciousImageTag:
-    """Test malicious image tag generation."""
+class TestGetServiceImageTag:
+    """Test service image tag generation."""
 
-    def test_get_malicious_image_tag(self) -> None:
-        """Test malicious tag format."""
+    def test_get_service_image_tag(self) -> None:
+        """Test service tag format."""
+        tag = get_service_image_tag("env_direct_exfil_task")
+        assert tag == "siren-swebench-service:env_direct_exfil_task"
+
+    def test_get_service_image_tag_with_registry(self) -> None:
+        """Test service tag with registry prefix."""
+        tag = get_service_image_tag("env_direct_exfil_task", registry="my-registry.com/repo")
+        assert tag == "my-registry.com/repo/siren-swebench-service:env_direct_exfil_task"
+
+    def test_get_malicious_image_tag_is_alias(self) -> None:
+        """Test deprecated malicious tag helper delegates to service tags."""
         tag = get_malicious_image_tag("env_direct_exfil_task")
-        assert tag == "siren-swebench-malicious:env_direct_exfil_task"
-
-    def test_get_malicious_image_tag_with_registry(self) -> None:
-        """Test malicious tag with registry prefix."""
-        tag = get_malicious_image_tag("env_direct_exfil_task", registry="my-registry.com/repo")
-        assert tag == "my-registry.com/repo/siren-swebench-malicious:env_direct_exfil_task"
+        assert tag == "siren-swebench-service:env_direct_exfil_task"
 
 
 class TestGetPairImageTag:
@@ -133,9 +141,23 @@ class TestGetBasicAgentImageTag:
     def test_get_basic_agent_image_tag(self) -> None:
         """Test basic agent tag format."""
         tag = get_basic_agent_image_tag()
-        assert tag == "siren-swebench-basic-agent:latest"
+        assert tag == "siren-swebench-agent:basic"
 
     def test_get_basic_agent_image_tag_with_registry(self) -> None:
         """Test basic agent tag with registry prefix."""
         tag = get_basic_agent_image_tag(registry="my-registry.com/repo")
-        assert tag == "my-registry.com/repo/siren-swebench-basic-agent:latest"
+        assert tag == "my-registry.com/repo/siren-swebench-agent:basic"
+
+
+class TestGetCacheImageTags:
+    """Test base/env cache image tag generation."""
+
+    def test_get_base_image_tag(self) -> None:
+        """Test base cache tag format."""
+        tag = get_base_image_tag("deadbeefcafebabe")
+        assert tag == "siren-swebench-base:deadbeefcafebabe"
+
+    def test_get_env_image_tag(self) -> None:
+        """Test env cache tag format."""
+        tag = get_env_image_tag("deadbeefcafebabe")
+        assert tag == "siren-swebench-env:deadbeefcafebabe"

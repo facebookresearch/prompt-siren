@@ -164,6 +164,9 @@ uv run pytest -v
 
 The main `prompt-siren` CLI only works with pre-built Docker images. To build all required images for SWE-bench evaluations, use the `prompt-siren-build-images` command:
 
+Default registry for pushes: `ghcr.io/ethz-spylab/prompt-siren-images`. Use `--registry ""`
+to disable pushes or override with your own registry.
+
 ```sh
 # Build all images (benign, malicious service containers, and pairs)
 uv run prompt-siren-build-images

@@ -5,13 +5,14 @@ This module provides utilities for generating consistent Docker image tags
 that are used both by the build_images script and by the task definitions.
 
 The image tags follow a consistent naming convention:
-- Benign tasks: swebench-benign:{normalized_instance_id}
-- Malicious service containers: swebench-malicious:{normalized_task_id}
-- Benign x malicious pairs: swebench-pair:{normalized_benign_id}__{normalized_malicious_id}
+- Benign tasks: siren-swebench-benign:{normalized_instance_id}
+- Service containers: siren-swebench-service:{normalized_task_id}
+- Benign x malicious pairs: siren-swebench-pair:{normalized_benign_id}__{normalized_malicious_id}
+- Agent images: siren-swebench-agent:basic
+- Base/env cache images: siren-swebench-base:{hash}, siren-swebench-env:{hash}
 """
-
-from ...sandbox_managers.docker import extract_registry_from_tag
 from .constants import SWEBENCH_IMAGE_PREFIX
+from ..image_tags import apply_registry_prefix, make_dataset_tag, normalize_tag_component
 
 
 def normalize_tag(name: str) -> str:
@@ -25,26 +26,7 @@ def normalize_tag(name: str) -> str:
     Returns:
         Normalized tag string
     """
-    return name.replace("/", "__").replace(":", "__").replace(" ", "__").lower()
-
-
-def apply_registry_prefix(tag: str, registry: str | None) -> str:
-    """Apply a registry prefix to an image tag if provided.
-
-    Args:
-        tag: The base image tag (e.g., "siren-swebench-benign:instance")
-        registry: Optional registry prefix (e.g., "my-registry.com/myrepo")
-
-    Returns:
-        Tag with registry prefix if provided, otherwise the original tag
-        (e.g., "my-registry.com/myrepo/siren-swebench-benign:instance")
-    """
-    if registry:
-        # Don't double-prefix if tag already has a registry
-        if extract_registry_from_tag(tag) is not None:
-            return tag
-        return f"{registry}/{tag}"
-    return tag
+    return normalize_tag_component(name)
 
 
 def get_benign_image_tag(instance_id: str, registry: str | None = None) -> str:
@@ -57,11 +39,10 @@ def get_benign_image_tag(instance_id: str, registry: str | None = None) -> str:
     Returns:
         Docker image tag (e.g., "siren-swebench-benign:django__django-11179")
     """
-    tag = f"{SWEBENCH_IMAGE_PREFIX}-benign:{normalize_tag(instance_id)}"
-    return apply_registry_prefix(tag, registry)
+    return make_dataset_tag(SWEBENCH_IMAGE_PREFIX, "benign", instance_id, registry)
 
 
-def get_malicious_image_tag(task_id: str, registry: str | None = None) -> str:
+def get_service_image_tag(task_id: str, registry: str | None = None) -> str:
     """Get the Docker image tag for a malicious task's service container.
 
     Args:
@@ -69,10 +50,14 @@ def get_malicious_image_tag(task_id: str, registry: str | None = None) -> str:
         registry: Optional registry prefix to prepend
 
     Returns:
-        Docker image tag (e.g., "siren-swebench-malicious:env_direct_exfil_task")
+        Docker image tag (e.g., "siren-swebench-service:env_direct_exfil_task")
     """
-    tag = f"{SWEBENCH_IMAGE_PREFIX}-malicious:{normalize_tag(task_id)}"
-    return apply_registry_prefix(tag, registry)
+    return make_dataset_tag(SWEBENCH_IMAGE_PREFIX, "service", task_id, registry)
+
+
+def get_malicious_image_tag(task_id: str, registry: str | None = None) -> str:
+    """Deprecated: use get_service_image_tag instead."""
+    return get_service_image_tag(task_id, registry)
 
 
 def get_pair_image_tag(benign_id: str, malicious_id: str, registry: str | None = None) -> str:
@@ -86,8 +71,8 @@ def get_pair_image_tag(benign_id: str, malicious_id: str, registry: str | None =
     Returns:
         Docker image tag (e.g., "siren-swebench-pair:django__django-11179__env_direct_exfil_task")
     """
-    tag = f"{SWEBENCH_IMAGE_PREFIX}-pair:{normalize_tag(benign_id)}__{normalize_tag(malicious_id)}"
-    return apply_registry_prefix(tag, registry)
+    pair_id = f"{benign_id}__{malicious_id}"
+    return make_dataset_tag(SWEBENCH_IMAGE_PREFIX, "pair", pair_id, registry)
 
 
 def get_basic_agent_image_tag(registry: str | None = None) -> str:
@@ -99,5 +84,14 @@ def get_basic_agent_image_tag(registry: str | None = None) -> str:
     Returns:
         Docker image tag for the basic agent
     """
-    tag = f"{SWEBENCH_IMAGE_PREFIX}-basic-agent:latest"
-    return apply_registry_prefix(tag, registry)
+    return make_dataset_tag(SWEBENCH_IMAGE_PREFIX, "agent", "basic", registry)
+
+
+def get_base_image_tag(cache_key_hash: str, registry: str | None = None) -> str:
+    """Get the Docker image tag for a base cache image."""
+    return make_dataset_tag(SWEBENCH_IMAGE_PREFIX, "base", cache_key_hash, registry)
+
+
+def get_env_image_tag(cache_key_hash: str, registry: str | None = None) -> str:
+    """Get the Docker image tag for an environment cache image."""
+    return make_dataset_tag(SWEBENCH_IMAGE_PREFIX, "env", cache_key_hash, registry)

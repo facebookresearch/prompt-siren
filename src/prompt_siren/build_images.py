@@ -110,6 +110,8 @@ class ImageBuilder:
         self._registry = registry
         # Track built images to avoid duplicates
         self._built_images: set[str] = set()
+        # Disable registry checks after auth failures to avoid log spam
+        self._registry_check_disabled = False
 
     async def image_exists(self, tag: str) -> bool:
         """Check if an image already exists locally.
@@ -174,6 +176,31 @@ class ImageBuilder:
             return
 
         registry_tag = f"{self._registry}/{tag}"
+        if self._registry_check_disabled and not self._rebuild_existing:
+            return
+
+        if not self._rebuild_existing:
+            try:
+                await self._docker.pull_image(registry_tag)
+                logger.info(f"Registry image already exists, skipping push: {registry_tag}")
+                return
+            except DockerClientError as e:
+                error_text = str(e).lower()
+                if e.status == 404:
+                    logger.info(f"Registry image not found, pushing: {registry_tag}")
+                elif e.status in (401, 403) or "unauthorized" in error_text:
+                    if not self._registry_check_disabled:
+                        logger.warning(
+                            "Registry auth failed for %s; skipping registry pushes. "
+                            'Use --rebuild-existing to force pushes or --registry "" to disable.',
+                            self._registry,
+                        )
+                    self._registry_check_disabled = True
+                    return
+                else:
+                    logger.info(
+                        f"Could not verify registry image {registry_tag} ({e}); proceeding to push"
+                    )
         logger.info(f"Tagging and pushing image {registry_tag}")
         await self._docker.tag_image(tag, registry_tag)
         await self._docker.push_image(registry_tag)
@@ -550,8 +577,12 @@ async def run_build(
 @click.option(
     "--registry",
     type=str,
-    default=None,
-    help="Registry to tag and push images to (e.g., 'my-registry.com/myrepo')",
+    default="ghcr.io/ethz-spylab/prompt-siren-images",
+    help=(
+        "Registry to tag and push images to "
+        "(default: 'ghcr.io/ethz-spylab/prompt-siren-images'). "
+        "Use an empty string to disable."
+    ),
 )
 @click.option(
     "-v",
@@ -586,6 +617,9 @@ def main(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+
+    if registry is not None and registry.strip() == "":
+        registry = None
 
     if all_datasets:
         datasets_to_build = get_datasets_with_image_specs()

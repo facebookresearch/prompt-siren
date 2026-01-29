@@ -115,9 +115,8 @@ class SwebenchDataset(AbstractDataset[BashEnvState, str, str, StrContentAttack])
         specs: list[ImageBuildSpec] = []
 
         # 1. Add multi-stage build specs for benign task images
-        #    prepare_build_context uses SWE-bench's native tag as the last stage
-        #    (e.g., "sweb.eval.x86_64.django__django-11179:latest").
-        #    Re-tag to standardized naming so derived specs can reference it.
+        #    prepare_build_context uses standardized tags for base/env/benign images.
+        #    Keep a guard to ensure the final stage matches the benign naming scheme.
         for instance in instances:
             multi_stage_spec, _ = prepare_build_context(instance, config)
             benign_tag = get_benign_image_tag(instance["instance_id"])

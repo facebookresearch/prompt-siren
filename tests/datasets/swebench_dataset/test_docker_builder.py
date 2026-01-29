@@ -1,6 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Tests for SWE-bench Docker build context preparation."""
 
+import hashlib
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, patch
@@ -8,6 +9,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 from prompt_siren.datasets.swebench_dataset.config import SwebenchDatasetConfig
 from prompt_siren.datasets.swebench_dataset.docker_builder import prepare_build_context
+from prompt_siren.datasets.swebench_dataset.image_tags import (
+    get_base_image_tag,
+    get_benign_image_tag,
+    get_env_image_tag,
+)
 from swebench.harness.constants import SWEbenchInstance
 from swebench.harness.test_spec.test_spec import TestSpec
 
@@ -67,19 +73,25 @@ class TestPrepareBuildContext:
 
         # Check that spec has three stages
         assert len(spec.stages) == 3
-        assert spec.final_tag == mock_test_spec.instance_image_key
+        assert spec.final_tag == get_benign_image_tag(mock_instance["instance_id"])
 
         # Check stage ordering and dependencies
-        assert spec.stages[0].tag == mock_test_spec.base_image_key
+        base_hash = hashlib.sha256(mock_test_spec.base_image_key.encode()).hexdigest()[:16]
+        env_hash = hashlib.sha256(mock_test_spec.env_image_key.encode()).hexdigest()[:16]
+        expected_base_tag = get_base_image_tag(base_hash)
+        expected_env_tag = get_env_image_tag(env_hash)
+        expected_benign_tag = get_benign_image_tag(mock_instance["instance_id"])
+
+        assert spec.stages[0].tag == expected_base_tag
         assert spec.stages[0].parent_tag is None
         assert spec.stages[0].cache_key == mock_test_spec.base_image_key
 
-        assert spec.stages[1].tag == mock_test_spec.env_image_key
-        assert spec.stages[1].parent_tag == mock_test_spec.base_image_key
+        assert spec.stages[1].tag == expected_env_tag
+        assert spec.stages[1].parent_tag == expected_base_tag
         assert spec.stages[1].cache_key == mock_test_spec.env_image_key
 
-        assert spec.stages[2].tag == mock_test_spec.instance_image_key
-        assert spec.stages[2].parent_tag == mock_test_spec.env_image_key
+        assert spec.stages[2].tag == expected_benign_tag
+        assert spec.stages[2].parent_tag == expected_env_tag
         assert spec.stages[2].cache_key is None  # Instances always rebuild
 
     @patch("prompt_siren.datasets.swebench_dataset.docker_builder.make_test_spec")

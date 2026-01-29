@@ -29,9 +29,9 @@ class SwebenchDatasetConfig(BaseModel):
     """Directory to cache build contexts and generated scripts."""
 
     # Registry configuration
-    registry: str | None = None
-    """Optional Docker registry prefix for pulling pre-built images.
-    If specified, this prefix will be prepended to image tags when pulling.
+    registry: str | None = "ghcr.io/ethz-spylab/prompt-siren-images"
+    """Docker registry prefix for pulling pre-built images.
+    This prefix is prepended to image tags when pulling (can be set to None to disable).
     Example: 'my-registry.com/myrepo' would make 'image:tag' become
     'my-registry.com/myrepo/image:tag'.
     """
