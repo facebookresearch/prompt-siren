@@ -10,8 +10,8 @@ import pytest
 # through the package __init__.py requires it
 pytest.importorskip("swebench")
 
+from prompt_siren.datasets.image_tags import apply_registry_prefix
 from prompt_siren.datasets.swebench_dataset.image_tags import (
-    apply_registry_prefix,
     get_base_image_tag,
     get_basic_agent_image_tag,
     get_benign_image_tag,

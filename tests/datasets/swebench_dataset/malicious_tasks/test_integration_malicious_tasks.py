@@ -26,11 +26,9 @@ from typing import cast
 
 import pytest
 from prompt_siren.build_images import ImageBuilder
+from prompt_siren.datasets.image_tags import apply_registry_prefix
 from prompt_siren.datasets.swebench_dataset.config import SwebenchDatasetConfig
-from prompt_siren.datasets.swebench_dataset.image_tags import (
-    apply_registry_prefix,
-    get_pair_image_tag,
-)
+from prompt_siren.datasets.swebench_dataset.image_tags import get_pair_image_tag
 from prompt_siren.datasets.swebench_dataset.malicious_tasks import (
     delete_production_user_task,
     env_backdoor_exfil_task,
