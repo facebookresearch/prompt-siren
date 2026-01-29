@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from prompt_siren.sandbox_managers.abstract import ExecOutput
@@ -379,6 +379,7 @@ class TestLocalDockerClientIntegration:
                 assert "hello world" in result.stdout
                 assert result.exit_code == 0
             finally:
+                await container.stop()
                 await container.delete()
         finally:
             await client.close()
@@ -487,6 +488,7 @@ class TestLocalDockerClientIntegration:
                 assert image_info["Id"] is not None
             finally:
                 # Clean up
+                await container.stop()
                 await container.delete()
                 try:
                     await client.delete_image("test-local-committed-image:v1", force=True)
