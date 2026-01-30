@@ -331,6 +331,33 @@ class DockerSandboxManager:
             task_setup, network_enabled=self._config.network_enabled
         )
 
+    async def replace_sandbox(
+        self,
+        sandbox_state: SandboxState,
+        task_setup: TaskSetup,
+        *,
+        cleanup_in_background: bool = True,
+    ) -> SandboxState:
+        """Replace an existing sandbox with a fresh one."""
+        if self._batch_state is None:
+            raise RuntimeError("replace_sandbox called outside of setup_batch context")
+
+        # Look up the context that owns the containers
+        async with self._batch_state._lock:
+            context = self._batch_state.contexts.get(sandbox_state.execution_id)
+
+        if context is None:
+            raise ValueError(
+                f"Cannot replace sandbox state: execution_id {sandbox_state.execution_id} not found"
+            )
+
+        return await context.replace_sandbox(
+            sandbox_state,
+            task_setup,
+            network_enabled=self._config.network_enabled,
+            cleanup_in_background=cleanup_in_background,
+        )
+
     async def destroy_sandbox(self, sandbox_state: SandboxState) -> None:
         """Destroy containers and network for a sandbox.
 

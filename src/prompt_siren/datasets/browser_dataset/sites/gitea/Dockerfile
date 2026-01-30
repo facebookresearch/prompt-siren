@@ -8,6 +8,14 @@
 
 FROM gitea/gitea:latest
 
+# Run as root so Gitea can bind to privileged port 80, matching benchmark URLs.
+ENV USER_UID=0 \
+    USER_GID=0 \
+    GITEA__server__HTTP_PORT=80 \
+    GITEA__server__ROOT_URL=http://gitea.dev-forge.io
+
+EXPOSE 80
+
 # Copy pre-seeded database (contains repos, issues, and comments)
 COPY data/gitea.db /data/gitea/gitea.db
 

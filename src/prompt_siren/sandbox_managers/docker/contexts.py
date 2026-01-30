@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,6 +16,29 @@ from .image_cache import ImageCache
 from .plugins import AbstractContainer, AbstractDockerClient
 
 logger = logging.getLogger(__name__)
+
+# Background task tracking for fire-and-forget cleanup operations
+_background_tasks: set[asyncio.Task[Any]] = set()
+
+
+def _fire_and_forget(coro: Coroutine[Any, Any, Any]) -> None:
+    """Schedule a coroutine to run in background without waiting."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+
+    def _on_done(t: asyncio.Task[Any]) -> None:
+        _background_tasks.discard(t)
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:
+            logger.warning(
+                "Background cleanup task failed: %s. This may cause resource leaks.",
+                exc,
+                exc_info=exc,
+            )
+
+    task.add_done_callback(_on_done)
 
 
 @dataclass
@@ -70,12 +94,14 @@ class TaskSandboxContext:
         self,
         task_setup: TaskSetup,
         network_enabled: bool = True,
+        network_suffix: str | None = None,
     ) -> SandboxState:
         """Create all containers for this task.
 
         Args:
             task_setup: Task setup specification
             network_enabled: Whether networking is enabled globally
+            network_suffix: Optional suffix for network name to avoid collisions
 
         Returns:
             SandboxState with container IDs and network ID
@@ -83,7 +109,9 @@ class TaskSandboxContext:
         # Create network if needed (multi-container setup)
         network_id = None
         if task_setup.service_containers:
-            network_id = await self._create_network(task_setup, network_enabled)
+            network_id = await self._create_network(
+                task_setup, network_enabled, name_suffix=network_suffix
+            )
             # Track network for cleanup
             async with self._lock:
                 self._networks.add(network_id)
@@ -121,6 +149,47 @@ class TaskSandboxContext:
             execution_id=self.execution_id,
             agent_port_bindings=agent_port_bindings,
         )
+
+    async def replace_sandbox(
+        self,
+        old_state: SandboxState,
+        task_setup: TaskSetup,
+        *,
+        network_enabled: bool = True,
+        cleanup_in_background: bool = True,
+    ) -> SandboxState:
+        """Replace an existing sandbox with a fresh one.
+
+        Creates a new sandbox and cleans up the old one. Cleanup can happen
+        asynchronously to avoid blocking reset/replay flows.
+        """
+        network_suffix = uuid.uuid4().hex[:8]
+        new_state = await self.create_containers(
+            task_setup,
+            network_enabled=network_enabled,
+            network_suffix=network_suffix,
+        )
+
+        if cleanup_in_background:
+            _fire_and_forget(self._cleanup_state(old_state))
+        else:
+            await self._cleanup_state(old_state)
+
+        return new_state
+
+    async def _cleanup_state(self, sandbox_state: SandboxState) -> None:
+        """Clean up containers and network for a specific sandbox state."""
+        container_ids = [
+            sandbox_state.agent_container_id,
+            *sandbox_state.service_containers.values(),
+        ]
+        if container_ids:
+            await asyncio.gather(
+                *[self._cleanup_container(container_id) for container_id in container_ids],
+                return_exceptions=True,
+            )
+        if sandbox_state.network_id:
+            await self._cleanup_network(sandbox_state.network_id)
 
     async def clone(self, source_state: SandboxState) -> SandboxState:
         """Clone all containers from source_state.
@@ -196,34 +265,45 @@ class TaskSandboxContext:
                 return_exceptions=True,  # Continue cleanup even if one fails
             )
 
-    async def _create_network(self, task_setup: TaskSetup, network_enabled: bool) -> str:
+    async def _create_network(
+        self,
+        task_setup: TaskSetup,
+        network_enabled: bool,
+        *,
+        name_suffix: str | None = None,
+    ) -> str:
         """Create a network for multi-container setup.
 
         Args:
             task_setup: Task setup with network configuration
             network_enabled: Whether networking is enabled globally
+            name_suffix: Optional suffix for network name to avoid collisions
 
         Returns:
             Network ID
         """
+        suffix = f"-{name_suffix}" if name_suffix else ""
         if not network_enabled:
             # Network disabled, but we still need to create one for container linking
             # It will be created as internal-only
             network_config = {
-                "Name": f"{self.batch_state.batch_id}-{self.execution_id}-network",
+                "Name": f"{self.batch_state.batch_id}-{self.execution_id}-network{suffix}",
                 "Driver": "bridge",
                 "Internal": True,
             }
         elif task_setup.network_config:
             network_config = {
-                "Name": f"{self.batch_state.batch_id}-{self.execution_id}-{task_setup.network_config.name}",
+                "Name": (
+                    f"{self.batch_state.batch_id}-{self.execution_id}-"
+                    f"{task_setup.network_config.name}{suffix}"
+                ),
                 "Driver": "bridge",
                 "Internal": task_setup.network_config.internal,
             }
         else:
             # Default network for multi-container
             network_config = {
-                "Name": f"{self.batch_state.batch_id}-{self.execution_id}-network",
+                "Name": f"{self.batch_state.batch_id}-{self.execution_id}-network{suffix}",
                 "Driver": "bridge",
                 "Internal": False,
             }
@@ -485,14 +565,13 @@ class TaskSandboxContext:
         config: dict[str, Any] = {"Image": image_tag, "HostConfig": {}}
 
         # Set command
-        # - command=None: default to "sleep infinity" to keep container running
-        # - command=[...]: use the specified command
+        # - command is not None: use the specified command
+        # - command is None + use_image_cmd=True: rely on image CMD/ENTRYPOINT
+        # - command is None + use_image_cmd=False: default to "sleep infinity"
         # Note: "sleep infinity" is needed for images without a CMD (e.g., SWE-bench instances).
-        # Images with their own ENTRYPOINT (e.g., chromedp/headless-shell) still work because
-        # Docker runs ENTRYPOINT + CMD, and our CMD gets ignored if ENTRYPOINT handles it.
-        if container_setup.spec.command:
+        if container_setup.spec.command is not None:
             config["Cmd"] = container_setup.spec.command
-        else:
+        elif not container_setup.spec.use_image_cmd:
             config["Cmd"] = ["sleep", "infinity"]
 
         # Set environment variables
@@ -570,6 +649,8 @@ class TaskSandboxContext:
         Args:
             network_id: Network ID to clean up
         """
+        async with self._lock:
+            self._networks.discard(network_id)
         try:
             network = await self.batch_state.docker_client.get_network(network_id)
             await network.delete()

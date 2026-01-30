@@ -117,7 +117,9 @@ class BaseBrowserDataset(
         return self._task_couples
 
     @classmethod
-    def get_image_build_specs(cls, config: BrowserDatasetConfig) -> list[ImageBuildSpec]:
+    def get_image_build_specs(
+        cls, config: BrowserDatasetConfig, build_context_dir: str
+    ) -> list[ImageBuildSpec]:
         """Return all image specifications needed by this dataset.
 
         This classmethod is used by the build_images script to pre-build all Docker
@@ -126,11 +128,13 @@ class BaseBrowserDataset(
 
         Args:
             config: Browser dataset configuration specifying which sites to build.
+            build_context_dir: Directory to store build contexts and generated scripts (unused).
 
         Returns:
             List of ImageBuildSpec objects for sites that need to be built
             (excludes PullImageSpec sites that are pulled from registries).
         """
+        _ = build_context_dir
         # Get all site container specs from config and filter to only BuildImageSpec
         # (skip PullImageSpec as those are pulled from registries)
         site_specs = config.get_all_site_container_specs()

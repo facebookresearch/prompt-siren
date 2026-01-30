@@ -186,6 +186,30 @@ class AbstractSandboxManager(Protocol):
         raise NotImplementedError()
 
     @abstractmethod
+    async def replace_sandbox(
+        self,
+        sandbox_state: SandboxState,
+        task_setup: TaskSetup,
+        *,
+        cleanup_in_background: bool = True,
+    ) -> SandboxState:
+        """Replace an existing sandbox with a fresh one.
+
+        Creates a new sandbox for the same task and cleans up the old sandbox.
+        Implementations should support background cleanup to avoid blocking
+        replay/reset flows.
+
+        Args:
+            sandbox_state: Existing sandbox state to replace
+            task_setup: Task setup specification for the new sandbox
+            cleanup_in_background: Whether to clean up the old sandbox asynchronously
+
+        Returns:
+            New SandboxState with fresh container IDs and network ID
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
     async def destroy_sandbox(self, sandbox_state: SandboxState) -> None:
         """Destroy a sandbox (containers and network).
 

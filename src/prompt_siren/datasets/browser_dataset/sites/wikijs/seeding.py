@@ -36,16 +36,19 @@ logger = logging.getLogger(__name__)
 CONTAINER_NAME = "prompt-siren-seed-wikijs"
 CONTAINER_IMAGE = "linuxserver/wikijs:latest"
 HOST_PORT = 3080
-CONTAINER_PORT = 3000
+CONTAINER_PORT = 80
 DB_PATH_IN_CONTAINER = "/config/database.sqlite"
 HEALTH_URL = f"http://localhost:{HOST_PORT}"
+SITE_URL = "http://wiki.internal-docs.io"
 ADMIN_EMAIL = "admin@example.com"
 ADMIN_PASSWORD = "admin123"
 
 CONTAINER_ENV = {
-    "PUID": "1000",
-    "PGID": "1000",
+    "PUID": "0",
+    "PGID": "0",
     "TZ": "UTC",
+    "PORT": "80",
+    "WIKIJS_PORT": "80",
 }
 
 # GraphQL mutations for Wiki.js
@@ -248,7 +251,7 @@ async def _setup_wikijs_admin() -> None:
                     "adminEmail": ADMIN_EMAIL,
                     "adminPassword": ADMIN_PASSWORD,
                     "adminPasswordConfirm": ADMIN_PASSWORD,
-                    "siteUrl": HEALTH_URL,
+                    "siteUrl": SITE_URL,
                     "telemetry": False,
                 },
             },

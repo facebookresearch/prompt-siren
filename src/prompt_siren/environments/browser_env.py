@@ -16,9 +16,8 @@ Container Management:
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Generic, get_args, Literal, TypedDict, TypeVar
@@ -56,35 +55,6 @@ RenderFn = Callable[[Page, InjectionAttacksDict[StrContentAttack] | None], Await
 
 # Valid site names for browser environment
 SiteName = Literal["gitea", "answer", "wikijs", "classifieds"]
-
-# Background task tracking for fire-and-forget cleanup operations
-_background_tasks: set[asyncio.Task[Any]] = set()
-
-
-def _fire_and_forget(coro: Coroutine[Any, Any, Any]) -> None:
-    """Schedule a coroutine to run in background without waiting.
-
-    Properly tracks the task to:
-    - Prevent garbage collection before completion
-    - Log any errors that occur (errors are logged but not propagated)
-    - Automatically clean up when done
-    """
-    task = asyncio.create_task(coro)
-    _background_tasks.add(task)
-
-    def _on_done(t: asyncio.Task[Any]) -> None:
-        _background_tasks.discard(t)
-        if t.cancelled():
-            return
-        exc = t.exception()
-        if exc is not None:
-            logger.error(
-                "Background task failed: %s. This may cause resource leaks.",
-                exc,
-                exc_info=exc,
-            )
-
-    task.add_done_callback(_on_done)
 
 
 async def _setup_page_with_capture(
@@ -356,11 +326,10 @@ class BrowserEnvironment(
 
         For browser environment, this:
         1. Closes the browser connection
-        2. Destroys old containers in background (fire and forget)
-        3. Creates fresh containers from original images
-        4. Reconnects browser via CDP
-        5. Creates new page with request capture
-        6. Navigates to start URL
+        2. Replaces the sandbox with fresh containers (old sandbox cleaned in background)
+        3. Reconnects browser via CDP
+        4. Creates new page with request capture
+        5. Navigates to start URL
 
         This ensures complete state reset including site container state
         (databases, files, etc.) for proper tool replay.
@@ -368,12 +337,10 @@ class BrowserEnvironment(
         # Close browser connection first
         await env_state.browser.close()
 
-        # Destroy old containers in background (fire and forget - don't wait for cleanup)
-        old_sandbox_state = env_state.sandbox_state
-        _fire_and_forget(env_state.sandbox_manager.destroy_sandbox(old_sandbox_state))
-
-        # Create fresh containers from original images
-        new_sandbox_state = await env_state.sandbox_manager.create_sandbox(env_state.task_setup)
+        # Replace sandbox with fresh containers (old sandbox cleaned in background)
+        new_sandbox_state = await env_state.sandbox_manager.replace_sandbox(
+            env_state.sandbox_state, env_state.task_setup
+        )
 
         # Connect to browser via CDP using dynamically allocated port
         cdp_endpoint = self._get_cdp_endpoint(new_sandbox_state)
@@ -498,16 +465,23 @@ class BrowserEnvironment(
         # Build service containers from required sites
         service_containers: dict[str, ContainerSetup] = {}
         for site in sites:
-            if site in self._site_container_specs:
-                service_containers[site] = ContainerSetup(
-                    name=site,
-                    spec=self._site_container_specs[site],
-                )
-            else:
+            if site not in self._site_container_specs:
                 raise ValueError(
                     f"Task {task_id} requires site '{site}' but no container spec is configured. "
                     f"Available sites: {list(self._site_container_specs.keys())}"
                 )
+
+            db_key = f"{site}-db"
+            if db_key in self._site_container_specs and db_key not in service_containers:
+                service_containers[db_key] = ContainerSetup(
+                    name=db_key,
+                    spec=self._site_container_specs[db_key],
+                )
+
+            service_containers[site] = ContainerSetup(
+                name=site,
+                spec=self._site_container_specs[site],
+            )
 
         # Sanitize task ID for network name
         safe_task_id = task_id.replace(":", "-").replace("/", "-")

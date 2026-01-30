@@ -18,6 +18,7 @@ class ContainerSpec(BaseModel):
     ports: dict[int, int] = Field(default_factory=dict)
     environment: dict[str, str] | None = None
     command: str | list[str] | None = None
+    use_image_cmd: bool = False
 
 
 @dataclass(frozen=True)

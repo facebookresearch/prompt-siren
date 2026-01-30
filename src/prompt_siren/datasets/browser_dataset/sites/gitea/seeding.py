@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 CONTAINER_NAME = "prompt-siren-seed-gitea"
 CONTAINER_IMAGE = "gitea/gitea:latest"
 HOST_PORT = 3000
-CONTAINER_PORT = 3000
+CONTAINER_PORT = 80
 DB_PATH_IN_CONTAINER = "/data/gitea/gitea.db"
 HEALTH_URL = f"http://localhost:{HOST_PORT}"
 ADMIN_USERNAME = "admin"
@@ -45,10 +45,12 @@ ADMIN_PASSWORD = "admin123"
 ADMIN_EMAIL = "admin@example.com"
 
 CONTAINER_ENV = {
+    "USER_UID": "0",
+    "USER_GID": "0",
     "GITEA__database__DB_TYPE": "sqlite3",
     "GITEA__database__PATH": "/data/gitea/gitea.db",
-    "GITEA__server__HTTP_PORT": "3000",
-    "GITEA__server__ROOT_URL": "http://localhost:3000",
+    "GITEA__server__HTTP_PORT": "80",
+    "GITEA__server__ROOT_URL": HEALTH_URL,
     # Skip installation wizard by pre-configuring
     "GITEA__security__INSTALL_LOCK": "true",
     # Create default admin user

@@ -120,6 +120,8 @@ class BaseSiteConfig(BaseModel):
     """Port the site runs on inside the container (1-65535)."""
     base_url: str | None = None
     """Override base URL for the site. If not set, defaults to http://{hostname}:{port}."""
+    environment: dict[str, str] | None = None
+    """Environment variables to set on the site container."""
     build_context: Path | None = None
     """Path to Docker build context with pre-seeded database.
 
@@ -213,7 +215,11 @@ class BaseSiteConfig(BaseModel):
         return ContainerSpec(
             image_spec=self._get_image_spec(site_name),
             hostname=self.hostname,
-            ports={self.port: self.port},
+            environment=self.environment,
+            use_image_cmd=True,
+            # Site containers are only accessed via the internal Docker network,
+            # so no host port bindings are required (avoids host port conflicts).
+            ports={},
         )
 
 
@@ -233,6 +239,21 @@ class PostgresqlSiteConfig(BaseSiteConfig):
     """Database type (always postgresql for this config)."""
     db_image: str
     """Docker image for the PostgreSQL database container."""
+    db_hostname: str = "db"
+    """Hostname alias for the PostgreSQL container on the internal Docker network."""
+    db_environment: dict[str, str] | None = None
+    """Environment variables to set on the PostgreSQL container."""
+
+    def to_db_container_spec(self) -> ContainerSpec:
+        """Convert PostgreSQL config to a DB ContainerSpec."""
+        return ContainerSpec(
+            image_spec=PullImageSpec(tag=self.db_image),
+            hostname=self.db_hostname,
+            environment=self.db_environment,
+            use_image_cmd=True,
+            # Database container is internal-only (no host port bindings).
+            ports={},
+        )
 
 
 SiteConfig = Annotated[
@@ -266,6 +287,7 @@ class BrowserContainerConfig(BaseModel):
         return ContainerSpec(
             image_spec=PullImageSpec(tag=self.image),
             hostname="browser",
+            use_image_cmd=True,
             # Use dynamic port allocation: 0 means Docker assigns an available port
             ports={0: self.cdp_port},
         )
@@ -299,6 +321,12 @@ class BrowserDatasetConfig(BaseModel):
             hostname="gitea.dev-forge.io",
             db_path=Path("/data/gitea/gitea.db"),
             port=80,
+            environment={
+                "USER_UID": "0",
+                "USER_GID": "0",
+                "GITEA__server__HTTP_PORT": "80",
+                "GITEA__server__ROOT_URL": "http://gitea.dev-forge.io",
+            },
         ),
         description="Gitea configuration (Git forge with issues, PRs, code review).",
     )
@@ -319,6 +347,12 @@ class BrowserDatasetConfig(BaseModel):
             hostname="wiki.internal-docs.io",
             db_path=Path("/config/database.sqlite"),
             port=80,
+            environment={
+                "PUID": "0",
+                "PGID": "0",
+                "PORT": "80",
+                "WIKIJS_PORT": "80",
+            },
         ),
         description="Wiki.js configuration (wiki platform).",
     )
@@ -376,13 +410,23 @@ class BrowserDatasetConfig(BaseModel):
 
         Auto-detects pre-seeded build contexts from sites/{site_name}/ directories.
         Falls back to pulling base images if no pre-seeded context is found.
+        PostgreSQL-backed sites include an additional "{site}-db" container spec
+        for the database service.
 
         Returns:
             Dictionary mapping site names to their ContainerSpecs
         """
-        return {
-            "gitea": self.gitea.to_container_spec("gitea"),
-            "answer": self.answer.to_container_spec("answer"),
-            "wikijs": self.wikijs.to_container_spec("wikijs"),
-            "classifieds": self.classifieds.to_container_spec("classifieds"),
+        site_configs: dict[str, SiteConfig] = {
+            "gitea": self.gitea,
+            "answer": self.answer,
+            "wikijs": self.wikijs,
+            "classifieds": self.classifieds,
         }
+
+        specs: dict[str, ContainerSpec] = {}
+        for site_name, site_config in site_configs.items():
+            specs[site_name] = site_config.to_container_spec(site_name)
+            if isinstance(site_config, PostgresqlSiteConfig):
+                specs[f"{site_name}-db"] = site_config.to_db_container_spec()
+
+        return specs
