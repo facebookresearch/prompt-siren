@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Literal
 
 import click
+from pydantic import BaseModel
 
 # ExceptionGroup is built-in in Python 3.11+, needs backport for 3.10
 if sys.version_info < (3, 11):
@@ -439,15 +440,29 @@ class ImageBuilder:
         return errors
 
 
+def _maybe_override_cache_dir(config: BaseModel, cache_dir: str | None) -> BaseModel:
+    """Override cache_dir on configs that define it."""
+    if cache_dir is None:
+        return config
+    if not hasattr(config, "cache_dir"):
+        raise ValueError(
+            f"Dataset config {type(config).__name__} does not define cache_dir, "
+            "but build_images was called with a cache_dir override."
+        )
+    return config.model_copy(update={"cache_dir": str(cache_dir)})
+
+
 async def build_dataset_images(
     dataset_name: str,
     builder: ImageBuilder,
+    cache_dir: str | None = None,
 ) -> list[BuildError]:
     """Build all images for a specific dataset using default configuration.
 
     Args:
         dataset_name: Name of the dataset to build images for
         builder: Image builder instance
+        cache_dir: Optional cache directory override for datasets that support it
 
     Returns:
         List of build errors (empty if all succeeded)
@@ -458,6 +473,7 @@ async def build_dataset_images(
     # Get the dataset's config class and create default config
     config_class = get_dataset_config_class(dataset_name)
     config = config_class()
+    config = _maybe_override_cache_dir(config, cache_dir)
 
     # Get image build specs directly from the dataset class (no instance needed)
     specs = get_image_build_specs(dataset_name, config)
@@ -536,6 +552,7 @@ async def run_build(
             errors = await build_dataset_images(
                 dataset_name,
                 builder,
+                cache_dir=cache_dir,
             )
             all_build_errors.extend(errors)
 

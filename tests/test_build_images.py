@@ -6,7 +6,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from prompt_siren.build_images import ImageBuilder
+from pydantic import BaseModel
+from prompt_siren.build_images import ImageBuilder, _maybe_override_cache_dir
+from prompt_siren.datasets.swebench_dataset.config import SwebenchDatasetConfig
 from prompt_siren.sandbox_managers.docker.plugins.errors import DockerClientError
 from prompt_siren.sandbox_managers.image_spec import BuildImageSpec
 
@@ -21,6 +23,24 @@ class MockDockerClient:
         self.push_image = AsyncMock()
         self.pull_image = AsyncMock()
         self.build_image = AsyncMock()
+
+
+class TestCacheDirOverride:
+    """Tests for cache_dir overrides in dataset configs."""
+
+    def test_override_cache_dir_updates_config(self) -> None:
+        config = SwebenchDatasetConfig()
+        updated = _maybe_override_cache_dir(config, "/tmp/custom-cache")
+
+        assert updated.cache_dir == "/tmp/custom-cache"
+        assert config.cache_dir != "/tmp/custom-cache"
+
+    def test_override_cache_dir_requires_field(self) -> None:
+        class DummyConfig(BaseModel):
+            value: int = 1
+
+        with pytest.raises(ValueError, match="cache_dir"):
+            _maybe_override_cache_dir(DummyConfig(), "/tmp/custom-cache")
 
 
 class TestSeederCallbackExecution:
