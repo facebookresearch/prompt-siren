@@ -67,9 +67,6 @@ uv run prompt-siren run attack +dataset=agentdojo-workspace +attack=template_str
 # Run SWE-bench evaluation (requires Docker)
 uv run prompt-siren run benign +dataset=swebench
 
-# Run SWE-bench with specific instances
-uv run prompt-siren run benign +dataset=swebench dataset.config.instance_ids='["django__django-11179"]'
-
 # Run SWE-bench Lite (smaller benchmark)
 uv run prompt-siren run benign +dataset=swebench dataset.config.dataset_name="SWE-bench/SWE-bench_Lite"
 

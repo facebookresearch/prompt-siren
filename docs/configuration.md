@@ -200,9 +200,6 @@ SWE-bench dataset (code editing benchmarks):
 type: swebench
 config:
   dataset_name: SWE-bench/SWE-bench_Lite  # HuggingFace dataset
-  max_instances: null
-  instance_ids:
-    - "astropy__astropy-12907"  # List of instance IDs to run
   use_cache: true
   build_timeout: 1800
   cache_dir: .swebench_cache

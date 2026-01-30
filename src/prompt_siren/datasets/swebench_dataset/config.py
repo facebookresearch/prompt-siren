@@ -15,9 +15,6 @@ class SwebenchDatasetConfig(BaseModel):
     dataset_name: str = "SWE-bench/SWE-bench_Lite"
     """HuggingFace dataset name or path to local JSON/JSONL file."""
 
-    max_instances: int | None = None
-    """Maximum number of instances to load (None = all). Useful for testing."""
-
     # Build options
     use_cache: bool = True
     """Whether to use Docker build cache."""

@@ -63,7 +63,7 @@ class TestSwebenchDatasetGetImageBuildSpecs:
 
     def test_all_specs_are_image_build_spec(self) -> None:
         """Verify all returned specs are valid ImageBuildSpec types."""
-        config = SwebenchDatasetConfig(max_instances=1)
+        config = SwebenchDatasetConfig()
         specs = SwebenchDataset.get_image_build_specs(config)
 
         for spec in specs:
@@ -72,7 +72,7 @@ class TestSwebenchDatasetGetImageBuildSpecs:
 
     def test_derived_specs_reference_existing_base_tags(self) -> None:
         """Verify derived specs reference tags that are produced by base specs."""
-        config = SwebenchDatasetConfig(max_instances=1)
+        config = SwebenchDatasetConfig()
         specs = SwebenchDataset.get_image_build_specs(config)
 
         # Collect all tags produced by non-derived specs
