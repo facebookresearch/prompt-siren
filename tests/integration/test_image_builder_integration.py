@@ -1,7 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Integration tests for ImageBuilder with real Docker."""
 
-import tempfile
 from pathlib import Path
 from uuid import uuid4
 
@@ -65,24 +64,22 @@ class TestImageBuilderIntegration:
         base_tag = f"prompt-siren-builder-base:{uuid4().hex[:8]}"
         derived_tag = f"prompt-siren-builder-derived:{uuid4().hex[:8]}"
 
-        with tempfile.TemporaryDirectory() as cache_dir:
-            builder = ImageBuilder(
-                docker_client=docker_client,
-                cache_dir=Path(cache_dir),
-                rebuild_existing=False,
-            )
+        builder = ImageBuilder(
+            docker_client=docker_client,
+            rebuild_existing=False,
+        )
 
-            await builder.build_from_context(
-                context_path=str(FIXTURES_DIR),
-                tag=base_tag,
-            )
+        await builder.build_from_context(
+            context_path=str(FIXTURES_DIR),
+            tag=base_tag,
+        )
 
-            dockerfile_extra = "RUN echo 'Derived build successful' > /derived-marker.txt"
-            await builder.build_modified_image(
-                base_tag=base_tag,
-                dockerfile_extra=dockerfile_extra,
-                output_tag=derived_tag,
-            )
+        dockerfile_extra = "RUN echo 'Derived build successful' > /derived-marker.txt"
+        await builder.build_modified_image(
+            base_tag=base_tag,
+            dockerfile_extra=dockerfile_extra,
+            output_tag=derived_tag,
+        )
 
         await _assert_file_in_container(
             docker_client_type,
@@ -122,15 +119,13 @@ class TestImageBuilderIntegration:
             ),
         ]
 
-        with tempfile.TemporaryDirectory() as cache_dir:
-            builder = ImageBuilder(
-                docker_client=docker_client,
-                cache_dir=Path(cache_dir),
-                rebuild_existing=False,
-            )
+        builder = ImageBuilder(
+            docker_client=docker_client,
+            rebuild_existing=False,
+        )
 
-            build_errors = await builder.build_all_specs(specs)
-            assert build_errors == []
+        build_errors = await builder.build_all_specs(specs)
+        assert build_errors == []
 
         await _assert_file_in_container(
             docker_client_type,

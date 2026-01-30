@@ -87,7 +87,9 @@ class SwebenchDataset(AbstractDataset[BashEnvState, str, str, StrContentAttack])
         return self._task_couples
 
     @classmethod
-    def get_image_build_specs(cls, config: SwebenchDatasetConfig) -> list[ImageBuildSpec]:
+    def get_image_build_specs(
+        cls, config: SwebenchDatasetConfig, build_context_dir: str
+    ) -> list[ImageBuildSpec]:
         """Return all image specifications needed for SWE-bench tasks.
 
         This classmethod is used by the build_images script to pre-build
@@ -95,6 +97,7 @@ class SwebenchDataset(AbstractDataset[BashEnvState, str, str, StrContentAttack])
 
         Args:
             config: Dataset configuration specifying which instances to build.
+            build_context_dir: Directory to store build contexts and generated scripts.
 
         Returns:
             List of ImageBuildSpec objects for all required images, including:
@@ -118,7 +121,7 @@ class SwebenchDataset(AbstractDataset[BashEnvState, str, str, StrContentAttack])
         #    prepare_build_context uses standardized tags for base/env/benign images.
         #    Keep a guard to ensure the final stage matches the benign naming scheme.
         for instance in instances:
-            multi_stage_spec, _ = prepare_build_context(instance, config)
+            multi_stage_spec, _ = prepare_build_context(instance, config, build_context_dir)
             benign_tag = get_benign_image_tag(instance["instance_id"])
             if multi_stage_spec.final_tag != benign_tag:
                 updated_stages = list(multi_stage_spec.stages)
@@ -279,7 +282,7 @@ def create_swebench_dataset(
     Args:
         config: Dataset configuration
         sandbox_manager: Sandbox manager for container orchestration.
-            Required for SWE-bench - use SwebenchDataset.get_image_build_specs()
+            Required for SWE-bench - use SwebenchDataset.get_image_build_specs(...)
             for image building without instantiation.
 
     Returns:
@@ -291,7 +294,7 @@ def create_swebench_dataset(
     if sandbox_manager is None:
         raise ValueError(
             "SWE-bench dataset requires a sandbox_manager for container orchestration. "
-            "For image building, use SwebenchDataset.get_image_build_specs(config) instead."
+            "For image building, use SwebenchDataset.get_image_build_specs(config, build_context_dir) instead."
         )
     instances = _load_and_filter_instances(config)
 

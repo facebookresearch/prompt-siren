@@ -42,7 +42,9 @@ class ImageBuildableDataset(Protocol):
     """
 
     @classmethod
-    def get_image_build_specs(cls, config: BaseModel) -> list[ImageBuildSpec]:
+    def get_image_build_specs(
+        cls, config: BaseModel, build_context_dir: str
+    ) -> list[ImageBuildSpec]:
         """Return all image specifications needed by this dataset."""
         ...
 
@@ -102,7 +104,9 @@ def get_registered_datasets() -> list[str]:
     return dataset_registry.get_registered_components()
 
 
-def get_image_build_specs(dataset_type: str, config: BaseModel) -> list[ImageBuildSpec]:
+def get_image_build_specs(
+    dataset_type: str, config: BaseModel, build_context_dir: str
+) -> list[ImageBuildSpec]:
     """Get image build specs for a dataset type.
 
     This calls the dataset class's get_image_build_specs classmethod,
@@ -111,6 +115,7 @@ def get_image_build_specs(dataset_type: str, config: BaseModel) -> list[ImageBui
     Args:
         dataset_type: The type of dataset
         config: The dataset configuration
+        build_context_dir: Directory to store build contexts and generated scripts
 
     Returns:
         List of image build specs for the dataset
@@ -135,7 +140,7 @@ def get_image_build_specs(dataset_type: str, config: BaseModel) -> list[ImageBui
             "The dataset class must implement the ImageBuildableDataset protocol "
             "(provide a get_image_build_specs classmethod)."
         )
-    return dataset_class.get_image_build_specs(config)
+    return dataset_class.get_image_build_specs(config, build_context_dir)
 
 
 def get_datasets_with_image_specs() -> list[str]:

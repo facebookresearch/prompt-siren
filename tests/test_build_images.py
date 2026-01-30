@@ -6,11 +6,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from prompt_siren.build_images import _maybe_override_cache_dir, ImageBuilder
-from prompt_siren.datasets.swebench_dataset.config import SwebenchDatasetConfig
+from prompt_siren.build_images import ImageBuilder
 from prompt_siren.sandbox_managers.docker.plugins.errors import DockerClientError
 from prompt_siren.sandbox_managers.image_spec import BuildImageSpec
-from pydantic import BaseModel
 
 
 class MockDockerClient:
@@ -25,24 +23,6 @@ class MockDockerClient:
         self.build_image = AsyncMock()
 
 
-class TestCacheDirOverride:
-    """Tests for cache_dir overrides in dataset configs."""
-
-    def test_override_cache_dir_updates_config(self) -> None:
-        config = SwebenchDatasetConfig()
-        updated = _maybe_override_cache_dir(config, "/tmp/custom-cache")
-
-        assert updated.cache_dir == "/tmp/custom-cache"
-        assert config.cache_dir != "/tmp/custom-cache"
-
-    def test_override_cache_dir_requires_field(self) -> None:
-        class DummyConfig(BaseModel):
-            value: int = 1
-
-        with pytest.raises(ValueError, match="cache_dir"):
-            _maybe_override_cache_dir(DummyConfig(), "/tmp/custom-cache")
-
-
 class TestSeederCallbackExecution:
     """Tests for seeder callback execution in ImageBuilder."""
 
@@ -51,10 +31,9 @@ class TestSeederCallbackExecution:
         return MockDockerClient()
 
     @pytest.fixture
-    def builder(self, mock_docker: MockDockerClient, tmp_path: Path) -> ImageBuilder:
+    def builder(self, mock_docker: MockDockerClient) -> ImageBuilder:
         return ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
         )
 
     def _create_build_context(self, tmp_path: Path) -> Path:

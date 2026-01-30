@@ -202,7 +202,6 @@ config:
   dataset_name: SWE-bench/SWE-bench_Lite  # HuggingFace dataset
   use_cache: true
   build_timeout: 1800
-  cache_dir: .swebench_cache
   registry: ghcr.io/ethz-spylab/prompt-siren-images
   include_hints: false
   enable_network: false

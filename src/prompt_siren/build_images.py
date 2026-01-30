@@ -21,10 +21,9 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, TypeVar
+from typing import Literal
 
 import click
-from pydantic import BaseModel
 
 # ExceptionGroup is built-in in Python 3.11+, needs backport for 3.10
 if sys.version_info < (3, 11):
@@ -92,7 +91,6 @@ class ImageBuilder:
     def __init__(
         self,
         docker_client: AbstractDockerClient,
-        cache_dir: Path,
         rebuild_existing: bool = False,
         registry: str | None = None,
     ):
@@ -100,13 +98,11 @@ class ImageBuilder:
 
         Args:
             docker_client: Docker client for building images
-            cache_dir: Directory for caching build contexts
             rebuild_existing: If True, delete and rebuild existing images.
                 If False (default), skip building images that already exist.
             registry: Optional registry to tag and push images to
         """
         self._docker = docker_client
-        self._cache_dir = cache_dir
         self._rebuild_existing = rebuild_existing
         self._registry = registry
         # Track built images to avoid duplicates
@@ -440,19 +436,13 @@ class ImageBuilder:
         return errors
 
 
-T = TypeVar("T", bound=BaseModel)
+DEFAULT_BUILD_CONTEXT_TEMPLATE = ".siren-docker-cache/{dataset}"
 
 
-def _maybe_override_cache_dir(config: T, cache_dir: str | None) -> T:
-    """Override cache_dir on configs that define it."""
-    if cache_dir is None:
-        return config
-    if not hasattr(config, "cache_dir"):
-        raise ValueError(
-            f"Dataset config {type(config).__name__} does not define cache_dir, "
-            "but build_images was called with a cache_dir override."
-        )
-    return config.model_copy(update={"cache_dir": str(cache_dir)})
+def _resolve_build_context_dir(dataset_name: str, cache_dir: str | None) -> str:
+    """Resolve a build context directory for a dataset."""
+    template = cache_dir or DEFAULT_BUILD_CONTEXT_TEMPLATE
+    return template.replace("{dataset}", dataset_name)
 
 
 async def build_dataset_images(
@@ -465,7 +455,7 @@ async def build_dataset_images(
     Args:
         dataset_name: Name of the dataset to build images for
         builder: Image builder instance
-        cache_dir: Optional cache directory override for datasets that support it
+        cache_dir: Optional build context directory (supports "{dataset}" placeholder)
 
     Returns:
         List of build errors (empty if all succeeded)
@@ -476,10 +466,10 @@ async def build_dataset_images(
     # Get the dataset's config class and create default config
     config_class = get_dataset_config_class(dataset_name)
     config = config_class()
-    config = _maybe_override_cache_dir(config, cache_dir)
+    build_context_dir = _resolve_build_context_dir(dataset_name, cache_dir)
 
     # Get image build specs directly from the dataset class (no instance needed)
-    specs = get_image_build_specs(dataset_name, config)
+    specs = get_image_build_specs(dataset_name, config, build_context_dir)
     logger.info(f"Found {len(specs)} image spec(s) for dataset {dataset_name}")
 
     # Build all specs
@@ -514,7 +504,7 @@ def _validate_datasets(datasets: list[str]) -> None:
 
 async def run_build(
     datasets: list[str],
-    cache_dir: str = ".build_cache",
+    cache_dir: str = DEFAULT_BUILD_CONTEXT_TEMPLATE,
     rebuild_existing: bool = False,
     registry: str | None = None,
 ) -> None:
@@ -522,7 +512,7 @@ async def run_build(
 
     Args:
         datasets: List of dataset names to build images for
-        cache_dir: Directory for caching build contexts
+        cache_dir: Directory for caching build contexts (supports "{dataset}" placeholder)
         rebuild_existing: If True, delete and rebuild existing images.
         registry: Optional registry to tag and push images to
 
@@ -545,7 +535,6 @@ async def run_build(
         # Create image builder
         builder = ImageBuilder(
             docker_client=docker_client,
-            cache_dir=Path(cache_dir),
             rebuild_existing=rebuild_existing,
             registry=registry,
         )
@@ -585,8 +574,8 @@ async def run_build(
 )
 @click.option(
     "--cache-dir",
-    default=".build_cache",
-    help="Directory for caching build contexts",
+    default=DEFAULT_BUILD_CONTEXT_TEMPLATE,
+    help='Directory for caching build contexts (supports "{dataset}" placeholder)',
 )
 @click.option(
     "--rebuild-existing",

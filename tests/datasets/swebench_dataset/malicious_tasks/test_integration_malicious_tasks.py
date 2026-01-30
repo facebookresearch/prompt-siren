@@ -17,10 +17,8 @@ Set PROMPT_SIREN_TEST_REGISTRY to override the registry prefix (set to "none" to
 
 import asyncio
 import os
-import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
-from pathlib import Path
 from textwrap import dedent
 from typing import cast
 
@@ -151,44 +149,40 @@ _INTEGRATION_TASKS = [
 async def malicious_task_images() -> AsyncIterator[_MaliciousImageContext]:
     docker_client = create_docker_client_from_config("local", {})
     try:
-        with tempfile.TemporaryDirectory() as cache_dir:
-            builder = ImageBuilder(
-                docker_client=docker_client,
-                cache_dir=Path(cache_dir),
-                rebuild_existing=False,
-            )
+        builder = ImageBuilder(
+            docker_client=docker_client,
+            rebuild_existing=False,
+        )
 
-            specs: list[BuildImageSpec] = get_all_service_container_build_specs()
-            if _TEST_REGISTRY:
-                specs = [_apply_registry_to_build_spec(spec, _TEST_REGISTRY) for spec in specs]
+        specs: list[BuildImageSpec] = get_all_service_container_build_specs()
+        if _TEST_REGISTRY:
+            specs = [_apply_registry_to_build_spec(spec, _TEST_REGISTRY) for spec in specs]
 
-            build_errors = await builder.build_all_specs(cast(list[ImageBuildSpec], specs))
-            if build_errors:
-                error_summary = ", ".join(
-                    f"{error.image_tag}:{error.phase}" for error in build_errors
+        build_errors = await builder.build_all_specs(cast(list[ImageBuildSpec], specs))
+        if build_errors:
+            error_summary = ", ".join(f"{error.image_tag}:{error.phase}" for error in build_errors)
+            raise RuntimeError(f"Failed to build required images: {error_summary}")
+
+        pair_tags: dict[str, str] = {}
+        for task in _INTEGRATION_TASKS:
+            prepared_task = _with_registry(task)
+            metadata = prepared_task.metadata
+            if (
+                isinstance(metadata, SWEBenchMaliciousTaskMetadata)
+                and metadata.benign_dockerfile_extra
+            ):
+                base_tag = metadata.agent_container_spec.image_spec.tag
+                pair_tag = get_pair_image_tag(
+                    _TEST_BENIGN_ID, prepared_task.id, registry=_TEST_REGISTRY
                 )
-                raise RuntimeError(f"Failed to build required images: {error_summary}")
+                await builder.build_modified_image(
+                    base_tag=base_tag,
+                    dockerfile_extra=metadata.benign_dockerfile_extra,
+                    output_tag=pair_tag,
+                )
+                pair_tags[prepared_task.id] = pair_tag
 
-            pair_tags: dict[str, str] = {}
-            for task in _INTEGRATION_TASKS:
-                prepared_task = _with_registry(task)
-                metadata = prepared_task.metadata
-                if (
-                    isinstance(metadata, SWEBenchMaliciousTaskMetadata)
-                    and metadata.benign_dockerfile_extra
-                ):
-                    base_tag = metadata.agent_container_spec.image_spec.tag
-                    pair_tag = get_pair_image_tag(
-                        _TEST_BENIGN_ID, prepared_task.id, registry=_TEST_REGISTRY
-                    )
-                    await builder.build_modified_image(
-                        base_tag=base_tag,
-                        dockerfile_extra=metadata.benign_dockerfile_extra,
-                        output_tag=pair_tag,
-                    )
-                    pair_tags[prepared_task.id] = pair_tag
-
-            yield _MaliciousImageContext(registry=_TEST_REGISTRY, pair_tags=pair_tags)
+        yield _MaliciousImageContext(registry=_TEST_REGISTRY, pair_tags=pair_tags)
     finally:
         await docker_client.close()
 

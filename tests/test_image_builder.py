@@ -58,10 +58,9 @@ class TestImageBuilderImageExists:
         return MockDockerClient()
 
     @pytest.fixture
-    def builder(self, mock_docker: MockDockerClient, tmp_path: Path) -> ImageBuilder:
+    def builder(self, mock_docker: MockDockerClient) -> ImageBuilder:
         return ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
         )
 
     @pytest.mark.anyio
@@ -97,12 +96,11 @@ class TestImageBuilderPushToRegistry:
 
     @pytest.mark.anyio
     async def test_push_to_registry_does_nothing_without_registry(
-        self, mock_docker: MockDockerClient, tmp_path: Path
+        self, mock_docker: MockDockerClient
     ) -> None:
         """Test that push_to_registry does nothing when no registry configured."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
             registry=None,
         )
 
@@ -112,13 +110,10 @@ class TestImageBuilderPushToRegistry:
         mock_docker.push_image.assert_not_called()
 
     @pytest.mark.anyio
-    async def test_push_to_registry_tags_and_pushes(
-        self, mock_docker: MockDockerClient, tmp_path: Path
-    ) -> None:
+    async def test_push_to_registry_tags_and_pushes(self, mock_docker: MockDockerClient) -> None:
         """Test that push_to_registry tags and pushes when registry configured."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
             registry="my-registry.com/repo",
         )
 
@@ -133,12 +128,11 @@ class TestImageBuilderPushToRegistry:
 
     @pytest.mark.anyio
     async def test_push_to_registry_skips_when_image_exists(
-        self, mock_docker: MockDockerClient, tmp_path: Path
+        self, mock_docker: MockDockerClient
     ) -> None:
         """Test that push_to_registry skips when image already exists in registry."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
             registry="my-registry.com/repo",
         )
 
@@ -158,10 +152,9 @@ class TestImageBuilderBuildFromContext:
         return MockDockerClient()
 
     @pytest.fixture
-    def builder(self, mock_docker: MockDockerClient, tmp_path: Path) -> ImageBuilder:
+    def builder(self, mock_docker: MockDockerClient) -> ImageBuilder:
         return ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
         )
 
     @pytest.mark.anyio
@@ -204,7 +197,6 @@ class TestImageBuilderBuildFromContext:
         """Test that build deletes and rebuilds when rebuild_existing=True."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
             rebuild_existing=True,
         )
         mock_docker.inspect_image.return_value = {"Id": "sha256:abc123"}
@@ -290,10 +282,9 @@ class TestImageBuilderBuildAllSpecs:
         return MockDockerClient()
 
     @pytest.fixture
-    def builder(self, mock_docker: MockDockerClient, tmp_path: Path) -> ImageBuilder:
+    def builder(self, mock_docker: MockDockerClient) -> ImageBuilder:
         return ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
         )
 
     @pytest.mark.anyio
@@ -303,7 +294,6 @@ class TestImageBuilderBuildAllSpecs:
         """Verify derived specs are built after all base specs complete."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
         )
 
         # Track build order at the _build_single_spec and build_modified_image level
@@ -375,7 +365,6 @@ class TestImageBuilderBuildAllSpecs:
         """Verify multi-stage build specs are handled correctly."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
         )
 
         # Create context dir with Dockerfile
@@ -421,7 +410,6 @@ class TestImageBuilderBuildAllSpecs:
         """Verify build errors are collected but don't stop other builds."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
         )
 
         # Create context dir with Dockerfile
@@ -460,7 +448,6 @@ class TestImageBuilderBuildAllSpecs:
         """Verify derived specs are skipped when their base image fails to build."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
         )
 
         # Create context dir with Dockerfile
@@ -527,7 +514,6 @@ class TestBuildAllSpecsPushToRegistry:
         """push_image is called for each successfully built spec."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
             registry="test-registry",
         )
 
@@ -558,7 +544,6 @@ class TestBuildAllSpecsPushToRegistry:
         """push_image is NOT called for specs that failed to build."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
             registry="test-registry",
         )
 
@@ -597,7 +582,6 @@ class TestBuildAllSpecsPushToRegistry:
         """push_image is NOT called for derived specs skipped due to base failure."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
             registry="test-registry",
         )
 
@@ -636,7 +620,6 @@ class TestBuildAllSpecsPushToRegistry:
         """A push failure should NOT cause derived images to be skipped."""
         builder = ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
             registry="test-registry",
         )
 

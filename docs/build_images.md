@@ -32,6 +32,8 @@ Notes:
 - When `--rebuild-existing` is not set, the builder will skip pushing tags that
   already exist in the registry.
 - Runtime pulls can be configured with a dataset registry prefix (e.g., SWE-bench config).
+- Build contexts are written to `.siren-docker-cache/{dataset}` by default; override with
+  `--cache-dir` (supports the `{dataset}` placeholder).
 
 ## Image Tag Scheme
 

@@ -1,7 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Tests for SWE-bench image building (image tag functions, build_dataset_images)."""
 
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -49,10 +48,9 @@ class TestBuildDatasetImagesValidation:
         return MockDockerClient()
 
     @pytest.fixture
-    def builder(self, mock_docker: MockDockerClient, tmp_path: Path) -> ImageBuilder:
+    def builder(self, mock_docker: MockDockerClient) -> ImageBuilder:
         return ImageBuilder(
             docker_client=mock_docker,  # type: ignore[arg-type]
-            cache_dir=tmp_path,
         )
 
     @pytest.mark.anyio

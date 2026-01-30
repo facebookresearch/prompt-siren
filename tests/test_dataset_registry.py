@@ -32,25 +32,25 @@ class TestGetDatasetsWithImageSpecs:
 class TestGetImageBuildSpecs:
     """Tests for get_image_build_specs function."""
 
-    def test_raises_for_nonexistent_dataset(self) -> None:
+    def test_raises_for_nonexistent_dataset(self, tmp_path) -> None:
         """Verify UnknownComponentError when dataset doesn't exist."""
         with pytest.raises(UnknownComponentError):
-            get_image_build_specs("nonexistent-dataset", SwebenchDatasetConfig())
+            get_image_build_specs("nonexistent-dataset", SwebenchDatasetConfig(), str(tmp_path))
 
-    def test_raises_for_dataset_without_image_support(self) -> None:
+    def test_raises_for_dataset_without_image_support(self, tmp_path) -> None:
         """Verify ValueError when dataset exists but doesn't support image building."""
         with pytest.raises(ValueError, match="does not support image building"):
-            get_image_build_specs("agentdojo", SwebenchDatasetConfig())
+            get_image_build_specs("agentdojo", SwebenchDatasetConfig(), str(tmp_path))
 
 
 class TestSwebenchDatasetGetImageBuildSpecs:
     """Tests for SwebenchDataset.get_image_build_specs classmethod."""
 
-    def test_returns_specs_for_valid_instance(self) -> None:
+    def test_returns_specs_for_valid_instance(self, tmp_path) -> None:
         """Test that valid instance IDs return image specs."""
         # Use a valid instance ID from INSTANCE_INJECTION_MAPPING
         config = SwebenchDatasetConfig()
-        specs = SwebenchDataset.get_image_build_specs(config)
+        specs = SwebenchDataset.get_image_build_specs(config, str(tmp_path))
 
         # Should have at least one multi-stage build spec for benign task
         multi_stage_specs = [s for s in specs if isinstance(s, MultiStageBuildImageSpec)]
@@ -61,19 +61,19 @@ class TestSwebenchDatasetGetImageBuildSpecs:
         # At least one malicious task should have benign_dockerfile_extra
         assert len(derived_specs) >= 1
 
-    def test_all_specs_are_image_build_spec(self) -> None:
+    def test_all_specs_are_image_build_spec(self, tmp_path) -> None:
         """Verify all returned specs are valid ImageBuildSpec types."""
         config = SwebenchDatasetConfig()
-        specs = SwebenchDataset.get_image_build_specs(config)
+        specs = SwebenchDataset.get_image_build_specs(config, str(tmp_path))
 
         for spec in specs:
             # ImageBuildSpec = BuildImageSpec | MultiStageBuildImageSpec | DerivedImageSpec
             assert isinstance(spec, (BuildImageSpec, MultiStageBuildImageSpec, DerivedImageSpec))
 
-    def test_derived_specs_reference_existing_base_tags(self) -> None:
+    def test_derived_specs_reference_existing_base_tags(self, tmp_path) -> None:
         """Verify derived specs reference tags that are produced by base specs."""
         config = SwebenchDatasetConfig()
-        specs = SwebenchDataset.get_image_build_specs(config)
+        specs = SwebenchDataset.get_image_build_specs(config, str(tmp_path))
 
         # Collect all tags produced by non-derived specs
         base_tags: set[str] = set()

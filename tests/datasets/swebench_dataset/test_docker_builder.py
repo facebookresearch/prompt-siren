@@ -39,12 +39,16 @@ class TestPrepareBuildContext:
         )
 
     @pytest.fixture
-    def mock_config(self, tmp_path: Path) -> SwebenchDatasetConfig:
+    def mock_config(self) -> SwebenchDatasetConfig:
         """Create a mock dataset config."""
         return SwebenchDatasetConfig(
-            cache_dir=str(tmp_path / "cache"),
             use_cache=False,
         )
+
+    @pytest.fixture
+    def build_context_dir(self, tmp_path: Path) -> Path:
+        """Create a build context directory path."""
+        return tmp_path / "cache"
 
     @pytest.fixture
     def mock_test_spec(self) -> TestSpec:
@@ -65,11 +69,12 @@ class TestPrepareBuildContext:
         mock_instance: SWEbenchInstance,
         mock_config: SwebenchDatasetConfig,
         mock_test_spec: TestSpec,
+        build_context_dir: Path,
     ) -> None:
         """Test that prepare_build_context returns MultiStageBuildImageSpec."""
         mock_make_test_spec.return_value = mock_test_spec
 
-        spec, _test_spec = prepare_build_context(mock_instance, mock_config)
+        spec, _test_spec = prepare_build_context(mock_instance, mock_config, build_context_dir)
 
         # Check that spec has three stages
         assert len(spec.stages) == 3
@@ -101,29 +106,27 @@ class TestPrepareBuildContext:
         mock_instance: SWEbenchInstance,
         mock_config: SwebenchDatasetConfig,
         mock_test_spec: TestSpec,
-        tmp_path: Path,
+        build_context_dir: Path,
     ) -> None:
         """Test that use_cache flag prevents rewriting existing files."""
         mock_make_test_spec.return_value = mock_test_spec
 
         # Create config with caching enabled
         cached_config = SwebenchDatasetConfig(
-            cache_dir=str(tmp_path / "cache"),
             use_cache=True,
         )
 
         # First call creates files
-        _spec1, _ = prepare_build_context(mock_instance, mock_config)
+        _spec1, _ = prepare_build_context(mock_instance, mock_config, build_context_dir)
 
         # Write custom content to Dockerfile
-        cache_dir = tmp_path / "cache"
-        base_dirs = list((cache_dir / "base").iterdir())
+        base_dirs = list((build_context_dir / "base").iterdir())
         base_dockerfile = base_dirs[0] / "Dockerfile"
         custom_content = "# CUSTOM CONTENT"
         base_dockerfile.write_text(custom_content)
 
         # Second call with use_cache=True should not overwrite
-        _spec2, _ = prepare_build_context(mock_instance, cached_config)
+        _spec2, _ = prepare_build_context(mock_instance, cached_config, build_context_dir)
 
         # Check that custom content is preserved
         assert base_dockerfile.read_text() == custom_content
@@ -135,11 +138,12 @@ class TestPrepareBuildContext:
         mock_instance: SWEbenchInstance,
         mock_config: SwebenchDatasetConfig,
         mock_test_spec: TestSpec,
+        build_context_dir: Path,
     ) -> None:
         """Test that prepare_build_context looks up and passes injection_spec."""
         mock_make_test_spec.return_value = mock_test_spec
 
-        _spec, _ = prepare_build_context(mock_instance, mock_config)
+        _spec, _ = prepare_build_context(mock_instance, mock_config, build_context_dir)
 
         # Verify that make_test_spec was called with the injection_spec
         mock_make_test_spec.assert_called_once()
@@ -155,6 +159,7 @@ class TestPrepareBuildContext:
         self,
         mock_instance: SWEbenchInstance,
         mock_config: SwebenchDatasetConfig,
+        build_context_dir: Path,
     ) -> None:
         """Test that prepare_build_context raises error when instance not in mapping."""
         # Instance not in mapping
@@ -162,4 +167,4 @@ class TestPrepareBuildContext:
             RuntimeError,
             match="does not have a location to place an injection",
         ):
-            prepare_build_context(mock_instance, mock_config)
+            prepare_build_context(mock_instance, mock_config, build_context_dir)

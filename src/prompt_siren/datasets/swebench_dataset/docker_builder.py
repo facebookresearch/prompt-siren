@@ -34,6 +34,7 @@ from .swebench_imports import _ACTIVATE_ENV_COMMAND, make_test_spec
 def prepare_build_context(
     instance: SWEbenchInstance,
     config: SwebenchDatasetConfig,
+    build_context_dir: str | Path,
 ) -> tuple[MultiStageBuildImageSpec, TestSpec]:
     """Prepare multi-stage Docker build specification for a SWE-bench instance.
 
@@ -45,6 +46,7 @@ def prepare_build_context(
     Args:
         instance: SWE-bench instance data
         config: Dataset configuration
+        build_context_dir: Directory to store build contexts and generated scripts
 
     Returns:
         Tuple of (MultiStageBuildImageSpec, TestSpec) where the spec contains
@@ -63,7 +65,7 @@ def prepare_build_context(
     test_spec = make_test_spec(instance, injection_spec=injection_spec)
 
     # Create cache directory structure
-    cache_dir = Path(config.cache_dir)
+    cache_dir = Path(build_context_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     stages = []
