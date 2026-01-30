@@ -6,6 +6,7 @@ import pytest
 # Skip this entire module if swebench is not installed
 pytest.importorskip("swebench")
 
+from prompt_siren.datasets.swebench_dataset.config import SwebenchDatasetConfig
 from prompt_siren.datasets.swebench_dataset.task_metadata import (
     SWEBenchMaliciousTaskMetadata,
 )
@@ -86,6 +87,31 @@ class TestSWEBenchMaliciousTaskMetadataWithRegistry:
 
         assert isinstance(result.service_containers["db"].image_spec, PullImageSpec)
         assert result.service_containers["db"].image_spec.tag == "my-registry.com/repo/postgres:15"
+
+    def test_updates_with_default_registry(self) -> None:
+        """Test that with_registry works with the default registry value."""
+        default_registry = SwebenchDatasetConfig().registry
+        assert default_registry is not None
+
+        metadata = SWEBenchMaliciousTaskMetadata(
+            agent_container_spec=ContainerSpec(
+                image_spec=PullImageSpec(tag="agent:latest"),
+            ),
+            service_containers={
+                "service": ContainerSpec(
+                    image_spec=PullImageSpec(tag="service:latest"),
+                ),
+            },
+        )
+
+        result = metadata.with_registry(default_registry)
+
+        assert isinstance(result.agent_container_spec.image_spec, PullImageSpec)
+        assert result.agent_container_spec.image_spec.tag.startswith(f"{default_registry}/")
+        assert isinstance(result.service_containers["service"].image_spec, PullImageSpec)
+        assert result.service_containers["service"].image_spec.tag.startswith(
+            f"{default_registry}/"
+        )
 
     def test_preserves_service_container_build_image_specs(self) -> None:
         """Test that with_registry preserves service container BuildImageSpecs."""

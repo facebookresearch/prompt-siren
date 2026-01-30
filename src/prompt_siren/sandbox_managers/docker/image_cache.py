@@ -13,6 +13,7 @@ from typing_extensions import assert_never
 
 from ..image_spec import (
     BuildImageSpec,
+    DerivedImageSpec,
     ImageSpec,
     ImageTag,
     MultiStageBuildImageSpec,
@@ -62,22 +63,12 @@ class ImageCache:
         Args:
             container_setups: All container setups from all tasks in the batch
         """
-        logger.debug(
-            f"[ImageCache] ensure_all_base_images called with {len(container_setups)} container setups"
-        )
-        # Collect unique image specs using cache key
         seen_specs: set[str] = set()
         for setup in container_setups:
             cache_key = self._get_cache_key(setup.spec.image_spec)
-            logger.debug(
-                f"[ImageCache] Processing setup '{setup.name}' with cache_key: {cache_key}"
-            )
             if cache_key not in seen_specs:
                 seen_specs.add(cache_key)
-                logger.debug(f"[ImageCache] Preparing image for cache_key: {cache_key}")
                 await self._ensure_image_available(setup.spec.image_spec)
-            else:
-                logger.debug(f"[ImageCache] Skipping duplicate cache_key: {cache_key}")
 
     async def get_image_for_container(
         self,
@@ -109,40 +100,23 @@ class ImageCache:
             ImageNotFoundError: If a pre-built image is not found
         """
         cache_key = self._get_cache_key(spec)
-        logger.debug(f"[ImageCache] _ensure_image_available called for cache_key: {cache_key}")
 
-        # Check cache first
         if cache_key in self._image_cache:
-            logger.debug(f"[ImageCache] Found cached image for cache_key: {cache_key}")
             return self._image_cache[cache_key]
 
-        logger.debug(
-            f"[ImageCache] No cached image found, checking availability for spec type: "
-            f"{type(spec).__name__}"
-        )
-
-        tag: ImageTag = ""
-
-        # Handle image based on type
         match spec:
             case PullImageSpec():
-                logger.debug(f"[ImageCache] Pulling/verifying image: {spec.tag}")
                 tag = await self._pull_image(spec)
             case BuildImageSpec():
-                # BuildImageSpec should have been pre-built
-                logger.debug(f"[ImageCache] Verifying pre-built image exists: {spec.tag}")
                 tag = await self._verify_image_exists(spec.tag)
             case MultiStageBuildImageSpec():
-                # MultiStageBuildImageSpec should have been pre-built
-                logger.debug(
-                    f"[ImageCache] Verifying pre-built multi-stage image exists: {spec.final_tag}"
-                )
                 tag = await self._verify_image_exists(spec.final_tag)
+            case DerivedImageSpec():
+                tag = await self._verify_image_exists(spec.tag)
             case _:
                 assert_never(spec)
 
-        # Cache result
-        logger.debug(f"[ImageCache] Caching result for cache_key: {cache_key}, tag: {tag}")
+        logger.debug(f"Cached image {tag} (key={cache_key})")
         self._image_cache[cache_key] = tag
         return tag
 
@@ -157,7 +131,6 @@ class ImageCache:
         """
         cache_key = self._get_cache_key(spec)
         if cache_key not in self._image_cache:
-            # Fallback: ensure available if not cached
             return await self._ensure_image_available(spec)
         return self._image_cache[cache_key]
 
@@ -169,20 +142,20 @@ class ImageCache:
 
         Returns:
             Image tag
+
+        Raises:
+            DockerClientError: If a non-404 error occurs (e.g., daemon not running)
         """
-        logger.debug(f"[ImageCache] _pull_image: Checking if image exists locally: {spec.tag}")
         try:
-            # Check if image exists locally
             await self._docker.inspect_image(spec.tag)
-            logger.debug(f"[ImageCache] _pull_image: Image {spec.tag} already exists locally")
+            logger.debug(f"Image {spec.tag} already exists locally")
+            return spec.tag
         except DockerClientError as e:
-            # Image doesn't exist, pull it
-            logger.debug(
-                f"[ImageCache] _pull_image: Image {spec.tag} not found locally (error: {e}), "
-                "pulling..."
-            )
+            if e.status != 404:
+                logger.error(f"Docker error while checking image '{spec.tag}': {e}")
+                raise
+            logger.debug(f"Pulling image {spec.tag}")
             await self._docker.pull_image(spec.tag)
-            logger.debug(f"[ImageCache] _pull_image: Successfully pulled image {spec.tag}")
         return spec.tag
 
     async def _verify_image_exists(self, tag: str) -> ImageTag:
@@ -195,19 +168,21 @@ class ImageCache:
             Image tag if exists
 
         Raises:
-            ImageNotFoundError: If image doesn't exist
+            ImageNotFoundError: If image doesn't exist (404)
+            DockerClientError: If a non-404 error occurs (e.g., daemon not running)
         """
-        logger.debug(f"[ImageCache] _verify_image_exists: Checking if image exists: {tag}")
         try:
             await self._docker.inspect_image(tag)
-            logger.debug(f"[ImageCache] _verify_image_exists: Image {tag} exists")
             return tag
         except DockerClientError as e:
-            logger.error(
-                f"[ImageCache] _verify_image_exists: Image {tag} not found (error: {e}). "
-                "Please run `prompt-siren-build-images` to build all required images."
-            )
-            raise ImageNotFoundError(tag) from e
+            if e.status == 404:
+                logger.error(
+                    f"Image {tag} not found. "
+                    "Please run `prompt-siren-build-images` to build all required images."
+                )
+                raise ImageNotFoundError(tag) from e
+            logger.error(f"Docker error verifying image {tag}: {e}")
+            raise
 
     @staticmethod
     def _get_cache_key(spec: ImageSpec) -> str:
@@ -223,10 +198,10 @@ class ImageCache:
             case PullImageSpec():
                 return f"pull:{spec.tag}"
             case BuildImageSpec():
-                # For pre-built images, just use the tag
                 return f"build:{spec.tag}"
             case MultiStageBuildImageSpec():
-                # For pre-built multi-stage images, just use the final tag
                 return f"multistage:{spec.final_tag}"
+            case DerivedImageSpec():
+                return f"derived:{spec.tag}"
             case _:
                 assert_never(spec)

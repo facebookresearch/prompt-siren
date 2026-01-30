@@ -111,8 +111,7 @@ docker ps
 
 # 3. Run with local Docker
 uv run --env-file .env prompt-siren run benign +dataset=swebench \
-  agent.config.model=azure:gpt-4o \
-  'dataset.config.instance_ids=["django__django-11179"]'
+  agent.config.model=azure:gpt-4o
 ```
 
 ## Troubleshooting

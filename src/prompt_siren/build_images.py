@@ -1,18 +1,16 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-"""Standalone script for building Docker images for SWEBench tasks.
+"""Script for building Docker images.
 
-This script pre-builds all Docker images needed for running the SWEBench dataset,
-including:
-- Benign task images (multi-stage builds with base/env/instance layers)
-- Malicious task service container images
-- Combined images for benign x malicious pairs (with dockerfile_extra applied)
+Pre-builds all Docker images needed for running datasets that use Docker
+containers. Uses the ImageBuildableDataset protocol to discover which images
+each dataset needs, then builds them with proper dependency ordering.
 
 Usage:
-    prompt-siren-build-images [OPTIONS]
+    # Build images for a specific dataset
+    prompt-siren-build-images --dataset swebench [OPTIONS]
 
-The script reads the SWEBench dataset configuration and builds Docker images
-with a consistent tagging scheme that can then be referenced via PullImageSpec
-in the core CLI.
+    # Build images for all datasets
+    prompt-siren-build-images --all-datasets [OPTIONS]
 """
 
 from __future__ import annotations
@@ -23,6 +21,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import click
 
@@ -30,40 +29,24 @@ import click
 if sys.version_info < (3, 11):
     from exceptiongroup import ExceptionGroup
 
-try:
-    from swebench.harness.constants import SWEbenchInstance
-    from swebench.harness.utils import load_swebench_dataset
-except ImportError as e:
-    raise ImportError(
-        "SWE-bench support requires the 'swebench' optional dependency. "
-        "Install with: pip install 'prompt-siren[swebench]'"
-    ) from e
-
-from .datasets.swebench_dataset.config import SwebenchDatasetConfig
-from .datasets.swebench_dataset.constants import INSTANCE_INJECTION_MAPPING
-from .datasets.swebench_dataset.docker_builder import prepare_build_context
-from .datasets.swebench_dataset.image_tags import (
-    get_benign_image_tag,
-    get_pair_image_tag,
+from .datasets import (
+    dataset_registry,
+    get_dataset_config_class,
+    get_datasets_with_image_specs,
+    get_image_build_specs,
 )
-from .datasets.swebench_dataset.malicious_tasks import MALICIOUS_TASKS
-from .datasets.swebench_dataset.malicious_tasks.build_registry import (
-    get_all_service_container_build_specs,
-)
-from .datasets.swebench_dataset.task_metadata import SWEBenchMaliciousTaskMetadata
+from .datasets.registry import ImageBuildableDataset
 from .sandbox_managers.docker.manager import create_docker_client_from_config
 from .sandbox_managers.docker.plugins import AbstractDockerClient
 from .sandbox_managers.docker.plugins.errors import DockerClientError
-from .sandbox_managers.image_spec import BuildImageSpec
+from .sandbox_managers.image_spec import (
+    BuildImageSpec,
+    DerivedImageSpec,
+    ImageBuildSpec,
+    MultiStageBuildImageSpec,
+)
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class BuildSuccess:
-    """Successful build result."""
-
-    image_tag: str
 
 
 @dataclass(frozen=True)
@@ -72,9 +55,7 @@ class BuildError:
 
     image_tag: str
     error: Exception
-
-
-BuildResult = BuildSuccess | BuildError
+    phase: Literal["build", "push"] = "build"
 
 
 def _handle_build_failures(
@@ -105,12 +86,11 @@ def _handle_build_failures(
 
 
 class ImageBuilder:
-    """Handles building Docker images for SWEBench tasks."""
+    """Handles building Docker images for datasets."""
 
     def __init__(
         self,
         docker_client: AbstractDockerClient,
-        cache_dir: Path,
         rebuild_existing: bool = False,
         registry: str | None = None,
     ):
@@ -118,17 +98,17 @@ class ImageBuilder:
 
         Args:
             docker_client: Docker client for building images
-            cache_dir: Directory for caching build contexts
             rebuild_existing: If True, delete and rebuild existing images.
                 If False (default), skip building images that already exist.
             registry: Optional registry to tag and push images to
         """
         self._docker = docker_client
-        self._cache_dir = cache_dir
         self._rebuild_existing = rebuild_existing
         self._registry = registry
         # Track built images to avoid duplicates
         self._built_images: set[str] = set()
+        # Disable registry checks after auth failures to avoid log spam
+        self._registry_check_disabled = False
 
     async def image_exists(self, tag: str) -> bool:
         """Check if an image already exists locally.
@@ -139,17 +119,12 @@ class ImageBuilder:
         Returns:
             True if image exists, False otherwise
         """
-
         try:
             await self._docker.inspect_image(tag)
             return True
         except DockerClientError as e:
-            # Check if this is a 404 "image not found" error
             if e.status == 404:
-                logger.debug(f"Image '{tag}' does not exist (404)")
                 return False
-            # For other errors (daemon issues, permission errors, etc.), re-raise
-            # so the caller can handle them appropriately
             logger.error(f"Docker error while checking if image '{tag}' exists: {e}")
             raise
 
@@ -159,8 +134,34 @@ class ImageBuilder:
         Args:
             tag: Image tag to delete
         """
-        logger.info(f"Deleting existing image {tag}")
         await self._docker.delete_image(tag, force=True)
+
+    async def _prepare_for_build(self, tag: str) -> bool:
+        """Decide whether to build an image, with side effects.
+
+        Checks whether the image was already built in this session or already
+        exists locally. When ``rebuild_existing`` is True and the image exists,
+        it is **deleted** so that the caller can rebuild it. The tag is added
+        to ``_built_images`` when the image already exists and is being kept
+        (i.e. skipped).
+
+        Args:
+            tag: Image tag to check
+
+        Returns:
+            True if the caller should proceed with the build, False to skip
+        """
+        if tag in self._built_images:
+            return False
+
+        if await self.image_exists(tag):
+            if self._rebuild_existing:
+                await self.delete_image(tag)
+                return True
+            self._built_images.add(tag)
+            return False
+
+        return True
 
     async def push_to_registry(self, tag: str) -> None:
         """Tag and push an image to the configured registry.
@@ -172,10 +173,33 @@ class ImageBuilder:
             return
 
         registry_tag = f"{self._registry}/{tag}"
-        logger.info(f"Tagging image {tag} as {registry_tag}")
-        await self._docker.tag_image(tag, registry_tag)
+        if self._registry_check_disabled and not self._rebuild_existing:
+            return
 
-        logger.info(f"Pushing image {registry_tag}")
+        if not self._rebuild_existing:
+            try:
+                await self._docker.pull_image(registry_tag)
+                logger.info(f"Registry image already exists, skipping push: {registry_tag}")
+                return
+            except DockerClientError as e:
+                error_text = str(e).lower()
+                if e.status == 404:
+                    logger.info(f"Registry image not found, pushing: {registry_tag}")
+                elif e.status in (401, 403) or "unauthorized" in error_text:
+                    if not self._registry_check_disabled:
+                        logger.warning(
+                            "Registry auth failed for %s; skipping registry pushes. "
+                            'Use --rebuild-existing to force pushes or --registry "" to disable.',
+                            self._registry,
+                        )
+                    self._registry_check_disabled = True
+                    return
+                else:
+                    logger.info(
+                        f"Could not verify registry image {registry_tag} ({e}); proceeding to push"
+                    )
+        logger.info(f"Tagging and pushing image {registry_tag}")
+        await self._docker.tag_image(tag, registry_tag)
         await self._docker.push_image(registry_tag)
         logger.info(f"Successfully pushed image {registry_tag}")
 
@@ -197,22 +221,114 @@ class ImageBuilder:
         Raises:
             RuntimeError: If build fails
         """
-        if tag in self._built_images:
-            logger.debug(f"Image {tag} already built in this session, skipping")
+        if not await self._prepare_for_build(tag):
             return
 
-        image_exists = await self.image_exists(tag)
+        await self._do_build(
+            context_path=context_path,
+            tag=tag,
+            dockerfile_path=dockerfile_path,
+            build_args=build_args,
+        )
 
-        if image_exists:
-            if self._rebuild_existing:
-                # Delete the existing image before rebuilding
-                await self.delete_image(tag)
-            else:
-                # Default: skip existing images
-                logger.info(f"Image {tag} already exists, skipping")
-                self._built_images.add(tag)
-                return
+    async def build_modified_image(
+        self,
+        base_tag: str,
+        dockerfile_extra: str,
+        output_tag: str,
+    ) -> None:
+        """Build a modified image with additional Dockerfile instructions.
 
+        Args:
+            base_tag: Base image tag to build from
+            dockerfile_extra: Additional Dockerfile instructions
+            output_tag: Tag for the output image
+        """
+        if not await self._prepare_for_build(output_tag):
+            return
+
+        logger.info(f"Building modified image {output_tag} from {base_tag}")
+
+        # Create temporary build context with Dockerfile
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            dockerfile_path = temp_path / "Dockerfile"
+
+            # Write Dockerfile with base image + extra instructions
+            dockerfile_content = f"FROM {base_tag}\n{dockerfile_extra}"
+            dockerfile_path.write_text(dockerfile_content)
+
+            await self._do_build(
+                context_path=str(temp_path),
+                tag=output_tag,
+            )
+
+    async def tag_image(self, source_tag: str, target_tag: str) -> None:
+        """Tag an existing image with a new tag.
+
+        Args:
+            source_tag: Source image tag
+            target_tag: Target image tag
+        """
+        if not await self._prepare_for_build(target_tag):
+            return
+        await self._docker.tag_image(source_tag, target_tag)
+        self._built_images.add(target_tag)
+
+    async def _build_single_spec(self, spec: BuildImageSpec | MultiStageBuildImageSpec) -> None:
+        """Build a single non-derived image spec.
+
+        Args:
+            spec: Image specification to build
+        """
+        if isinstance(spec, MultiStageBuildImageSpec):
+            for stage in spec.stages:
+                build_args = dict(stage.build_args) if stage.build_args else {}
+                if stage.parent_tag:
+                    build_args["BASE_IMAGE"] = stage.parent_tag
+
+                await self.build_from_context(
+                    context_path=stage.context_path,
+                    tag=stage.tag,
+                    dockerfile_path=stage.dockerfile_path,
+                    build_args=build_args or None,
+                )
+            return
+
+        if not await self._prepare_for_build(spec.tag):
+            return
+
+        # Run seeder before building if defined
+        if spec.seeder is not None:
+            logger.info(f"Running pre-build seeder for {spec.tag}")
+            await spec.seeder()
+            logger.info(f"Pre-build seeder completed for {spec.tag}")
+
+        await self._do_build(
+            context_path=spec.context_path,
+            tag=spec.tag,
+            dockerfile_path=spec.dockerfile_path,
+            build_args=spec.build_args,
+        )
+
+    async def _do_build(
+        self,
+        context_path: str,
+        tag: str,
+        dockerfile_path: str | None = None,
+        build_args: dict[str, str] | None = None,
+    ) -> None:
+        """Execute the actual Docker build (assumes _prepare_for_build check already done).
+
+        Args:
+            context_path: Path to the build context directory
+            tag: Tag for the built image
+            dockerfile_path: Path to Dockerfile relative to context
+            build_args: Build arguments
+
+        Raises:
+            RuntimeError: If build fails
+        """
         logger.info(f"Building image {tag} from {context_path}")
         errors = []
 
@@ -237,310 +353,174 @@ class ImageBuilder:
         self._built_images.add(tag)
         logger.info(f"Successfully built image {tag}")
 
-    async def build_modified_image(
-        self,
-        base_tag: str,
-        dockerfile_extra: str,
-        output_tag: str,
-    ) -> None:
-        """Build a modified image with additional Dockerfile instructions.
+    async def build_all_specs(self, specs: list[ImageBuildSpec]) -> list[BuildError]:
+        """Build all image specs with proper dependency ordering.
+
+        First builds all non-derived specs (BuildImageSpec, MultiStageBuildImageSpec),
+        then builds derived specs (DerivedImageSpec) which depend on the base images.
+        Derived specs are skipped if their base image failed to build.
 
         Args:
-            base_tag: Base image tag to build from
-            dockerfile_extra: Additional Dockerfile instructions
-            output_tag: Tag for the output image
+            specs: List of image specifications to build
+
+        Returns:
+            List of build errors (empty if all succeeded)
         """
-        if output_tag in self._built_images:
-            logger.debug(f"Image {output_tag} already built in this session, skipping")
-            return
+        errors: list[BuildError] = []
+        failed_base_tags: set[str] = set()
 
-        image_exists = await self.image_exists(output_tag)
+        _recoverable = (RuntimeError, DockerClientError, OSError)
 
-        if image_exists:
-            if self._rebuild_existing:
-                # Delete the existing image before rebuilding
-                await self.delete_image(output_tag)
-            else:
-                # Default: skip existing images
-                logger.info(f"Image {output_tag} already exists, skipping")
-                self._built_images.add(output_tag)
-                return
-
-        logger.info(f"Building modified image {output_tag} from {base_tag}")
-
-        # Create temporary build context with Dockerfile
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            dockerfile_path = temp_path / "Dockerfile"
-
-            # Write Dockerfile with base image + extra instructions
-            dockerfile_content = f"FROM {base_tag}\n{dockerfile_extra}"
-            dockerfile_path.write_text(dockerfile_content)
-
-            await self.build_from_context(
-                context_path=str(temp_path),
-                tag=output_tag,
-            )
-
-    async def tag_image(self, source_tag: str, target_tag: str) -> None:
-        """Tag an existing image with a new tag.
-
-        Args:
-            source_tag: Source image tag
-            target_tag: Target image tag
-        """
-        if target_tag in self._built_images:
-            logger.debug(f"Image {target_tag} already exists in this session, skipping")
-            return
-
-        image_exists = await self.image_exists(target_tag)
-
-        if image_exists:
-            if self._rebuild_existing:
-                # Delete the existing image before re-tagging
-                await self.delete_image(target_tag)
-            else:
-                # Default: skip existing images
-                logger.info(f"Image {target_tag} already exists, skipping tagging")
-                self._built_images.add(target_tag)
-                return
-
-        logger.info(f"Tagging image {source_tag} as {target_tag}")
-        await self._docker.tag_image(source_tag, target_tag)
-        self._built_images.add(target_tag)
-        logger.info(f"Successfully tagged image {target_tag}")
-
-
-async def build_benign_task_images(
-    builder: ImageBuilder,
-    instances: list[SWEbenchInstance],
-    config: SwebenchDatasetConfig,
-) -> tuple[dict[str, str], list[BuildError]]:
-    """Build images for all benign tasks.
-
-    Args:
-        builder: Image builder instance
-        instances: List of SWEBench instances
-        config: SWEBench dataset configuration
-
-    Returns:
-        Tuple of (mapping from instance_id to built image tag, list of build errors)
-    """
-
-    benign_images: dict[str, str] = {}
-    build_errors: list[BuildError] = []
-
-    async def build_single_benign(instance: SWEbenchInstance) -> tuple[str, BuildResult]:
-        """Build a single benign image and return result."""
-        instance_id = instance["instance_id"]
-        output_tag = get_benign_image_tag(instance_id)
-
-        try:
-            # Generate the multi-stage build spec
-            spec, _test_spec = prepare_build_context(instance, config)
-
-            # Build each stage
-            for stage in spec.stages:
-                build_args = dict(stage.build_args) if stage.build_args else {}
-                if stage.parent_tag:
-                    build_args["BASE_IMAGE"] = stage.parent_tag
-
-                await builder.build_from_context(
-                    context_path=stage.context_path,
-                    tag=stage.tag,
-                    dockerfile_path=stage.dockerfile_path,
-                    build_args=build_args if build_args else None,
+        # Phase 1: Build non-derived specs (base images)
+        base_specs = [s for s in specs if not isinstance(s, DerivedImageSpec)]
+        for spec in base_specs:
+            try:
+                await self._build_single_spec(spec)
+            except _recoverable as e:
+                logger.error(
+                    f"Failed to build image {spec.tag}: {type(e).__name__}: {e}",
+                    exc_info=e,
                 )
+                errors.append(BuildError(image_tag=spec.tag, error=e))
+                failed_base_tags.add(spec.tag)
+                continue
 
-            # Tag the final image with our standardized tag
-            # The final_tag from the spec is the instance_image_key (SWEBench's native tag)
-            # We re-tag it to our standardized naming convention for consistency
-            if spec.final_tag != output_tag:
-                await builder.tag_image(spec.final_tag, output_tag)
-
-            # Push to registry if configured
-            await builder.push_to_registry(output_tag)
-
-            return instance_id, BuildSuccess(image_tag=output_tag)
-        except Exception as e:
-            logger.warning(f"Failed to build benign image for {instance_id}: {e}")
-            return instance_id, BuildError(image_tag=output_tag, error=e)
-
-    for instance in instances:
-        instance_id, result = await build_single_benign(instance)
-        match result:
-            case BuildSuccess(image_tag=tag):
-                benign_images[instance_id] = tag
-            case BuildError():
-                build_errors.append(result)
-
-    return benign_images, build_errors
-
-
-async def build_malicious_task_images(
-    builder: ImageBuilder,
-) -> tuple[dict[str, str], list[BuildError]]:
-    """Build images for all malicious tasks' service containers.
-
-    Uses the build registry to get BuildImageSpecs for all service containers.
-
-    Args:
-        builder: Image builder instance
-
-    Returns:
-        Tuple of (mapping from image_tag -> image_tag, list of build errors)
-    """
-    built_images: dict[str, str] = {}
-    build_errors: list[BuildError] = []
-
-    async def build_single_malicious(build_spec: BuildImageSpec) -> BuildResult:
-        """Build a single malicious image and return result."""
-        try:
-            await builder.build_from_context(
-                context_path=build_spec.context_path,
-                tag=build_spec.tag,
-                dockerfile_path=build_spec.dockerfile_path,
-                build_args=build_spec.build_args,
-            )
-            # Push to registry if configured
-            await builder.push_to_registry(build_spec.tag)
-            return BuildSuccess(image_tag=build_spec.tag)
-        except Exception as e:
-            logger.warning(f"Failed to build malicious image {build_spec.tag}: {e}")
-            return BuildError(image_tag=build_spec.tag, error=e)
-
-    for build_spec in get_all_service_container_build_specs():
-        result = await build_single_malicious(build_spec)
-        match result:
-            case BuildSuccess(image_tag=tag):
-                built_images[tag] = tag
-            case BuildError():
-                build_errors.append(result)
-
-    return built_images, build_errors
-
-
-async def build_pair_images(
-    builder: ImageBuilder,
-    benign_images: dict[str, str],
-) -> tuple[dict[tuple[str, str], str], list[BuildError]]:
-    """Build images for all benign x malicious pairs.
-
-    For each pair, this applies the malicious task's benign_dockerfile_extra
-    to the benign task's image.
-
-    Args:
-        builder: Image builder instance
-        benign_images: Mapping from benign instance_id to image tag
-
-    Returns:
-        Tuple of (mapping from (benign_id, malicious_id) to built image tag, list of build errors)
-    """
-    pair_images: dict[tuple[str, str], str] = {}
-    build_errors: list[BuildError] = []
-
-    async def build_single_pair(
-        benign_id: str,
-        benign_tag: str,
-        malicious_id: str,
-        dockerfile_extra: str,
-        pair_tag: str,
-    ) -> BuildResult:
-        """Build a single pair image and return result."""
-        try:
-            await builder.build_modified_image(
-                base_tag=benign_tag,
-                dockerfile_extra=dockerfile_extra,
-                output_tag=pair_tag,
-            )
-            # Push to registry if configured
-            await builder.push_to_registry(pair_tag)
-            return BuildSuccess(image_tag=pair_tag)
-        except Exception as e:
-            logger.warning(f"Failed to build pair image {pair_tag}: {e}")
-            return BuildError(image_tag=pair_tag, error=e)
-
-    for benign_id, benign_tag in benign_images.items():
-        for task in MALICIOUS_TASKS:
-            malicious_id = task.id
-
-            # Check if this malicious task has dockerfile_extra to apply
-            if (
-                isinstance(task.metadata, SWEBenchMaliciousTaskMetadata)
-                and task.metadata.benign_dockerfile_extra
-            ):
-                dockerfile_extra = task.metadata.benign_dockerfile_extra
-                pair_tag = get_pair_image_tag(benign_id, malicious_id)
-
-                result = await build_single_pair(
-                    benign_id, benign_tag, malicious_id, dockerfile_extra, pair_tag
+            try:
+                await self.push_to_registry(spec.tag)
+            except _recoverable as e:
+                logger.error(
+                    f"Failed to push image {spec.tag}: {type(e).__name__}: {e}",
+                    exc_info=e,
                 )
-                match result:
-                    case BuildSuccess(image_tag=tag):
-                        pair_images[(benign_id, malicious_id)] = tag
-                    case BuildError():
-                        build_errors.append(result)
-            else:
-                # No modification needed, use the benign image directly
-                pair_images[(benign_id, malicious_id)] = benign_tag
+                errors.append(BuildError(image_tag=spec.tag, error=e, phase="push"))
 
-    return pair_images, build_errors
+        # Phase 2: Build derived specs (depend on base images)
+        derived_specs = [s for s in specs if isinstance(s, DerivedImageSpec)]
+
+        for spec in derived_specs:
+            # Skip derived images whose base image failed to build.
+            # Note: failed_base_tags tracks the final tag of MultiStageBuildImageSpec
+            # (not intermediate stage tags). This works because current consumers only
+            # reference final tags in DerivedImageSpec.base_image_tag.
+            if spec.base_image_tag in failed_base_tags:
+                errors.append(
+                    BuildError(
+                        image_tag=spec.tag,
+                        error=RuntimeError(f"Base image {spec.base_image_tag} failed to build"),
+                    )
+                )
+                continue
+            try:
+                await self.build_modified_image(
+                    base_tag=spec.base_image_tag,
+                    dockerfile_extra=spec.dockerfile_extra,
+                    output_tag=spec.tag,
+                )
+            except _recoverable as e:
+                logger.error(
+                    f"Failed to build derived image {spec.tag}: {type(e).__name__}: {e}",
+                    exc_info=e,
+                )
+                errors.append(BuildError(image_tag=spec.tag, error=e))
+                continue
+
+            try:
+                await self.push_to_registry(spec.tag)
+            except _recoverable as e:
+                logger.error(
+                    f"Failed to push derived image {spec.tag}: {type(e).__name__}: {e}",
+                    exc_info=e,
+                )
+                errors.append(BuildError(image_tag=spec.tag, error=e, phase="push"))
+
+        return errors
+
+
+DEFAULT_BUILD_CONTEXT_TEMPLATE = ".siren-docker-cache/{dataset}"
+
+
+def _resolve_build_context_dir(dataset_name: str, cache_dir: str | None) -> str:
+    """Resolve a build context directory for a dataset."""
+    template = cache_dir or DEFAULT_BUILD_CONTEXT_TEMPLATE
+    return template.replace("{dataset}", dataset_name)
+
+
+async def build_dataset_images(
+    dataset_name: str,
+    builder: ImageBuilder,
+    cache_dir: str | None = None,
+) -> list[BuildError]:
+    """Build all images for a specific dataset using default configuration.
+
+    Args:
+        dataset_name: Name of the dataset to build images for
+        builder: Image builder instance
+        cache_dir: Optional build context directory (supports "{dataset}" placeholder)
+
+    Returns:
+        List of build errors (empty if all succeeded)
+
+    Raises:
+        ValueError: If dataset doesn't support image building
+    """
+    # Get the dataset's config class and create default config
+    config_class = get_dataset_config_class(dataset_name)
+    config = config_class()
+    build_context_dir = _resolve_build_context_dir(dataset_name, cache_dir)
+
+    # Get image build specs directly from the dataset class (no instance needed)
+    specs = get_image_build_specs(dataset_name, config, build_context_dir)
+    logger.info(f"Found {len(specs)} image spec(s) for dataset {dataset_name}")
+
+    # Build all specs
+    return await builder.build_all_specs(specs)
+
+
+def _validate_datasets(datasets: list[str]) -> None:
+    """Validate that all dataset names exist and support image building.
+
+    Performs upfront validation so input errors fail fast before any
+    Docker operations begin.
+
+    Args:
+        datasets: List of dataset names to validate
+
+    Raises:
+        UnknownComponentError: If a dataset name is not registered
+        ImportError: If a dataset's dependencies are not installed
+        ValueError: If a dataset doesn't support image building
+    """
+    for name in datasets:
+        # Triggers entry point loading + checks for failed entry points
+        get_dataset_config_class(name)
+        classes = dataset_registry.get_component_classes()
+        dataset_class = classes.get(name)
+        if dataset_class is None or not issubclass(dataset_class, ImageBuildableDataset):
+            raise ValueError(
+                f"Dataset '{name}' does not support image building. "
+                "Only datasets implementing ImageBuildableDataset can be used with this command."
+            )
 
 
 async def run_build(
-    cache_dir: str = ".swebench_cache",
+    datasets: list[str],
+    cache_dir: str = DEFAULT_BUILD_CONTEXT_TEMPLATE,
     rebuild_existing: bool = False,
     registry: str | None = None,
-    max_instances: int | None = None,
-    dataset_name: str = "SWE-bench/SWE-bench_Lite",
-    skip_benign: bool = False,
-    skip_malicious: bool = False,
-    skip_pairs: bool = False,
 ) -> None:
-    """Run the image building process.
+    """Run the image building process for specified datasets.
 
     Args:
-        cache_dir: Directory for caching build contexts
+        datasets: List of dataset names to build images for
+        cache_dir: Directory for caching build contexts (supports "{dataset}" placeholder)
         rebuild_existing: If True, delete and rebuild existing images.
-            If False (default), skip building images that already exist.
         registry: Optional registry to tag and push images to
-        max_instances: Maximum number of instances to build
-        instance_ids: Specific instance IDs to build
-        dataset_name: SWEBench dataset name
-        skip_benign: Skip building benign task images
-        skip_malicious: Skip building malicious task service images
-        skip_pairs: Skip building pair images
 
     Raises:
         ExceptionGroup: If any image builds failed
+        ValueError: If a dataset name is invalid or doesn't support image building
     """
-
-    # Create dataset config
-    config = SwebenchDatasetConfig(
-        dataset_name=dataset_name,
-        cache_dir=cache_dir,
-        max_instances=max_instances,
-    )
-
-    # Load and filter instances
-    logger.info(f"Loading SWEBench dataset: {dataset_name}")
-    all_instances = load_swebench_dataset(dataset_name)
-
-    # Filter to supported instances
-    supported_instances = [
-        i for i in all_instances if i["instance_id"] in INSTANCE_INJECTION_MAPPING
-    ]
-    logger.info(f"Found {len(supported_instances)} supported instances")
-
-    if max_instances:
-        logger.warning(
-            f"The parameter max_instances was specified, ignoring some instance_ids, and building up to {max_instances}. This is probably only desired for testing!"
-        )
-        instances = supported_instances[:max_instances]
-    else:
-        instances = supported_instances
-
-    logger.info(f"Building images for {len(instances)} instances")
+    _validate_datasets(datasets)
 
     # Create Docker client - always use local client for image building
     logger.warning(
@@ -555,41 +535,18 @@ async def run_build(
         # Create image builder
         builder = ImageBuilder(
             docker_client=docker_client,
-            cache_dir=Path(cache_dir),
             rebuild_existing=rebuild_existing,
             registry=registry,
         )
 
-        # Build benign task images
-        benign_images: dict[str, str] = {}
-        if not skip_benign:
-            logger.info("Building benign task images...")
-            benign_images, benign_errors = await build_benign_task_images(
-                builder, instances, config
+        # Build images for each dataset
+        for dataset_name in datasets:
+            errors = await build_dataset_images(
+                dataset_name,
+                builder,
+                cache_dir=cache_dir,
             )
-            all_build_errors.extend(benign_errors)
-            logger.info(f"Built {len(benign_images)} benign images")
-
-        # Build malicious task service images
-        if not skip_malicious:
-            logger.info("Building malicious task service images...")
-            malicious_images, malicious_errors = await build_malicious_task_images(builder)
-            all_build_errors.extend(malicious_errors)
-            logger.info(f"Built {len(malicious_images)} malicious service images")
-
-        # Build pair images
-        if skip_pairs:
-            logger.info("Skipping pair image builds (--skip-pairs flag set)")
-        elif not benign_images:
-            logger.warning(
-                "Skipping pair image builds: no benign images available. "
-                "Either --skip-benign was set or all benign builds failed."
-            )
-        else:
-            logger.info("Building pair images...")
-            pair_images, pair_errors = await build_pair_images(builder, benign_images)
-            all_build_errors.extend(pair_errors)
-            logger.info(f"Built {len(pair_images)} pair images")
+            all_build_errors.extend(errors)
 
         if all_build_errors:
             logger.warning(f"Image building completed with {len(all_build_errors)} error(s)")
@@ -605,9 +562,20 @@ async def run_build(
 
 @click.command()
 @click.option(
+    "--dataset",
+    multiple=True,
+    help="Dataset(s) to build images for (can be specified multiple times)",
+)
+@click.option(
+    "--all-datasets",
+    is_flag=True,
+    default=False,
+    help="Build images for all registered datasets that support Docker",
+)
+@click.option(
     "--cache-dir",
-    default=".swebench_cache",
-    help="Directory for caching build contexts",
+    default=DEFAULT_BUILD_CONTEXT_TEMPLATE,
+    help='Directory for caching build contexts (supports "{dataset}" placeholder)',
 )
 @click.option(
     "--rebuild-existing",
@@ -618,43 +586,12 @@ async def run_build(
 @click.option(
     "--registry",
     type=str,
-    default=None,
-    help="Registry to tag and push images to (e.g., 'my-registry.com/myrepo')",
-)
-@click.option(
-    "--max-instances",
-    type=int,
-    default=None,
-    help="Maximum number of instances to build",
-)
-@click.option(
-    "--instance-ids",
-    multiple=True,
-    default=None,
-    help="Specific instance IDs to build (can be specified multiple times)",
-)
-@click.option(
-    "--dataset",
-    default="SWE-bench/SWE-bench_Lite",
-    help="SWEBench dataset name",
-)
-@click.option(
-    "--skip-benign",
-    is_flag=True,
-    default=False,
-    help="Skip building benign task images",
-)
-@click.option(
-    "--skip-malicious",
-    is_flag=True,
-    default=False,
-    help="Skip building malicious task service images",
-)
-@click.option(
-    "--skip-pairs",
-    is_flag=True,
-    default=False,
-    help="Skip building pair images",
+    default="ghcr.io/ethz-spylab/prompt-siren-images",
+    help=(
+        "Registry to tag and push images to "
+        "(default: 'ghcr.io/ethz-spylab/prompt-siren-images'). "
+        "Use an empty string to disable."
+    ),
 )
 @click.option(
     "-v",
@@ -664,44 +601,62 @@ async def run_build(
     help="Enable verbose logging",
 )
 def main(
+    dataset: tuple[str, ...],
+    all_datasets: bool,
     cache_dir: str,
     rebuild_existing: bool,
     registry: str | None,
-    max_instances: int | None,
-    dataset: str,
-    skip_benign: bool,
-    skip_malicious: bool,
-    skip_pairs: bool,
     verbose: bool,
 ) -> None:
-    """Build Docker images for SWEBench tasks.
+    """Build Docker images for datasets.
 
-    This command pre-builds all Docker images needed for running SWEBench
+    This command pre-builds all Docker images needed for running dataset
     evaluations. Images are tagged with a consistent scheme so they can be
     pulled during experiment runs.
+
+    Examples:
+        # Build images for SWE-bench dataset
+        prompt-siren-build-images --dataset swebench
+
+        # Build images for all supported datasets
+        prompt-siren-build-images --all-datasets
     """
-    # Configure logging
     log_level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
+    if registry is not None and registry.strip() == "":
+        registry = None
+
+    if all_datasets:
+        datasets_to_build = get_datasets_with_image_specs()
+        if not datasets_to_build:
+            logger.error("No datasets with Docker support found")
+            sys.exit(1)
+        logger.info(f"Building images for all Docker datasets: {datasets_to_build}")
+    elif dataset:
+        datasets_to_build = list(dataset)
+    else:
+        logger.error("Must specify --dataset or --all-datasets")
+        sys.exit(1)
+
     try:
         asyncio.run(
             run_build(
+                datasets=datasets_to_build,
                 cache_dir=cache_dir,
                 rebuild_existing=rebuild_existing,
                 registry=registry,
-                max_instances=max_instances,
-                dataset_name=dataset,
-                skip_benign=skip_benign,
-                skip_malicious=skip_malicious,
-                skip_pairs=skip_pairs,
             )
         )
+    except ExceptionGroup as eg:
+        # ExceptionGroup from _handle_build_failures - details already logged
+        logger.error(f"Build completed with failures: {eg}")
+        sys.exit(1)
     except Exception as e:
-        logger.error(f"Build failed: {e}")
+        logger.error(f"Build failed unexpectedly: {e}", exc_info=True)
         sys.exit(1)
 
 

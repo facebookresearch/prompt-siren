@@ -28,6 +28,7 @@ traces
 /config/
 
 .swebench_cache
+.siren-docker-cache
 .claude/*
 multirun/*
 jobs
