@@ -21,7 +21,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeVar
 
 import click
 from pydantic import BaseModel
@@ -440,7 +440,10 @@ class ImageBuilder:
         return errors
 
 
-def _maybe_override_cache_dir(config: BaseModel, cache_dir: str | None) -> BaseModel:
+T = TypeVar("T", bound=BaseModel)
+
+
+def _maybe_override_cache_dir(config: T, cache_dir: str | None) -> T:
     """Override cache_dir on configs that define it."""
     if cache_dir is None:
         return config

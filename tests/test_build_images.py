@@ -6,11 +6,11 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import BaseModel
-from prompt_siren.build_images import ImageBuilder, _maybe_override_cache_dir
+from prompt_siren.build_images import _maybe_override_cache_dir, ImageBuilder
 from prompt_siren.datasets.swebench_dataset.config import SwebenchDatasetConfig
 from prompt_siren.sandbox_managers.docker.plugins.errors import DockerClientError
 from prompt_siren.sandbox_managers.image_spec import BuildImageSpec
+from pydantic import BaseModel
 
 
 class MockDockerClient:
