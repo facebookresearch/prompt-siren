@@ -14,6 +14,7 @@ from pydantic_ai.messages import BaseToolCallPart
 
 from ..attacks.abstract import AbstractAttack
 from ..types import InjectionAttack
+from .file_exporter import current_task_id
 from .formatted_span import formatted_span
 
 KT = TypeVar("KT")
@@ -76,15 +77,20 @@ def create_task_span(
     """
     # Use formatted_span to ensure the span name is properly rendered in Phoenix
     # This formats the template string with the provided kwargs before creating the span
-    with formatted_span(
-        "task {task_id}",  # Template string will be formatted with task_id value
-        kind="task",
-        task_id=task_id,  # Keep as attribute for filtering
-        task_benign_only=benign_only,
-        environment_name=environment_name,
-        agent_name=agent_name,
-    ) as span:
-        yield span
+    # Set current_task_id context for child spans (like model calls)
+    token = current_task_id.set(task_id)
+    try:
+        with formatted_span(
+            "task {task_id}",  # Template string will be formatted with task_id value
+            kind="task",
+            task_id=task_id,  # Keep as attribute for filtering
+            task_benign_only=benign_only,
+            environment_name=environment_name,
+            agent_name=agent_name,
+        ) as span:
+            yield span
+    finally:
+        current_task_id.reset(token)
 
 
 @contextmanager

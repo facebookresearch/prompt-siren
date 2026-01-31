@@ -4,8 +4,12 @@
 Provides OpenTelemetry instrumentation and conversation logging capabilities.
 """
 
-from .setup import setup_telemetry
+from .file_exporter import current_task_id
+from .setup import add_file_logging, close_file_logging, setup_telemetry
 
 __all__ = [
+    "add_file_logging",
+    "close_file_logging",
+    "current_task_id",
     "setup_telemetry",
 ]

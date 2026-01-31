@@ -106,8 +106,8 @@ _start_common_options = [
     click.option(
         "--jobs-dir",
         type=click.Path(path_type=Path),
-        default="./jobs",
-        help="Directory to store job results (default: ./jobs)",
+        default=None,
+        help="Directory to store job results (default: from config)",
     ),
     click.option(
         "--multirun", is_flag=True, help="Enable Hydra multirun mode for parameter sweeps"
@@ -152,7 +152,7 @@ def start_benign(
     config_dir: Path | None,
     config_name: str,
     job_name: str | None,
-    jobs_dir: Path,
+    jobs_dir: Path | None,
     multirun: bool,
     cfg: str | None,
     resolve: bool,
@@ -186,7 +186,7 @@ def start_attack(
     config_dir: Path | None,
     config_name: str,
     job_name: str | None,
-    jobs_dir: Path,
+    jobs_dir: Path | None,
     multirun: bool,
     cfg: str | None,
     resolve: bool,
@@ -481,7 +481,7 @@ def _run_job(
     overrides: list[str],
     execution_mode: ExecutionMode,
     job_name: str | None = None,
-    jobs_dir: Path = Path("./jobs"),
+    jobs_dir: Path | None = None,
     multirun: bool = False,
     print_config: str | None = None,
     resolve: bool = False,
@@ -502,7 +502,7 @@ def _run_job(
         overrides: List of Hydra overrides
         execution_mode: Execution mode ('benign' or 'attack')
         job_name: Custom job name (auto-generated if None)
-        jobs_dir: Directory to store job results
+        jobs_dir: Directory to store job results (if None, uses value from config)
         multirun: Enable Hydra multirun mode for parameter sweeps
         print_config: Print configuration and exit (job, hydra, or all)
         resolve: Resolve OmegaConf interpolations when printing config
@@ -512,7 +512,8 @@ def _run_job(
     job_overrides = list(overrides)
     if job_name is not None:
         job_overrides.append(f"output.job_name={job_name}")
-    job_overrides.append(f"output.jobs_dir={jobs_dir}")
+    if jobs_dir is not None:
+        job_overrides.append(f"output.jobs_dir={jobs_dir}")
 
     _run_hydra(
         config_dir=config_dir,

@@ -6,6 +6,8 @@ defaults:
   - _self_
   - override hydra/job_logging: none # Disable Hydra's default logging to file
   - override hydra/hydra_logging: none # Disable Hydra's internal logging to file
+  # Note: launcher configuration should be in your config/hydra/launcher/ directory
+  # Default is BasicLauncher (runs jobs sequentially on local machine)
 
 # =============================================================================
 # HYDRA CONFIGURATION
@@ -18,6 +20,11 @@ hydra:
     chdir: false # Don't change working directory
   run:
     dir: . # Use current directory instead of outputs/
+  sweep:
+    # For multirun sweeps, put Hydra/Submitit logs alongside our job outputs
+    # This keeps SLURM logs and experimental results organized together
+    dir: ${output.jobs_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num} # Subdirectory for each job in a sweep
 
 # =============================================================================
 # EXPERIMENT METADATA
@@ -39,6 +46,7 @@ agent:
 # =============================================================================
 execution:
   concurrency: 1 # Number of concurrent tasks (1-4 recommended)
+  n_runs_per_task: 1 # Number of runs per task (use with resume for multiple runs)
 
 # =============================================================================
 # TASK SELECTION
@@ -92,11 +100,11 @@ usage_limits:
 # To use these configurations, copy the relevant sections above and modify:
 #
 # 1. BENIGN ONLY EXPERIMENT:
-#    - Use: prompt-siren run benign +dataset=agentdojo-workspace
+#    - Use: prompt-siren run benign +dataset=agentdojo
 #    - Increase execution.concurrency to 4 for faster execution
 #
 # 2. ATTACK EXPERIMENT:
-#    - Use: prompt-siren run attack +dataset=agentdojo-workspace +attack=template_string
+#    - Use: prompt-siren run attack +dataset=agentdojo +attack=template_string
 #    - Set execution.concurrency to 1 for better reproducibility
 #
 # 3. EXPERIMENT WITH USAGE LIMITS:
@@ -107,3 +115,10 @@ usage_limits:
 #    - Set execution.concurrency to 4
 #    - Ensure your system can handle the load
 #    - Monitor resource usage
+#
+# 5. MULTIPLE RUNS PER TASK (within same job):
+#    - Set execution.n_runs_per_task to desired number (e.g., 5)
+#    - Run the experiment: prompt-siren run attack +dataset=agentdojo +attack=mini-goat
+#    - Resume until all runs complete: prompt-siren jobs resume -p jobs/my-job
+#    - Each resume runs incomplete tasks until n_runs_per_task is reached
+#    - Alternative: Use SLURM multirun for separate jobs (see docs/repeated_experiments.md)
