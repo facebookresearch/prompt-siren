@@ -85,6 +85,43 @@ class LoggingConfig(BaseModel):
     )
 
 
+class SlurmConfig(BaseModel):
+    """Configuration for SLURM job submission."""
+
+    partition: str = Field(
+        default="learnfair",
+        description="SLURM partition to submit jobs to",
+    )
+    time_minutes: int = Field(
+        default=240,
+        ge=1,
+        description="Time limit for jobs in minutes",
+    )
+    gpus_per_node: int = Field(
+        default=0,
+        ge=0,
+        description="Number of GPUs per node",
+    )
+    cpus_per_task: int = Field(
+        default=4,
+        ge=1,
+        description="Number of CPUs per task",
+    )
+    mem_gb: int = Field(
+        default=32,
+        ge=1,
+        description="Memory per job in GB",
+    )
+    constraint: str | None = Field(
+        default=None,
+        description="SLURM constraint (e.g., 'volta32gb')",
+    )
+    additional_parameters: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional SLURM parameters passed to submitit",
+    )
+
+
 class ExperimentConfig(BaseModel):
     """Top-level experiment configuration."""
 
@@ -127,4 +164,8 @@ class ExperimentConfig(BaseModel):
     usage_limits: UsageLimits | None = Field(
         default=None,
         description=("Usage limits configuration using PydanticAI's UsageLimits."),
+    )
+    slurm: SlurmConfig = Field(
+        default_factory=SlurmConfig,
+        description="SLURM configuration for job submission (used with --slurm flag)",
     )

@@ -1,6 +1,27 @@
 # SLURM & Parallel Sweeps
 
-Run parameter sweeps on SLURM clusters using Hydra's `--multirun` with the Submitit launcher.
+Run experiments and parameter sweeps on SLURM clusters.
+
+## Quick Start
+
+Use the `--slurm` flag to submit jobs to SLURM:
+
+```bash
+# Submit a single job
+prompt-siren run attack --slurm +dataset=agentdojo-workspace +attack=mini-goat
+
+# Run 10 independent trials on SLURM
+prompt-siren run attack -k 10 --slurm +dataset=agentdojo-workspace +attack=mini-goat
+
+# Submit a sweep (2 models × 10 runs = 20 SLURM jobs)
+prompt-siren run attack -k 10 --slurm \
+  +dataset=agentdojo-workspace +attack=mini-goat \
+  agent.config.model=azure:gpt-4o,azure:gpt-5
+
+# Override SLURM settings
+prompt-siren run attack --slurm --slurm-partition=devlab --slurm-time=120 \
+  +dataset=agentdojo-workspace +attack=mini-goat
+```
 
 ## Setup
 
@@ -12,28 +33,40 @@ Run parameter sweeps on SLURM clusters using Hydra's `--multirun` with the Submi
 
 2. Set `telemetry.otel_endpoint: null` in config (no local tracing on SLURM nodes).
 
-## Running Sweeps
+## Using --slurm Flag
 
-### Command-line Sweep
+The `--slurm` flag works with all commands:
+
+| Command | Behavior |
+|---------|----------|
+| `jobs start --slurm` | Submits via Hydra's submitit launcher |
+| `jobs resume -p ... --slurm` | Submits single resume job to SLURM |
+| `jobs resume -s ... --slurm` | Submits all sweep resume jobs in parallel |
+
+### Resume Failed Sweep Jobs
+
 ```bash
-uv run --env-file .env prompt-siren run attack \
-  --multirun \
-  +dataset=agentdojo-workspace \
-  +attack=mini-goat \
-  agent.config.model=azure:gpt-4o,azure:gpt-5 \
-  '+run_id=range(10)' \
-  hydra/launcher=submitit_slurm
-```
-Creates 20 SLURM jobs (2 models × 10 runs).
+# Resume all jobs from a sweep on SLURM
+prompt-siren jobs resume -s 2026-01-31_17-01-04 --slurm
 
-### Experiment Config File (Recommended)
-Define sweeps in a config file for reproducibility. Place experiment configs in `config/` 
-alongside `config.yaml` so they can inherit the base config and access `attack/` configs.
+# Resume only failed jobs from a sweep
+prompt-siren jobs resume -s 2026-01-31_17-01-04 --only-failed --slurm
+
+# Resume with lower concurrency to avoid rate limits
+prompt-siren jobs resume -s 2026-01-31_17-01-04 --slurm execution.concurrency=2
+
+# Preview what would be resumed
+prompt-siren jobs resume -s 2026-01-31_17-01-04 --dry-run
+```
+
+## Advanced: Hydra Sweep Configs
+
+For complex sweeps, define parameters in a config file:
 
 ```yaml
 # config/my-sweep.yaml
 defaults:
-  - config  # Inherit base config (required for attack/ search path)
+  - config
   - override /hydra/launcher: submitit_slurm
   - _self_
 
@@ -48,12 +81,6 @@ hydra:
 dataset:
   type: agentdojo
   config: { suite_name: workspace }
-
-agent:
-  type: plain
-  config: { model: azure:gpt-4o }
-
-# ... rest of config overrides
 ```
 
 Run with:
@@ -61,38 +88,17 @@ Run with:
 uv run --env-file .env prompt-siren run attack --config-name=my-sweep
 ```
 
-No `--multirun` flag needed - `hydra.mode: MULTIRUN` is set in config.
-
-## Attack Variants
-
-Use `variant_name` in attack configs to distinguish versions in results:
-```yaml
-# config/attack/mini-goat-aggressive.yaml
-type: mini-goat
-config:
-  variant_name: "aggressive"
-  max_turns: 10
-  # ...
-```
-
-Results will show `mini-goat_aggressive` instead of just `mini-goat`.
+No `--multirun` or `--slurm` flags needed when launcher is set in config.
 
 ## Key Config Options
 
 In `config/hydra/launcher/submitit_slurm.yaml`:
-- `account` / `qos`: Your SLURM account and QoS
+- `partition`: SLURM partition
 - `timeout_min`: Job timeout (default 240)
-- `max_num_timeout`: Limit concurrent jobs (0 = no limit)
-
-## Viewing Results
-
-```bash
-uv run prompt-siren results --group-by=attack  # Group by attack variant
-uv run prompt-siren results --k=1 --k=5        # pass@k metrics
-```
+- `account` / `qos`: Your SLURM account and QoS
 
 ## Troubleshooting
 
-- **API keys missing**: Ensure `.env` is loaded and `additional_parameters.export: ALL` in launcher config
-- **Jobs fail immediately**: Check `account` and `qos` settings
+- **API keys missing**: Ensure `.env` is loaded via `uv run --env-file .env`
+- **Jobs fail immediately**: Check `partition`, `account`, and `qos` settings
 - **Check logs**: `cat /path/to/slurm-logs/.submitit/*/2*_0_log.out`

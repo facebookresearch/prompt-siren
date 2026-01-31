@@ -85,11 +85,18 @@ def add_file_logging(log_file: Path, log_level: str = "INFO") -> None:
     This should be called after setup_telemetry() and after the job directory
     is created, to enable logging to a file in the job directory.
 
+    If file logging is already active, this will close the existing file
+    and switch to the new one (to support resume to the same job directory).
+
     Args:
         log_file: Path to the log file (e.g., job_dir / "siren.log")
         log_level: Minimum log level (DEBUG, INFO, WARNING, ERROR)
     """
     global _file_exporter
+
+    # Close existing file exporter if any (e.g., on resume)
+    if _file_exporter is not None:
+        _file_exporter.shutdown()
 
     # Create file exporter
     _file_exporter = FileSpanExporter(file_path=log_file, min_level=log_level)

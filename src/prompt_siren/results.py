@@ -226,8 +226,9 @@ def _group_by_task(df: pd.DataFrame, k: int = 1) -> pd.DataFrame:
         return df
 
     # Group by configuration and task
-    # Include dataset_suite and job_name to disambiguate tasks from different jobs
-    group_cols = [*_ALL_GROUP_COLS, "dataset_suite", "job_name", "task_id"]
+    # Note: job_name is NOT included to allow aggregating across multiple runs
+    # of the same experiment (e.g., for pass@k computation)
+    group_cols = [*_ALL_GROUP_COLS, "dataset_suite", "task_id"]
 
     if k == 1:
         # Original behavior: average across timestamps
