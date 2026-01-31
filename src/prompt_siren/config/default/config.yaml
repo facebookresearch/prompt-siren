@@ -6,6 +6,8 @@ defaults:
   - _self_
   - override hydra/job_logging: none # Disable Hydra's default logging to file
   - override hydra/hydra_logging: none # Disable Hydra's internal logging to file
+  # Note: launcher configuration should be in your config/hydra/launcher/ directory
+  # Default is BasicLauncher (runs jobs sequentially on local machine)
 
 # =============================================================================
 # HYDRA CONFIGURATION
@@ -18,6 +20,11 @@ hydra:
     chdir: false # Don't change working directory
   run:
     dir: . # Use current directory instead of outputs/
+  sweep:
+    # For multirun sweeps, put Hydra/Submitit logs alongside our job outputs
+    # This keeps SLURM logs and experimental results organized together
+    dir: ${output.jobs_dir}/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num} # Subdirectory for each job in a sweep
 
 # =============================================================================
 # EXPERIMENT METADATA
@@ -39,6 +46,7 @@ agent:
 # =============================================================================
 execution:
   concurrency: 1 # Number of concurrent tasks (1-4 recommended)
+  n_runs_per_task: 1 # Number of runs per task (use with resume for multiple runs)
 
 # =============================================================================
 # TASK SELECTION
@@ -86,24 +94,34 @@ usage_limits:
   count_tokens_before_request: false # Count tokens before making request
 
 # =============================================================================
+# SLURM CONFIGURATION (for --slurm flag)
+# =============================================================================
+# These settings are used when submitting jobs with --slurm flag.
+# They can be overridden via CLI: --slurm-partition, --slurm-time
+slurm:
+  partition: learnfair # SLURM partition
+  time_minutes: 240 # Time limit in minutes
+  gpus_per_node: 0 # Number of GPUs (0 for CPU-only jobs)
+  cpus_per_task: 4 # CPUs per task
+  mem_gb: 32 # Memory in GB
+  # constraint: null # Optional constraint (e.g., "volta32gb")
+  # additional_parameters: {} # Extra submitit parameters
+
+# =============================================================================
 # COMMON EXPERIMENT CONFIGURATIONS
 # =============================================================================
 #
-# To use these configurations, copy the relevant sections above and modify:
+# 1. LOCAL EXPERIMENT:
+#    prompt-siren run benign +dataset=agentdojo-workspace
 #
-# 1. BENIGN ONLY EXPERIMENT:
-#    - Use: prompt-siren run benign +dataset=agentdojo-workspace
-#    - Increase execution.concurrency to 4 for faster execution
+# 2. SLURM EXPERIMENT:
+#    prompt-siren run attack --slurm +dataset=agentdojo-workspace +attack=mini-goat
 #
-# 2. ATTACK EXPERIMENT:
-#    - Use: prompt-siren run attack +dataset=agentdojo-workspace +attack=template_string
-#    - Set execution.concurrency to 1 for better reproducibility
+# 3. SLURM SWEEP (parameter combinations run as separate jobs):
+#    prompt-siren run attack --slurm +dataset=agentdojo-workspace +attack=mini-goat \
+#      agent.config.model=azure:gpt-4,azure:gpt-5 '+run_id=range(10)'
 #
-# 3. EXPERIMENT WITH USAGE LIMITS:
-#    - Configure usage_limits section with appropriate values
-#    - Keep execution.concurrency: 1 to better control resource usage
+# 4. RESUME FAILED SWEEP ON SLURM:
+#    prompt-siren jobs resume-sweep -s 2026-01-31_17-01-04 --slurm
 #
-# 4. HIGH CONCURRENCY EXPERIMENT:
-#    - Set execution.concurrency to 4
-#    - Ensure your system can handle the load
-#    - Monitor resource usage
+# See docs/slurm.md for more details.

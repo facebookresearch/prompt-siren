@@ -1,0 +1,4 @@
+# @package hydra.launcher
+# Local launcher - Runs jobs sequentially on the local machine
+# This is Hydra's default BasicLauncher
+_target_: hydra._internal.core_plugins.basic_launcher.BasicLauncher

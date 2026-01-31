@@ -117,11 +117,12 @@ def _parse_index_entry(line: str, job_config: JobConfig) -> dict[str, Any]:
         row["attack_type"] = attack_type
         row["attack_config"] = attack_config
 
-        # For template_string attacks, append the template_short_name
-        if attack_type == "template_string" and attack_config:
-            template_short_name = attack_config.get("template_short_name")
-            if template_short_name:
-                row["attack_type"] = f"template_string_{template_short_name}"
+        # Check for variant_name (generic) or template_short_name (legacy for template_string)
+        variant_name = attack_config.get("variant_name") if attack_config else None
+        if not variant_name and attack_type == "template_string" and attack_config:
+            variant_name = attack_config.get("template_short_name")
+        if variant_name:
+            row["attack_type"] = f"{attack_type}_{variant_name}"
     else:
         row["attack_type"] = "benign"
         row["attack_config"] = None
@@ -225,8 +226,9 @@ def _group_by_task(df: pd.DataFrame, k: int = 1) -> pd.DataFrame:
         return df
 
     # Group by configuration and task
-    # Include dataset_suite and job_name to disambiguate tasks from different jobs
-    group_cols = [*_ALL_GROUP_COLS, "dataset_suite", "job_name", "task_id"]
+    # Note: job_name is NOT included to allow aggregating across multiple runs
+    # of the same experiment (e.g., for pass@k computation)
+    group_cols = [*_ALL_GROUP_COLS, "dataset_suite", "task_id"]
 
     if k == 1:
         # Original behavior: average across timestamps

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai.usage import UsageLimits
@@ -49,6 +49,11 @@ class ExecutionConfig(BaseModel):
     """Configuration for experiment execution."""
 
     concurrency: int = Field(default=1, description="Maximum number of tasks to run concurrently")
+    n_runs_per_task: int = Field(
+        default=1,
+        ge=1,
+        description="Number of runs per task. Use with resume to run tasks multiple times.",
+    )
 
 
 class OutputConfig(BaseModel):
@@ -65,6 +70,56 @@ class TelemetryConfig(BaseModel):
 
     trace_console: bool = Field(default=False, description="Whether to output traces to console")
     otel_endpoint: str | None = Field(default=None, description="OpenTelemetry OTLP endpoint")
+
+
+class LoggingConfig(BaseModel):
+    """Configuration for logging."""
+
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
+        default="INFO",
+        description="Log level for file and console output",
+    )
+    file: bool = Field(
+        default=True,
+        description="Whether to write logs to a file in the job directory",
+    )
+
+
+class SlurmConfig(BaseModel):
+    """Configuration for SLURM job submission."""
+
+    partition: str = Field(
+        default="learnfair",
+        description="SLURM partition to submit jobs to",
+    )
+    time_minutes: int = Field(
+        default=240,
+        ge=1,
+        description="Time limit for jobs in minutes",
+    )
+    gpus_per_node: int = Field(
+        default=0,
+        ge=0,
+        description="Number of GPUs per node",
+    )
+    cpus_per_task: int = Field(
+        default=4,
+        ge=1,
+        description="Number of CPUs per task",
+    )
+    mem_gb: int = Field(
+        default=32,
+        ge=1,
+        description="Memory per job in GB",
+    )
+    constraint: str | None = Field(
+        default=None,
+        description="SLURM constraint (e.g., 'volta32gb')",
+    )
+    additional_parameters: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional SLURM parameters passed to submitit",
+    )
 
 
 class ExperimentConfig(BaseModel):
@@ -103,7 +158,14 @@ class ExperimentConfig(BaseModel):
     telemetry: TelemetryConfig = Field(
         default_factory=TelemetryConfig, description="Telemetry configuration"
     )
+    logging: LoggingConfig = Field(
+        default_factory=LoggingConfig, description="Logging configuration"
+    )
     usage_limits: UsageLimits | None = Field(
         default=None,
         description=("Usage limits configuration using PydanticAI's UsageLimits."),
+    )
+    slurm: SlurmConfig = Field(
+        default_factory=SlurmConfig,
+        description="SLURM configuration for job submission (used with --slurm flag)",
     )
