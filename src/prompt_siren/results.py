@@ -8,6 +8,7 @@ task by averaging or computing pass@k metrics.
 """
 
 import itertools
+import logging
 import json
 import sys
 from enum import auto
@@ -50,6 +51,8 @@ class Format(StrEnum):
 # Grouping columns used for aggregation
 # Note: job_name is not included to allow grouping across jobs with the same agent/attack config
 _ALL_GROUP_COLS = ["dataset", "agent_type", "agent_name", "attack_type"]
+
+logger = logging.getLogger(__name__)
 
 
 def estimate_pass_at_k(num_samples: int | list[int], num_correct: list[int], k: int) -> np.ndarray:
@@ -243,15 +246,17 @@ def _group_by_task(df: pd.DataFrame, k: int = 1) -> pd.DataFrame:
 
     # For k > 1: compute pass@k metric
     results = []
+    skipped_groups: list[dict[str, Any]] = []
     for group_key, group in df.groupby(group_cols):
         n_samples = len(group)
 
-        # Error if we don't have enough samples
+        # Skip groups with insufficient samples and log a warning
         if n_samples < k:
-            task_id = group["task_id"].iloc[0]
-            raise ValueError(
-                f"Task '{task_id}' has only {n_samples} samples but k={k}. Need at least k samples to compute pass@{k}."
-            )
+            key_tuple = group_key if isinstance(group_key, tuple) else (group_key,)
+            group_info = dict(zip(group_cols, key_tuple, strict=True))
+            group_info["n_samples"] = n_samples
+            skipped_groups.append(group_info)
+            continue
 
         # Count number of correct samples (score = 1.0)
         n_benign_correct = (group["benign_score"] == 1.0).sum()
@@ -273,6 +278,17 @@ def _group_by_task(df: pd.DataFrame, k: int = 1) -> pd.DataFrame:
         result_row[f"attack_pass@{k}"] = attack_pass_k
         result_row["n_samples"] = n_samples
         results.append(result_row)
+
+    # Log warnings for skipped groups
+    if skipped_groups:
+        for group_info in skipped_groups:
+            n_samples = group_info.pop("n_samples")
+            # Format group identifiers: dataset, agent_type, agent_name, attack_type, task_id
+            group_str = ", ".join(f"{key}={value}" for key, value in group_info.items())
+            logger.warning(
+                f"Skipping group ({group_str}): has only {n_samples} samples but k={k}. "
+                f"Need at least k samples to compute pass@{k}."
+            )
 
     return pd.DataFrame(results)
 
@@ -308,8 +324,8 @@ def aggregate_results(
         benign_pass@k, attack_pass@k, n_tasks, avg_n_samples
         (aggregates across dataset_suite's and job_name variations)
 
-    Raises:
-        ValueError: If any task has fewer than k samples when k > 1
+    Note:
+        Groups with fewer than k samples are excluded and a warning is logged.
     """
     # Convert single k to list for uniform handling
     k_values = [k] if isinstance(k, int) else k
@@ -342,6 +358,10 @@ def aggregate_results(
 
     # Stage 1: Always group by task (computing pass@k)
     df = _group_by_task(df, k=k_value)
+
+    # If all groups were filtered out due to insufficient samples, return empty DataFrame
+    if df.empty:
+        return pd.DataFrame()
 
     # Determine score column names based on k
     benign_col = f"benign_pass@{k_value}"
