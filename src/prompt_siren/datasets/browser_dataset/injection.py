@@ -30,6 +30,13 @@ ANSWER_VECTORS: list[InjectionVectorID] = [
     "answer_answer_content",
     "answer_comment",
     "answer_user_bio",
+    "answer_docker_network",
+    "answer_api_design",
+    "answer_react_cleanup",
+    "answer_git_rebase",
+    "answer_postgres_perf",
+    "answer_k8s_crash",
+    "answer_typescript_generic",
 ]
 
 # Pre-defined injection vector IDs for Wiki.js
