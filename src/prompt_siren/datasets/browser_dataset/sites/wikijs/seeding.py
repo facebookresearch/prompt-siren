@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 CONTAINER_NAME = "prompt-siren-seed-wikijs"
 CONTAINER_IMAGE = "linuxserver/wikijs:latest"
 HOST_PORT = 3080
-CONTAINER_PORT = 80
-DB_PATH_IN_CONTAINER = "/config/database.sqlite"
+CONTAINER_PORT = 3000
+DB_PATH_IN_CONTAINER = "/config/db.sqlite"
 HEALTH_URL = f"http://localhost:{HOST_PORT}"
 SITE_URL = "http://wiki.internal-docs.io"
 ADMIN_EMAIL = "admin@example.com"
@@ -47,8 +47,8 @@ CONTAINER_ENV = {
     "PUID": "0",
     "PGID": "0",
     "TZ": "UTC",
-    "PORT": "80",
-    "WIKIJS_PORT": "80",
+    "PORT": "3000",
+    "WIKIJS_PORT": "3000",
 }
 
 # GraphQL mutations for Wiki.js
@@ -86,25 +86,11 @@ mutation CreatePage($content: String!, $description: String!, $editor: String!, 
 }
 """
 
-FINALIZE_MUTATION = """
-mutation Finalize($adminEmail: String!, $adminPassword: String!, $adminPasswordConfirm: String!, $siteUrl: String!, $telemetry: Boolean!) {
-  system {
-    finalize(adminEmail: $adminEmail, adminPassword: $adminPassword, adminPasswordConfirm: $adminPasswordConfirm, siteUrl: $siteUrl, telemetry: $telemetry) {
-      responseResult {
-        succeeded
-        errorCode
-        message
-      }
-    }
-  }
-}
-"""
-
 
 def _get_output_path() -> Path:
     """Get the path where the seeded database should be saved."""
     site_dir = files("prompt_siren.datasets.browser_dataset.sites.wikijs")
-    return Path(str(site_dir)) / "data" / "database.sqlite"
+    return Path(str(site_dir)) / "data" / "db.sqlite"
 
 
 def _load_seed_data() -> WikiSeedData:
@@ -198,7 +184,7 @@ def _copy_file_from_container(src_path: str, dst_path: Path) -> None:
     logger.info(f"Copied {src_path} to {dst_path}")
 
 
-async def _wait_for_service(url: str, timeout: int = 120) -> None:
+async def _wait_for_service(url: str, timeout: int = 300) -> None:
     """Wait for a service to be ready.
 
     Args:
@@ -225,6 +211,30 @@ async def _wait_for_service(url: str, timeout: int = 120) -> None:
     raise TimeoutError(f"Service at {url} did not become ready within {timeout} seconds")
 
 
+async def _wait_for_graphql(url: str, timeout: int = 120) -> None:
+    """Wait for the Wiki.js GraphQL endpoint to respond."""
+    logger.info(f"Waiting for GraphQL at {url}/graphql...")
+    start = time.time()
+
+    async with aiohttp.ClientSession() as session:
+        while time.time() - start < timeout:
+            try:
+                async with session.post(
+                    f"{url}/graphql",
+                    headers={"Content-Type": "application/json"},
+                    json={"query": "{__typename}"},
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status == 200:
+                        logger.info("GraphQL endpoint is ready")
+                        return
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                logger.debug(f"GraphQL not ready yet: {type(e).__name__}: {e}")
+            await asyncio.sleep(2)
+
+    raise TimeoutError(f"GraphQL at {url}/graphql did not become ready within {timeout} seconds")
+
+
 async def _setup_wikijs_admin() -> None:
     """Set up Wiki.js via finalize API.
 
@@ -235,57 +245,69 @@ async def _setup_wikijs_admin() -> None:
     """
     logger.info("Setting up Wiki.js installation...")
 
-    # Wiki.js uses GraphQL for setup
+    # Wiki.js exposes a finalize endpoint for first-run setup.
     async with aiohttp.ClientSession() as session:
-        # First, wait for the setup page to be available
-        # Wiki.js redirects to setup on first run
-        await asyncio.sleep(10)  # Give it time to initialize
+        # Give the setup UI time to boot before finalize.
+        await asyncio.sleep(10)
 
-        # Complete the setup via GraphQL finalize mutation
+        payload = {
+            "adminEmail": ADMIN_EMAIL,
+            "adminPassword": ADMIN_PASSWORD,
+            "adminPasswordConfirm": ADMIN_PASSWORD,
+            "siteUrl": SITE_URL,
+            "telemetry": False,
+        }
+
+        async def _graphql_ready() -> bool:
+            try:
+                async with session.post(
+                    f"{HEALTH_URL}/graphql",
+                    headers={"Content-Type": "application/json"},
+                    json={"query": "{__typename}"},
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    return resp.status == 200
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                return False
+
         async with session.post(
-            f"{HEALTH_URL}/graphql",
+            f"{HEALTH_URL}/finalize",
             headers={"Content-Type": "application/json"},
-            json={
-                "query": FINALIZE_MUTATION,
-                "variables": {
-                    "adminEmail": ADMIN_EMAIL,
-                    "adminPassword": ADMIN_PASSWORD,
-                    "adminPasswordConfirm": ADMIN_PASSWORD,
-                    "siteUrl": SITE_URL,
-                    "telemetry": False,
-                },
-            },
+            json=payload,
         ) as resp:
             if resp.status == 200:
-                data = await resp.json()
-                result = (
-                    data.get("data", {})
-                    .get("system", {})
-                    .get("finalize", {})
-                    .get("responseResult", {})
-                )
-                if result.get("succeeded"):
-                    logger.info("Wiki.js setup completed successfully")
-                else:
-                    error_code = result.get("errorCode")
-                    # Check if setup was already done (common case on retry)
-                    if error_code in ("SetupAlreadyDone", "SystemAlreadySetup"):
+                try:
+                    data = await resp.json()
+                except aiohttp.ContentTypeError as err:
+                    if await _graphql_ready():
                         logger.info("Wiki.js setup already completed")
                     else:
+                        text = await resp.text()
                         raise RuntimeError(
-                            f"Wiki.js setup failed: {result.get('message', 'Unknown error')} "
-                            f"(code: {error_code}). Cannot proceed with seeding."
+                            f"Wiki.js setup returned non-JSON response: {text[:200]}. "
+                            "Cannot proceed with seeding."
+                        ) from err
+                else:
+                    if data.get("ok") is True:
+                        logger.info("Wiki.js setup completed successfully")
+                    else:
+                        error_msg = data.get("error", "Unknown error")
+                        raise RuntimeError(
+                            f"Wiki.js setup failed: {error_msg}. Cannot proceed with seeding."
                         )
             else:
                 text = await resp.text()
-                raise RuntimeError(
-                    f"Wiki.js setup request failed: {resp.status} {text}. "
-                    "Cannot proceed with seeding."
-                )
+                if await _graphql_ready():
+                    logger.info("Wiki.js setup already completed")
+                else:
+                    raise RuntimeError(
+                        f"Wiki.js setup request failed: {resp.status} {text}. "
+                        "Cannot proceed with seeding."
+                    )
 
     # Wait for Wiki.js to restart after setup
     await asyncio.sleep(5)
-    await _wait_for_service(HEALTH_URL, timeout=60)
+    await _wait_for_graphql(HEALTH_URL, timeout=120)
 
 
 @dataclass

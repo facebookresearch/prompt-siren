@@ -17,7 +17,10 @@ ENV PUID=0 \
 EXPOSE 80
 
 # Copy pre-seeded database (contains documentation pages)
-COPY data/database.sqlite /config/database.sqlite
+COPY data/db.sqlite /config/db.sqlite
+
+# Configure Wiki.js to listen on port 80
+COPY config.yml /config/config.yml
 
 # Ensure correct permissions
 RUN chown -R abc:abc /config

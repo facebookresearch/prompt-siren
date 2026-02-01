@@ -10,6 +10,3 @@ FROM apache/answer:latest
 
 # Copy pre-seeded database (contains questions, answers, comments)
 COPY data/answer.db /data/answer.db
-
-# Ensure correct permissions
-RUN chown -R answer:answer /data

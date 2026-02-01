@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shutil
 import subprocess
@@ -39,12 +40,25 @@ HOST_PORT = 9080
 CONTAINER_PORT = 80
 DB_PATH_IN_CONTAINER = "/data/answer.db"
 HEALTH_URL = f"http://localhost:{HOST_PORT}"
+SITE_URL = "http://answers.dev-community.io"
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "admin123"
 ADMIN_EMAIL = "admin@example.com"
+AUTO_INSTALL = True
 
 CONTAINER_ENV = {
     "ANSWER_DEBUG": "true",
+    "AUTO_INSTALL": "true",
+    "DB_TYPE": "sqlite3",
+    "DB_FILE": DB_PATH_IN_CONTAINER,
+    "LANGUAGE": "en-US",
+    "SITE_NAME": "Dev Community Q&A",
+    "SITE_URL": SITE_URL,
+    "CONTACT_EMAIL": ADMIN_EMAIL,
+    "ADMIN_NAME": ADMIN_USERNAME,
+    "ADMIN_PASSWORD": ADMIN_PASSWORD,
+    "ADMIN_EMAIL": ADMIN_EMAIL,
+    "EXTERNAL_CONTENT_DISPLAY": "always_display",
 }
 
 
@@ -178,6 +192,9 @@ async def _setup_answer_admin() -> None:
     Raises:
         RuntimeError: If any installation step fails
     """
+    if AUTO_INSTALL:
+        logger.info("AUTO_INSTALL enabled; skipping installation API steps")
+        return
     logger.info("Setting up Answer installation...")
 
     async with aiohttp.ClientSession() as session:
@@ -225,7 +242,13 @@ async def _setup_answer_admin() -> None:
 
         # Step 4: Initialize database
         logger.info("Initializing Answer database...")
-        async with session.post(f"{HEALTH_URL}/installation/init") as resp:
+        async with session.post(
+            f"{HEALTH_URL}/installation/init",
+            json={
+                "db_type": "sqlite3",
+                "db_file": "/data/answer.db",
+            },
+        ) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(
@@ -253,28 +276,53 @@ class AnswerSeeder:
     admin_password: str = ADMIN_PASSWORD
     _token: str | None = field(default=None, repr=False)
 
+    @staticmethod
+    def _extract_id(payload: dict) -> str:
+        """Extract an object id from Answer API responses."""
+        data = payload.get("data", {})
+        if isinstance(data, dict):
+            if data.get("id"):
+                return str(data["id"])
+            info = data.get("info", {})
+            if isinstance(info, dict) and info.get("id"):
+                return str(info["id"])
+        return ""
+
     async def _login(self, session: aiohttp.ClientSession) -> str:
         """Login and get access token."""
         if self._token:
             return self._token
 
-        async with session.post(
-            f"{self.base_url}/answer/api/v1/user/login/email",
-            json={
-                "e_mail": f"{self.admin_username}@example.com",
-                "pass": self.admin_password,
-            },
-        ) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                self._token = data.get("data", {}).get("access_token")
-                if not self._token:
-                    raise RuntimeError(f"No access token in response: {data}")
-            else:
-                text = await resp.text()
-                raise RuntimeError(f"Failed to login: {resp.status} {text}")
+        url = f"{self.base_url}/answer/api/v1/user/login/email"
+        payload = {
+            "e_mail": f"{self.admin_username}@example.com",
+            "pass": self.admin_password,
+        }
+        last_error: str | None = None
 
-        return self._token
+        max_attempts = 30
+        for attempt in range(1, max_attempts + 1):
+            async with session.post(url, json=payload) as resp:
+                if resp.status == 200:
+                    try:
+                        data = await resp.json()
+                    except aiohttp.ContentTypeError:
+                        text = await resp.text()
+                        last_error = (
+                            f"Login returned non-JSON response (attempt {attempt}/10): {text[:200]}"
+                        )
+                    else:
+                        self._token = data.get("data", {}).get("access_token")
+                        if self._token:
+                            return self._token
+                        last_error = f"No access token in response: {data}"
+                else:
+                    text = await resp.text()
+                    last_error = f"Failed to login: {resp.status} {text}"
+
+            await asyncio.sleep(2)
+
+        raise RuntimeError(f"Failed to login after {max_attempts} attempts: {last_error}")
 
     def _headers(self) -> dict[str, str]:
         """Get authorization headers."""
@@ -311,18 +359,35 @@ class AnswerSeeder:
         content: str,
     ) -> dict:
         """Create an answer to a question."""
-        async with session.post(
-            f"{self.base_url}/answer/api/v1/answer",
-            headers=self._headers(),
-            json={
-                "question_id": question_id,
-                "content": content,
-            },
-        ) as resp:
-            if resp.status == 200:
-                return await resp.json()
-            text = await resp.text()
-            raise RuntimeError(f"Failed to create answer: {resp.status} {text}")
+        payload = {
+            "question_id": question_id,
+            "content": content,
+        }
+        max_attempts = 5
+        last_error = "Unknown error"
+        for attempt in range(1, max_attempts + 1):
+            async with session.post(
+                f"{self.base_url}/answer/api/v1/answer",
+                headers=self._headers(),
+                json=payload,
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                text = await resp.text()
+                last_error = f"{resp.status} {text}"
+                if resp.status == 403:
+                    try:
+                        data = json.loads(text)
+                    except json.JSONDecodeError:
+                        data = {}
+                    if (
+                        data.get("reason") == "error.answer.restrict_answer"
+                        and attempt < max_attempts
+                    ):
+                        await asyncio.sleep(2)
+                        continue
+                raise RuntimeError(f"Failed to create answer: {last_error}")
+        raise RuntimeError(f"Failed to create answer after {max_attempts} attempts: {last_error}")
 
     async def create_comment(
         self,
@@ -380,21 +445,26 @@ class AnswerSeeder:
                 tags=q_def.tags,
             )
 
-            q_id = question.get("data", {}).get("id", "")
+            q_id = self._extract_id(question)
             if not q_id:
                 raise RuntimeError(
                     f"Answer API returned success for question '{q_def.title}' but no ID. "
                     f"Response: {question}. This may indicate an API schema change or server error."
                 )
 
-            for answer_def in q_def.answers:
+            for idx, answer_def in enumerate(q_def.answers):
+                if idx > 0:
+                    logger.info(
+                        "Skipping extra answer for '%s' to avoid restrict_answer", q_def.title
+                    )
+                    continue
                 answer = await self.create_answer(
                     session,
                     question_id=q_id,
                     content=answer_def.content,
                 )
 
-                a_id = answer.get("data", {}).get("id", "")
+                a_id = self._extract_id(answer)
                 if not a_id:
                     raise RuntimeError(
                         f"Answer API returned success for answer to '{q_def.title}' but no ID. "

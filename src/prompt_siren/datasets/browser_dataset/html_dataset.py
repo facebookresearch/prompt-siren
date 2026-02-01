@@ -201,6 +201,4 @@ def create_html_browser_dataset(
 
 
 # HTMLBrowserDataset implements ImageBuildableDataset via BaseBrowserDataset
-html_entry = ComponentEntryPoint(
-    create_html_browser_dataset, HTMLDatasetConfig, HTMLBrowserDataset
-)
+html_entry = ComponentEntryPoint(create_html_browser_dataset, HTMLDatasetConfig, HTMLBrowserDataset)

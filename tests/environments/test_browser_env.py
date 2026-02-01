@@ -1,12 +1,10 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Unit tests for BrowserEnvironment."""
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from prompt_siren.environments.browser_env import (
-    _fire_and_forget,
     _setup_page_with_capture,
     apply_injections,
     BrowserEnvironment,
@@ -493,67 +491,6 @@ class TestApplyInjections:
         assert "http://example.com/test" in str(exc_info.value)
 
 
-class TestFireAndForget:
-    """Tests for _fire_and_forget function."""
-
-    async def test_completed_tasks_are_discarded(self):
-        """Test that completed tasks are removed from tracking set."""
-        from prompt_siren.environments.browser_env import _background_tasks
-
-        async def quick_task():
-            return "done"
-
-        initial_count = len(_background_tasks)
-        _fire_and_forget(quick_task())
-
-        # Wait for task to complete
-        await asyncio.sleep(0.1)
-
-        # Task should be removed from tracking
-        assert len(_background_tasks) == initial_count
-
-    async def test_failed_tasks_are_logged_and_discarded(self):
-        """Test that failed tasks are logged and removed from tracking."""
-        from prompt_siren.environments.browser_env import _background_tasks
-
-        async def failing_task():
-            raise ValueError("intentional failure")
-
-        initial_count = len(_background_tasks)
-
-        with patch("prompt_siren.environments.browser_env.logger") as mock_logger:
-            _fire_and_forget(failing_task())
-            await asyncio.sleep(0.1)
-
-            # Task should be removed from tracking
-            assert len(_background_tasks) == initial_count
-            # Error should be logged at error level (not warning)
-            mock_logger.error.assert_called_once()
-
-    async def test_cancelled_tasks_are_handled_gracefully(self):
-        """Test that cancelled tasks don't cause errors."""
-        from prompt_siren.environments.browser_env import _background_tasks
-
-        async def slow_task():
-            await asyncio.sleep(10)
-
-        initial_count = len(_background_tasks)
-
-        with patch("prompt_siren.environments.browser_env.logger") as mock_logger:
-            _fire_and_forget(slow_task())
-            await asyncio.sleep(0.01)
-
-            # Find and cancel the task
-            for task in list(_background_tasks):
-                task.cancel()
-
-            await asyncio.sleep(0.1)
-
-            # Task should be removed, no warning logged for cancellation
-            assert len(_background_tasks) == initial_count
-            mock_logger.warning.assert_not_called()
-
-
 class TestSetupPageWithCapture:
     """Tests for _setup_page_with_capture function."""
 
@@ -621,8 +558,7 @@ class TestResetEnvState:
         mock_playwright.chromium.connect_over_cdp = AsyncMock(return_value=mock_new_browser)
 
         mock_sandbox_manager = MagicMock()
-        mock_sandbox_manager.destroy_sandbox = AsyncMock()
-        mock_sandbox_manager.create_sandbox = AsyncMock(return_value=create_mock_sandbox_state())
+        mock_sandbox_manager.replace_sandbox = AsyncMock(return_value=create_mock_sandbox_state())
 
         mock_task_setup = MagicMock()
 
@@ -642,8 +578,6 @@ class TestResetEnvState:
 
     async def test_destroys_old_containers(self, browser_env: BrowserEnvironment):
         """Test that reset destroys old containers in background."""
-        import asyncio
-
         from prompt_siren.environments.browser_env import BrowserEnvState
 
         mock_old_sandbox_state = create_mock_sandbox_state()
@@ -659,8 +593,7 @@ class TestResetEnvState:
         mock_playwright.chromium.connect_over_cdp = AsyncMock(return_value=mock_new_browser)
 
         mock_sandbox_manager = MagicMock()
-        mock_sandbox_manager.destroy_sandbox = AsyncMock()
-        mock_sandbox_manager.create_sandbox = AsyncMock(return_value=mock_new_sandbox_state)
+        mock_sandbox_manager.replace_sandbox = AsyncMock(return_value=mock_new_sandbox_state)
 
         mock_browser = MagicMock()
         mock_browser.close = AsyncMock()
@@ -676,10 +609,9 @@ class TestResetEnvState:
         )
 
         await browser_env.reset_env_state(env_state)
-        # Wait for fire-and-forget cleanup
-        await asyncio.sleep(0.1)
-
-        mock_sandbox_manager.destroy_sandbox.assert_called_once_with(mock_old_sandbox_state)
+        mock_sandbox_manager.replace_sandbox.assert_called_once_with(
+            mock_old_sandbox_state, env_state.task_setup
+        )
 
     async def test_creates_fresh_containers(self, browser_env: BrowserEnvironment):
         """Test that reset creates fresh containers."""
@@ -698,8 +630,7 @@ class TestResetEnvState:
         mock_playwright.chromium.connect_over_cdp = AsyncMock(return_value=mock_new_browser)
 
         mock_sandbox_manager = MagicMock()
-        mock_sandbox_manager.destroy_sandbox = AsyncMock()
-        mock_sandbox_manager.create_sandbox = AsyncMock(return_value=mock_new_sandbox_state)
+        mock_sandbox_manager.replace_sandbox = AsyncMock(return_value=mock_new_sandbox_state)
 
         mock_browser = MagicMock()
         mock_browser.close = AsyncMock()
@@ -716,7 +647,9 @@ class TestResetEnvState:
 
         new_state = await browser_env.reset_env_state(env_state)
 
-        mock_sandbox_manager.create_sandbox.assert_called_once_with(mock_task_setup)
+        mock_sandbox_manager.replace_sandbox.assert_called_once_with(
+            env_state.sandbox_state, mock_task_setup
+        )
         assert new_state.sandbox_state is mock_new_sandbox_state
 
     async def test_reconnects_browser_via_cdp(self, browser_env: BrowserEnvironment):
@@ -733,8 +666,7 @@ class TestResetEnvState:
         mock_playwright.chromium.connect_over_cdp = AsyncMock(return_value=mock_new_browser)
 
         mock_sandbox_manager = MagicMock()
-        mock_sandbox_manager.destroy_sandbox = AsyncMock()
-        mock_sandbox_manager.create_sandbox = AsyncMock(return_value=create_mock_sandbox_state())
+        mock_sandbox_manager.replace_sandbox = AsyncMock(return_value=create_mock_sandbox_state())
 
         mock_browser = MagicMock()
         mock_browser.close = AsyncMock()
@@ -771,8 +703,7 @@ class TestResetEnvState:
         mock_playwright.chromium.connect_over_cdp = AsyncMock(return_value=mock_new_browser)
 
         mock_sandbox_manager = MagicMock()
-        mock_sandbox_manager.destroy_sandbox = AsyncMock()
-        mock_sandbox_manager.create_sandbox = AsyncMock(return_value=create_mock_sandbox_state())
+        mock_sandbox_manager.replace_sandbox = AsyncMock(return_value=create_mock_sandbox_state())
 
         mock_browser = MagicMock()
         mock_browser.close = AsyncMock()
@@ -806,8 +737,7 @@ class TestResetEnvState:
         mock_playwright.chromium.connect_over_cdp = AsyncMock(return_value=mock_new_browser)
 
         mock_sandbox_manager = MagicMock()
-        mock_sandbox_manager.destroy_sandbox = AsyncMock()
-        mock_sandbox_manager.create_sandbox = AsyncMock(return_value=create_mock_sandbox_state())
+        mock_sandbox_manager.replace_sandbox = AsyncMock(return_value=create_mock_sandbox_state())
 
         mock_browser = MagicMock()
         mock_browser.close = AsyncMock()
@@ -846,8 +776,7 @@ class TestResetEnvState:
             render_fn=_mock_render_fn,
         )
 
-        mock_sandbox_manager.destroy_sandbox = AsyncMock()
-        mock_sandbox_manager.create_sandbox = AsyncMock(return_value=create_mock_sandbox_state())
+        mock_sandbox_manager.replace_sandbox = AsyncMock(return_value=create_mock_sandbox_state())
 
         mock_browser = MagicMock()
         mock_browser.close = AsyncMock()

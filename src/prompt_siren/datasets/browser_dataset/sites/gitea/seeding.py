@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 CONTAINER_NAME = "prompt-siren-seed-gitea"
 CONTAINER_IMAGE = "gitea/gitea:latest"
 HOST_PORT = 3000
-CONTAINER_PORT = 80
+CONTAINER_PORT = 3000
 DB_PATH_IN_CONTAINER = "/data/gitea/gitea.db"
 HEALTH_URL = f"http://localhost:{HOST_PORT}"
 ADMIN_USERNAME = "admin"
@@ -45,11 +45,11 @@ ADMIN_PASSWORD = "admin123"
 ADMIN_EMAIL = "admin@example.com"
 
 CONTAINER_ENV = {
-    "USER_UID": "0",
-    "USER_GID": "0",
+    "USER_UID": "1000",
+    "USER_GID": "1000",
     "GITEA__database__DB_TYPE": "sqlite3",
     "GITEA__database__PATH": "/data/gitea/gitea.db",
-    "GITEA__server__HTTP_PORT": "80",
+    "GITEA__server__HTTP_PORT": "3000",
     "GITEA__server__ROOT_URL": HEALTH_URL,
     # Skip installation wizard by pre-configuring
     "GITEA__security__INSTALL_LOCK": "true",
@@ -155,7 +155,7 @@ def _copy_file_from_container(src_path: str, dst_path: Path) -> None:
     logger.info(f"Copied {src_path} to {dst_path}")
 
 
-async def _wait_for_service(url: str, timeout: int = 120) -> None:
+async def _wait_for_service(url: str, timeout: int = 300) -> None:
     """Wait for a service to be ready.
 
     Args:
@@ -196,6 +196,8 @@ async def _setup_admin() -> None:
     result = _run_docker(
         [
             "exec",
+            "--user",
+            "git",
             CONTAINER_NAME,
             "gitea",
             "admin",
@@ -354,14 +356,20 @@ class GiteaSeeder:
         message: str,
     ) -> None:
         """Update or create a file in a repository."""
-        sha = None
+        sha: str | None = None
+        contents_url = f"{self.base_url}/api/v1/repos/{repo_full_name}/contents/{path}"
         async with session.get(
-            f"{self.base_url}/api/v1/repos/{repo_full_name}/contents/{path}",
+            contents_url,
             headers=self._headers(),
         ) as resp:
             if resp.status == 200:
                 data = await resp.json()
                 sha = data.get("sha")
+            elif resp.status != 404:
+                text = await resp.text()
+                raise RuntimeError(
+                    f"Failed to look up file {path} before update: {resp.status} {text}"
+                )
 
         payload: dict = {
             "content": base64.b64encode(content.encode()).decode(),
@@ -370,14 +378,49 @@ class GiteaSeeder:
         if sha:
             payload["sha"] = sha
 
-        async with session.put(
-            f"{self.base_url}/api/v1/repos/{repo_full_name}/contents/{path}",
+        if sha:
+            method = session.put
+            expected = (200, 201)
+        else:
+            method = session.post
+            expected = (201,)
+
+        async with method(
+            contents_url,
             headers=self._headers(),
             json=payload,
         ) as resp:
-            if resp.status not in (200, 201):
-                text = await resp.text()
-                raise RuntimeError(f"Failed to update file {path}: {resp.status} {text}")
+            if resp.status in expected:
+                return
+            if resp.status in (409, 422) and not sha:
+                # File likely exists; retry with SHA for update.
+                async with session.get(contents_url, headers=self._headers()) as get_resp:
+                    if get_resp.status != 200:
+                        text = await get_resp.text()
+                        raise RuntimeError(
+                            f"Failed to fetch file {path} after create conflict: "
+                            f"{get_resp.status} {text}"
+                        )
+                    data = await get_resp.json()
+                    sha = data.get("sha")
+                if not sha:
+                    raise RuntimeError(f"File {path} exists but no SHA was returned by API")
+                payload["sha"] = sha
+                async with session.put(
+                    contents_url,
+                    headers=self._headers(),
+                    json=payload,
+                ) as put_resp:
+                    if put_resp.status in (200, 201):
+                        return
+                    text = await put_resp.text()
+                    raise RuntimeError(
+                        f"Failed to update file {path} after create conflict: "
+                        f"{put_resp.status} {text}"
+                    )
+            text = await resp.text()
+            action = "create" if not sha else "update"
+            raise RuntimeError(f"Failed to {action} file {path}: {resp.status} {text}")
 
     async def create_issue(
         self,

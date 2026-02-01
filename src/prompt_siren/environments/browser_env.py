@@ -20,7 +20,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Generic, get_args, Literal, TypedDict, TypeVar
+from typing import Generic, get_args, Literal, TypedDict, TypeVar
 
 from pydantic import BaseModel, Field, HttpUrl
 from typing_extensions import Self
@@ -144,7 +144,7 @@ async def apply_injections(
                     while (walker.nextNode()) {
                         if (walker.currentNode.textContent.includes(placeholder)) {
                             walker.currentNode.textContent =
-                                walker.currentNode.textContent.replace(placeholder, replacement);
+                                walker.currentNode.textContent.replaceAll(placeholder, replacement);
                         }
                     }
                 }""",
@@ -301,7 +301,7 @@ class BrowserEnvironment(
             sandbox_state: Sandbox state with port bindings from container creation
 
         Returns:
-            CDP endpoint URL (e.g., "http://localhost:32768")
+            CDP endpoint URL (e.g., "http://127.0.0.1:32768")
 
         Raises:
             RuntimeError: If no CDP port binding is found
@@ -319,7 +319,7 @@ class BrowserEnvironment(
             )
 
         host_port = sandbox_state.agent_port_bindings[container_port]
-        return f"http://localhost:{host_port}"
+        return f"http://127.0.0.1:{host_port}"
 
     async def reset_env_state(self, env_state: BrowserEnvState) -> BrowserEnvState:
         """Reset env_state by recreating containers from scratch.

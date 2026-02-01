@@ -14,6 +14,8 @@ from typing_extensions import assert_never, Self
 from ...environments.browser_env import SiteName
 from ...sandbox_managers.image_spec import BuildImageSpec, ImageSpec, PullImageSpec, SeederFn
 from ...sandbox_managers.sandbox_task_setup import ContainerSpec
+from ..image_tags import make_dataset_tag
+from .constants import BROWSER_IMAGE_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -164,15 +166,22 @@ class BaseSiteConfig(BaseModel):
         # Check explicit build_context first
         explicitly_configured = self.build_context is not None
         build_path = self.build_context
+        known_seeded_sites = {"gitea", "answer", "wikijs"}
 
         # Auto-detect build context based on site name if not explicitly set
         if build_path is None and site_name is not None:
             build_path = _get_site_build_context(site_name)
+            if build_path is None and site_name in known_seeded_sites:
+                raise RuntimeError(
+                    f"Could not locate Docker build context for known site '{site_name}'. "
+                    "Pre-seeded data is required for this site. "
+                    "Ensure the package is properly installed with data directories."
+                )
 
         if build_path is not None:
             if build_path.exists():
-                # Use pre-seeded image built from context
-                # Tag based on hostname to make it unique
+                # Use pre-seeded image built from context.
+                # Tag based on hostname to keep it unique and consistent with other datasets.
                 safe_hostname = self.hostname.replace(".", "-")
 
                 # Get the seeder function for this site
@@ -180,7 +189,7 @@ class BaseSiteConfig(BaseModel):
 
                 return BuildImageSpec(
                     context_path=str(build_path),
-                    tag=f"prompt-siren/{safe_hostname}:latest",
+                    tag=make_dataset_tag(BROWSER_IMAGE_PREFIX, "site", safe_hostname),
                     seeder=seeder,
                 )
             # Explicitly configured paths must exist - fail fast
@@ -190,7 +199,6 @@ class BaseSiteConfig(BaseModel):
                     f"Either fix the path or remove build_context to use base image {self.container_image}."
                 )
             # Known sites with seeders MUST have build context - this indicates installation issue
-            known_seeded_sites = {"gitea", "answer", "wikijs"}
             if site_name in known_seeded_sites:
                 raise RuntimeError(
                     f"Auto-detected build context path {build_path} does not exist for "
@@ -322,8 +330,8 @@ class BrowserDatasetConfig(BaseModel):
             db_path=Path("/data/gitea/gitea.db"),
             port=80,
             environment={
-                "USER_UID": "0",
-                "USER_GID": "0",
+                "USER_UID": "1000",
+                "USER_GID": "1000",
                 "GITEA__server__HTTP_PORT": "80",
                 "GITEA__server__ROOT_URL": "http://gitea.dev-forge.io",
             },

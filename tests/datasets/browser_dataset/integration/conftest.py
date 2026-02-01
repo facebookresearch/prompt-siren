@@ -78,6 +78,7 @@ def browser_task_setup(browser_image: str) -> TaskSetup:
         image_spec=PullImageSpec(tag=browser_image),
         hostname="browser",
         ports={CDP_PORT: CDP_PORT},
+        use_image_cmd=True,
     )
 
     return TaskSetup(

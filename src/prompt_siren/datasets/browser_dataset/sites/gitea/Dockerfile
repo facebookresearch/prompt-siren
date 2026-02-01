@@ -8,13 +8,17 @@
 
 FROM gitea/gitea:latest
 
-# Run as root so Gitea can bind to privileged port 80, matching benchmark URLs.
-ENV USER_UID=0 \
-    USER_GID=0 \
+# Run as non-root but allow binding to privileged port 80, matching benchmark URLs.
+ENV USER_UID=1000 \
+    USER_GID=1000 \
     GITEA__server__HTTP_PORT=80 \
     GITEA__server__ROOT_URL=http://gitea.dev-forge.io
 
 EXPOSE 80
+
+# Allow non-root process to bind to privileged port 80.
+RUN apk add --no-cache libcap \
+    && setcap 'cap_net_bind_service=+ep' /usr/local/bin/gitea
 
 # Copy pre-seeded database (contains repos, issues, and comments)
 COPY data/gitea.db /data/gitea/gitea.db
