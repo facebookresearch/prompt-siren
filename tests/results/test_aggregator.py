@@ -19,7 +19,12 @@ from prompt_siren.config.experiment_config import (
     OutputConfig,
     TelemetryConfig,
 )
-from prompt_siren.job.models import CONFIG_FILENAME, INDEX_FILENAME, JobConfig, RunIndexEntry
+from prompt_siren.job.models import (
+    CONFIG_FILENAME,
+    INDEX_FILENAME,
+    JobConfig,
+    RunIndexEntry,
+)
 from prompt_siren.results import (
     _group_by_task,
     _read_all_jobs,
