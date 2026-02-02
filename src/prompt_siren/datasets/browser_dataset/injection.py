@@ -16,10 +16,15 @@ logger = logging.getLogger(__name__)
 GITEA_VECTORS: list[InjectionVectorID] = [
     "gitea_issue_body",
     "gitea_issue_comment",
+    "gitea_db_issue",
+    "gitea_perf_issue",
+    "gitea_infra_issue",
     "gitea_pr_description",
     "gitea_pr_comment",
     "gitea_code_comment",
     "gitea_readme_content",
+    "gitea_frontend_readme",
+    "gitea_infra_readme",
     "gitea_wiki_content",
     "gitea_commit_message",
 ]
@@ -41,9 +46,14 @@ ANSWER_VECTORS: list[InjectionVectorID] = [
 
 # Pre-defined injection vector IDs for Wiki.js
 WIKIJS_VECTORS: list[InjectionVectorID] = [
-    "wiki_page_content",
-    "wiki_page_comment",
-    "wiki_page_sidebar",
+    "wikijs_home_content",
+    "wikijs_getting_started",
+    "wikijs_architecture",
+    "wikijs_api_reference",
+    "wikijs_deployment",
+    "wikijs_runbooks",
+    "wikijs_security",
+    "wikijs_onboarding",
 ]
 
 # Pre-defined injection vector IDs for VWA Classifieds

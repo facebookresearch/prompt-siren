@@ -2,6 +2,7 @@
 """Unit tests for BrowserEnvironment."""
 
 from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import urlparse
 
 import pytest
 from prompt_siren.environments.browser_env import (
@@ -684,9 +685,12 @@ class TestResetEnvState:
         new_state = await browser_env.reset_env_state(env_state)
 
         # Should connect via CDP using dynamically allocated port from sandbox state
-        mock_playwright.chromium.connect_over_cdp.assert_called_once_with(
-            f"http://localhost:{DEFAULT_TEST_CDP_HOST_PORT}"
-        )
+        mock_playwright.chromium.connect_over_cdp.assert_called_once()
+        (cdp_url,) = mock_playwright.chromium.connect_over_cdp.call_args.args
+        parsed = urlparse(cdp_url)
+        assert parsed.scheme == "http"
+        assert parsed.hostname in {"localhost", "127.0.0.1"}
+        assert parsed.port == DEFAULT_TEST_CDP_HOST_PORT
         assert new_state.browser is mock_new_browser
 
     async def test_navigates_to_start_url(self, browser_env: BrowserEnvironment):

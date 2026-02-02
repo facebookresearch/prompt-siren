@@ -31,7 +31,7 @@ try:
     from playwright.async_api import Page
 except ImportError as e:
     raise ImportError(
-        "Screenshot browser dataset requires the 'playwright' optional dependency. "
+        "Screenshot browser dataset requires the 'browser' optional dependency (Playwright). "
         "Install with: pip install 'prompt-siren[browser]'"
     ) from e
 

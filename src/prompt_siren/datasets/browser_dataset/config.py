@@ -12,7 +12,12 @@ from pydantic import BaseModel, Discriminator, Field, model_validator, Tag
 from typing_extensions import assert_never, Self
 
 from ...environments.browser_env import SiteName
-from ...sandbox_managers.image_spec import BuildImageSpec, ImageSpec, PullImageSpec, SeederFn
+from ...sandbox_managers.image_spec import (
+    BuildImageSpec,
+    ImageSpec,
+    PullImageSpec,
+    SeederFn,
+)
 from ...sandbox_managers.sandbox_task_setup import ContainerSpec
 from ..image_tags import make_dataset_tag
 from .constants import BROWSER_IMAGE_PREFIX
@@ -277,7 +282,22 @@ class BrowserContainerConfig(BaseModel):
     image: str = DEFAULT_BROWSER_IMAGE
     """Docker image for the browser container."""
     cdp_port: Annotated[int, Field(ge=1, le=65535)] = CDP_PORT
-    """CDP port for remote debugging (1-65535)."""
+    """CDP port for remote debugging (1-65535).
+
+    Note: The default image binds CDP on port 9222 via its ENTRYPOINT. If you
+    need a different port, use a custom image that listens on that port.
+    """
+
+    @model_validator(mode="after")
+    def validate_cdp_port(self) -> Self:
+        """Validate CDP port compatibility with the default browser image."""
+        if self.image == DEFAULT_BROWSER_IMAGE and self.cdp_port != CDP_PORT:
+            raise ValueError(
+                f"cdp_port must be {CDP_PORT} when using {DEFAULT_BROWSER_IMAGE}. "
+                "The image entrypoint always binds CDP on port 9222. "
+                "Use a custom image that listens on your desired port instead."
+            )
+        return self
 
     def to_container_spec(self) -> ContainerSpec:
         """Convert to ContainerSpec for sandbox manager.

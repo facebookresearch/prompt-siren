@@ -442,7 +442,7 @@ class TaskSandboxContext:
         # Extract actual port bindings (container_port -> host_port)
         # NetworkSettings.Ports is like {"9222/tcp": [{"HostIp": "0.0.0.0", "HostPort": "32768"}]}
         port_bindings: PortBindings = {}
-        network_ports = container_info.get("NetworkSettings", {}).get("Ports", {})
+        network_ports = container_info.get("NetworkSettings", {}).get("Ports") or {}
         for port_proto, bindings in network_ports.items():
             if bindings:  # bindings can be None if port is exposed but not bound
                 container_port = int(port_proto.split("/")[0])

@@ -35,8 +35,13 @@ class TestBrowserContainerConfig:
         assert spec.command is None
 
     def test_to_container_spec_with_custom_port(self):
-        """Test that custom CDP port is reflected in container spec."""
-        browser_config = BrowserContainerConfig(cdp_port=9999)
+        """Test that custom CDP port is rejected for the default image."""
+        with pytest.raises(ValueError, match="cdp_port must be 9222"):
+            BrowserContainerConfig(cdp_port=9999)
+
+    def test_to_container_spec_with_custom_port_custom_image(self):
+        """Test that custom CDP port is allowed for custom images."""
+        browser_config = BrowserContainerConfig(image="custom/browser:latest", cdp_port=9999)
         spec = browser_config.to_container_spec()
 
         assert spec.ports is not None

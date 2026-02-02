@@ -27,7 +27,7 @@ uv sync --all-extras
 uv sync --extra agentdojo      # AgentDojo benchmark support
 uv sync --extra swebench       # SWE-bench support
 uv sync --extra docker         # Docker sandbox manager
-uv sync --extra playwright     # Web automation environment
+uv sync --extra browser        # Web automation environment (Playwright)
 
 # Combine multiple extras
 uv sync --extra agentdojo --extra docker
@@ -40,7 +40,9 @@ uv sync --extra agentdojo --extra docker
 | `agentdojo` | AgentDojo dataset, environment, and attacks |
 | `swebench` | SWE-bench dataset for code editing benchmarks |
 | `docker` | Docker sandbox manager |
-| `playwright` | Web automation environment |
+| `browser` | Web automation environment (Playwright) |
+
+Note: `playwright` is kept as a compatibility alias for `browser`.
 
 Set up environment variables:
 ```sh

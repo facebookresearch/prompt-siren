@@ -16,6 +16,7 @@ Container Management:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
@@ -26,10 +27,18 @@ from pydantic import BaseModel, Field, HttpUrl
 from typing_extensions import Self
 
 try:
-    from playwright.async_api import async_playwright, Browser, Page, Playwright, Request, Route
+    from playwright.async_api import (
+        async_playwright,
+        Browser,
+        BrowserType,
+        Page,
+        Playwright,
+        Request,
+        Route,
+    )
 except ImportError as e:
     raise ImportError(
-        "Browser environment requires the 'playwright' optional dependency. "
+        "Browser environment requires the 'browser' optional dependency (Playwright). "
         "Install with: pip install 'prompt-siren[browser]'"
     ) from e
 
@@ -321,6 +330,43 @@ class BrowserEnvironment(
         host_port = sandbox_state.agent_port_bindings[container_port]
         return f"http://127.0.0.1:{host_port}"
 
+    async def _connect_over_cdp_with_retry(
+        self,
+        browser_type: BrowserType,
+        cdp_endpoint: str,
+        *,
+        timeout_s: float = 10.0,
+        initial_delay_s: float = 0.1,
+        max_delay_s: float = 1.0,
+    ) -> Browser:
+        """Connect to a CDP endpoint with retry/backoff for slow browser startups."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_s
+        delay = initial_delay_s
+        last_exc: Exception | None = None
+
+        while loop.time() < deadline:
+            browser, exc = await self._attempt_connect_over_cdp(browser_type, cdp_endpoint)
+            if browser is not None:
+                return browser
+            last_exc = exc
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, max_delay_s)
+
+        message = f"Timed out waiting for CDP endpoint to be ready: {cdp_endpoint}"
+        raise RuntimeError(message) from last_exc
+
+    async def _attempt_connect_over_cdp(
+        self, browser_type: BrowserType, cdp_endpoint: str
+    ) -> tuple[Browser | None, Exception | None]:
+        """Single CDP connection attempt; returns browser or exception."""
+        try:
+            return await browser_type.connect_over_cdp(cdp_endpoint), None
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return None, exc
+
     async def reset_env_state(self, env_state: BrowserEnvState) -> BrowserEnvState:
         """Reset env_state by recreating containers from scratch.
 
@@ -346,7 +392,9 @@ class BrowserEnvironment(
         cdp_endpoint = self._get_cdp_endpoint(new_sandbox_state)
 
         # Reconnect browser using existing Playwright instance
-        new_browser = await env_state.playwright.chromium.connect_over_cdp(cdp_endpoint)
+        new_browser = await self._connect_over_cdp_with_retry(
+            env_state.playwright.chromium, cdp_endpoint
+        )
 
         # Create new page with request capture and navigate to start URL
         new_page, new_captured_requests = await _setup_page_with_capture(
@@ -561,7 +609,7 @@ class BrowserEnvironment(
             # Use .start() instead of context manager so we can pass pw to env_state
             pw = await async_playwright().start()
             try:
-                browser = await pw.chromium.connect_over_cdp(cdp_endpoint)
+                browser = await self._connect_over_cdp_with_retry(pw.chromium, cdp_endpoint)
 
                 try:
                     # Create page with request capture and navigate to start URL
