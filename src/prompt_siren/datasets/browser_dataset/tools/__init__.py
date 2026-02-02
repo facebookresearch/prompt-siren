@@ -10,11 +10,9 @@ from .common import go_back, go_forward, goto_url, press_key
 from .screenshot_tools import click, scroll, type_text
 
 __all__ = [
-    # Screenshot tools
     "click",
     "go_back",
     "go_forward",
-    # Common tools
     "goto_url",
     "press_key",
     "scroll",

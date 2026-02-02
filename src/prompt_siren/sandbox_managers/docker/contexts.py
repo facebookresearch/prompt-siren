@@ -231,8 +231,10 @@ class TaskSandboxContext:
         )
         new_service_ids = dict(zip([name for name, _ in service_items], cloned_ids, strict=False))
 
-        # Note: Cloned containers inherit port bindings from source, but since cloning
-        # is used for snapshottable environments (not browser), we don't track them.
+        # Note: Cloned containers do not have their own port bindings configured.
+        # We copy the source's agent_port_bindings, which is acceptable because
+        # cloning is only used for snapshottable environments that don't need
+        # host port access (browser environment uses replace_sandbox instead).
         return SandboxState(
             agent_container_id=new_agent_id,
             service_containers=new_service_ids,
