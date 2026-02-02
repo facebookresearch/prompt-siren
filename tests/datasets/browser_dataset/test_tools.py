@@ -11,7 +11,6 @@ from prompt_siren.datasets.browser_dataset.tools.common import (
     press_key,
 )
 from prompt_siren.datasets.browser_dataset.tools.screenshot_tools import (
-    _truncate,
     click,
     scroll,
     type_text,
@@ -43,21 +42,6 @@ def mock_ctx() -> MagicMock:
     ctx = MagicMock(spec=RunContext)
     ctx.deps = state
     return ctx
-
-
-class TestTruncate:
-    def test_returns_unchanged_when_shorter_than_max(self) -> None:
-        assert _truncate("hello", max_len=50) == "hello"
-
-    def test_returns_unchanged_when_exactly_max_length(self) -> None:
-        text = "x" * 50
-        assert _truncate(text, max_len=50) == text
-
-    def test_truncates_with_ellipsis_when_longer(self) -> None:
-        text = "x" * 60
-        result = _truncate(text, max_len=50)
-        assert len(result) == 53  # 50 + "..."
-        assert result.endswith("...")
 
 
 class TestScreenshotTools:
