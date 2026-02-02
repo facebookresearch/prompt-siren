@@ -12,7 +12,7 @@ from ..evaluators import create_text_evaluator
 ANSWER_BENIGN_TASKS: list[BenignTask[BrowserEnvState]] = [
     BenignTask(
         id="answer_find_question",
-        prompt="Find the question about 'Python installation' and read the accepted answer.",
+        prompt="Find the question about Python and read the answer.",
         evaluators={
             "found_question": create_text_evaluator("Python"),
         },
