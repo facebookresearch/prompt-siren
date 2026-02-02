@@ -14,8 +14,6 @@ from prompt_siren.datasets.browser_dataset.config import (
     BrowserContainerConfig,
     SqliteSiteConfig,
 )
-from prompt_siren.environments.browser_env import BrowserTaskMetadata
-from prompt_siren.tasks import TaskCouple
 
 
 class TestBrowserContainerConfig:
@@ -95,36 +93,29 @@ class TestBrowserDataset:
         mock_manager = MagicMock()
         return create_browser_dataset(config, sandbox_manager=mock_manager)
 
-    def test_task_couples_have_compatible_sites(self, dataset: BrowserDataset):
-        """Test that task couples are defined with semantically compatible sites.
+    def test_has_example_benign_tasks(self, dataset: BrowserDataset):
+        """Test that example benign tasks are present.
 
-        Each couple must have at least one overlapping site between benign and
-        malicious tasks, ensuring the attack is realistic (agent would encounter
-        the malicious content while performing the benign task).
+        PR1 includes one example task per site to demonstrate the infrastructure works.
+        PR2 will add all remaining tasks.
+        """
+        benign_ids = {t.id for t in dataset.benign_tasks}
+
+        # PR1 includes one example task per site
+        assert "answer_find_question" in benign_ids, "Answer example task should be present"
+        assert "gitea_find_issue" in benign_ids, "Gitea example task should be present"
+
+    def test_task_couples_empty_in_pr1(self, dataset: BrowserDataset):
+        """Test that task couples are empty in PR1.
+
+        PR1 ships infrastructure only. PR2 will add malicious tasks and couples.
+        When couples are added in PR2, this test should be updated to validate
+        site compatibility.
         """
         couples = dataset.task_couples
 
-        assert len(couples) > 0
-        assert all(isinstance(couple, TaskCouple) for couple in couples)
-
-        for couple in couples:
-            benign_meta = couple.benign.metadata
-            malicious_meta = couple.malicious.metadata
-
-            # Get sites from both tasks (all tasks now use 'sites' list)
-            benign_sites: set[str] = set()
-            malicious_sites: set[str] = set()
-
-            if isinstance(benign_meta, BrowserTaskMetadata):
-                benign_sites.update(benign_meta.sites)
-            if isinstance(malicious_meta, BrowserTaskMetadata):
-                malicious_sites.update(malicious_meta.sites)
-
-            # At least one site should overlap or malicious should include benign's site
-            assert benign_sites & malicious_sites or benign_sites <= malicious_sites, (
-                f"Couple {couple.benign.id}:{couple.malicious.id} has incompatible sites: "
-                f"benign={benign_sites}, malicious={malicious_sites}"
-            )
+        # PR1: No couples yet
+        assert len(couples) == 0, "PR1 should have no task couples"
 
     def test_task_ids_unique(self, dataset: BrowserDataset):
         """Test that task IDs are unique (catches accidental duplicates)."""
