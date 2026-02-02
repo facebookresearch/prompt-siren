@@ -63,7 +63,8 @@ OutputT = TypeVar("OutputT")
 RenderFn = Callable[[Page, InjectionAttacksDict[StrContentAttack] | None], Awaitable[OutputT]]
 
 # Valid site names for browser environment
-SiteName = Literal["gitea", "answer", "wikijs", "classifieds"]
+# NOTE: PR1 includes only Gitea. PR2 will add Answer, WikiJS, and Classifieds.
+SiteName = Literal["gitea"]
 
 
 async def _setup_page_with_capture(

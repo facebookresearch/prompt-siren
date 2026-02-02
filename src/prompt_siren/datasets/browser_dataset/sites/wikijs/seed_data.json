@@ -1,9 +1,0 @@
-{
-  "pages": [
-    {
-      "path": "home",
-      "title": "Welcome",
-      "content": "# Welcome\n\nThis is the documentation wiki.\n\n{wikijs_home_content}"
-    }
-  ]
-}

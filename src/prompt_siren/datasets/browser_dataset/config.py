@@ -324,8 +324,7 @@ class BrowserContainerConfig(BaseModel):
 class BrowserDatasetConfig(BaseModel):
     """Configuration for browser-based dataset.
 
-    This configuration supports multiple website containers (Gitea, Apache Answer,
-    Wiki.js, VWA Classifieds) managed by the sandbox manager.
+    NOTE: PR1 includes only Gitea. PR2 will add Answer, WikiJS, and Classifieds.
 
     Container Management:
         Follows the SWE-bench pattern:
@@ -359,43 +358,6 @@ class BrowserDatasetConfig(BaseModel):
         description="Gitea configuration (Git forge with issues, PRs, code review).",
     )
 
-    answer: SqliteSiteConfig = Field(
-        default=SqliteSiteConfig(
-            container_image="apache/answer:latest",
-            hostname="answers.dev-community.io",
-            db_path=Path("/data/answer.db"),
-            port=80,
-        ),
-        description="Apache Answer configuration (Q&A platform).",
-    )
-
-    wikijs: SqliteSiteConfig = Field(
-        default=SqliteSiteConfig(
-            container_image="linuxserver/wikijs:latest",
-            hostname="wiki.internal-docs.io",
-            db_path=Path("/config/database.sqlite"),
-            port=80,
-            environment={
-                "PUID": "0",
-                "PGID": "0",
-                "PORT": "80",
-                "WIKIJS_PORT": "80",
-            },
-        ),
-        description="Wiki.js configuration (wiki platform).",
-    )
-
-    # PostgreSQL site (heavier, for complex scenarios)
-    classifieds: PostgresqlSiteConfig = Field(
-        default=PostgresqlSiteConfig(
-            container_image="ghcr.io/bgrins/vwa_classifieds_web:1",
-            hostname="marketplace.local-listings.io",
-            db_image="ghcr.io/bgrins/vwa_classifieds_db:1",
-            port=80,
-        ),
-        description="VWA Classifieds configuration (marketplace with PostgreSQL).",
-    )
-
     def get_site_config(self, site_name: SiteName) -> SiteConfig:
         """Get configuration for a specific site.
 
@@ -408,53 +370,24 @@ class BrowserDatasetConfig(BaseModel):
         match site_name:
             case "gitea":
                 return self.gitea
-            case "answer":
-                return self.answer
-            case "wikijs":
-                return self.wikijs
-            case "classifieds":
-                return self.classifieds
             case _:
                 assert_never(site_name)
-
-    @model_validator(mode="after")
-    def check_unique_hostnames(self) -> Self:
-        """Validate that all site hostnames are unique."""
-        hostnames = [
-            self.gitea.hostname,
-            self.answer.hostname,
-            self.wikijs.hostname,
-            self.classifieds.hostname,
-        ]
-        if len(hostnames) != len(set(hostnames)):
-            duplicates = [h for h in hostnames if hostnames.count(h) > 1]
-            raise ValueError(
-                f"Site hostnames must be unique. Duplicates: {sorted(set(duplicates))}"
-            )
-        return self
 
     def get_all_site_container_specs(self) -> dict[str, ContainerSpec]:
         """Get container specs for all sites.
 
         Auto-detects pre-seeded build contexts from sites/{site_name}/ directories.
         Falls back to pulling base images if no pre-seeded context is found.
-        PostgreSQL-backed sites include an additional "{site}-db" container spec
-        for the database service.
 
         Returns:
             Dictionary mapping site names to their ContainerSpecs
         """
         site_configs: dict[str, SiteConfig] = {
             "gitea": self.gitea,
-            "answer": self.answer,
-            "wikijs": self.wikijs,
-            "classifieds": self.classifieds,
         }
 
         specs: dict[str, ContainerSpec] = {}
         for site_name, site_config in site_configs.items():
             specs[site_name] = site_config.to_container_spec(site_name)
-            if isinstance(site_config, PostgresqlSiteConfig):
-                specs[f"{site_name}-db"] = site_config.to_db_container_spec()
 
         return specs

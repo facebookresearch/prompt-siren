@@ -30,13 +30,14 @@ from ..abstract import AbstractDataset
 from .config import BrowserDatasetConfig, SiteName
 from .injection import get_vectors_for_sites
 from .malicious_tasks import MALICIOUS_TASKS
-from .sites import ANSWER_BENIGN_TASKS, GITEA_BENIGN_TASKS
+from .sites import GITEA_BENIGN_TASKS
 
 # Output type varies by observation modality
 OutputT = TypeVar("OutputT")
 
 # All tasks (flat lists)
-ALL_BENIGN_TASKS: list[BenignTask[BrowserEnvState]] = GITEA_BENIGN_TASKS + ANSWER_BENIGN_TASKS
+# NOTE: PR1 includes only Gitea. PR2 will add Answer and WikiJS.
+ALL_BENIGN_TASKS: list[BenignTask[BrowserEnvState]] = GITEA_BENIGN_TASKS
 ALL_MALICIOUS_TASKS: list[MaliciousTask[BrowserEnvState]] = MALICIOUS_TASKS
 
 

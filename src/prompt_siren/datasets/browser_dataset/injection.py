@@ -3,6 +3,8 @@
 
 This module provides injection vector IDs and utilities for injecting attack
 content into web pages.
+
+NOTE: PR1 includes only Gitea. PR2 will add Answer, WikiJS, and Classifieds vectors.
 """
 
 import logging
@@ -29,60 +31,20 @@ GITEA_VECTORS: list[InjectionVectorID] = [
     "gitea_commit_message",
 ]
 
-# Pre-defined injection vector IDs for Apache Answer (Q&A Platform)
-ANSWER_VECTORS: list[InjectionVectorID] = [
-    "answer_question_body",
-    "answer_answer_content",
-    "answer_comment",
-    "answer_user_bio",
-    "answer_docker_network",
-    "answer_api_design",
-    "answer_react_cleanup",
-    "answer_git_rebase",
-    "answer_postgres_perf",
-    "answer_k8s_crash",
-    "answer_typescript_generic",
-]
-
-# Pre-defined injection vector IDs for Wiki.js
-WIKIJS_VECTORS: list[InjectionVectorID] = [
-    "wikijs_home_content",
-    "wikijs_getting_started",
-    "wikijs_architecture",
-    "wikijs_api_reference",
-    "wikijs_deployment",
-    "wikijs_runbooks",
-    "wikijs_security",
-    "wikijs_onboarding",
-]
-
-# Pre-defined injection vector IDs for VWA Classifieds
-CLASSIFIEDS_VECTORS: list[InjectionVectorID] = [
-    "classifieds_listing_description",
-    "classifieds_listing_comment",
-    "classifieds_user_profile",
-    "classifieds_search_result",
-]
-
 # All vectors by site
 VECTORS_BY_SITE: dict[str, list[InjectionVectorID]] = {
     "gitea": GITEA_VECTORS,
-    "answer": ANSWER_VECTORS,
-    "wikijs": WIKIJS_VECTORS,
-    "classifieds": CLASSIFIEDS_VECTORS,
 }
 
 # Combined list of all vectors
-ALL_BROWSER_VECTORS: list[InjectionVectorID] = (
-    GITEA_VECTORS + ANSWER_VECTORS + WIKIJS_VECTORS + CLASSIFIEDS_VECTORS
-)
+ALL_BROWSER_VECTORS: list[InjectionVectorID] = GITEA_VECTORS
 
 
 def get_vectors_for_sites(sites: Sequence[str]) -> list[InjectionVectorID]:
     """Get all injection vector IDs for the specified sites.
 
     Args:
-        sites: List of site names (gitea, answer, wikijs, classifieds)
+        sites: List of site names (gitea only in PR1)
 
     Returns:
         Combined list of injection vector IDs for all specified sites
