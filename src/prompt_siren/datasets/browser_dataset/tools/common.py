@@ -1,9 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-"""Common browser tools shared across all observation modalities.
+"""Common browser tools."""
 
-These tools are used regardless of whether the agent sees screenshots,
-accessibility trees, or HTML.
-"""
+from typing import Any
 
 from pydantic_ai import RunContext
 
@@ -13,7 +11,7 @@ from ....environments.browser_env import BrowserEnvState
 async def press_key(
     ctx: RunContext[BrowserEnvState],
     key: str,
-) -> str:
+) -> Any:
     """Press a keyboard key.
 
     Args:
@@ -21,17 +19,17 @@ async def press_key(
         key: Key to press (e.g., "Enter", "Tab", "Escape", "ArrowDown")
 
     Returns:
-        Status message describing the key press
+        The current page (rendered as an observation by the environment)
     """
     page = ctx.deps.page
     await page.keyboard.press(key)
-    return f"Pressed key: {key}"
+    return page
 
 
 async def goto_url(
     ctx: RunContext[BrowserEnvState],
     url: str,
-) -> str:
+) -> Any:
     """Navigate to a specific URL.
 
     Args:
@@ -39,40 +37,40 @@ async def goto_url(
         url: URL to navigate to
 
     Returns:
-        Status message with the final URL
+        The current page (rendered as an observation by the environment)
     """
     page = ctx.deps.page
     await page.goto(url, timeout=30000)
-    return f"Navigated to: {page.url}"
+    return page
 
 
 async def go_back(
     ctx: RunContext[BrowserEnvState],
-) -> str:
+) -> Any:
     """Go back to the previous page in browser history.
 
     Args:
         ctx: The run context containing the browser page
 
     Returns:
-        Status message with the current URL
+        The current page (rendered as an observation by the environment)
     """
     page = ctx.deps.page
     await page.go_back()
-    return f"Went back. Current URL: {page.url}"
+    return page
 
 
 async def go_forward(
     ctx: RunContext[BrowserEnvState],
-) -> str:
+) -> Any:
     """Go forward to the next page in browser history.
 
     Args:
         ctx: The run context containing the browser page
 
     Returns:
-        Status message with the current URL
+        The current page (rendered as an observation by the environment)
     """
     page = ctx.deps.page
     await page.go_forward()
-    return f"Went forward. Current URL: {page.url}"
+    return page

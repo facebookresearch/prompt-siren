@@ -1,4 +1,0 @@
-type: browser-html
-config:
-  simplify_html: true
-  max_html_length: 50000

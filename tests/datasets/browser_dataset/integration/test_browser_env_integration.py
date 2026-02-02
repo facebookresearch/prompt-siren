@@ -14,9 +14,9 @@ import asyncio
 
 import pytest
 from prompt_siren.datasets.browser_dataset import (
+    BrowserDataset,
     BrowserDatasetConfig,
-    create_screenshot_browser_dataset,
-    ScreenshotBrowserDataset,
+    create_browser_dataset,
 )
 from prompt_siren.sandbox_managers.docker.manager import DockerSandboxManager
 from prompt_siren.sandbox_managers.sandbox_task_setup import TaskSetup
@@ -122,14 +122,14 @@ class TestBrowserDatasetIntegration:
     """Integration tests for browser dataset with real Docker."""
 
     @pytest.fixture
-    def dataset(self, docker_sandbox_manager: DockerSandboxManager) -> ScreenshotBrowserDataset:
+    def dataset(self, docker_sandbox_manager: DockerSandboxManager) -> BrowserDataset:
         """Create a browser dataset with real Docker sandbox manager."""
         config = BrowserDatasetConfig()
-        return create_screenshot_browser_dataset(config, sandbox_manager=docker_sandbox_manager)
+        return create_browser_dataset(config, sandbox_manager=docker_sandbox_manager)
 
     async def test_dataset_batch_context(
         self,
-        dataset: ScreenshotBrowserDataset,
+        dataset: BrowserDataset,
         docker_sandbox_manager: DockerSandboxManager,
     ) -> None:
         """Test that dataset batch context works with real Docker."""
@@ -141,16 +141,16 @@ class TestBrowserDatasetIntegration:
             # Batch context should be active
             pass  # Success if no exception
 
-    def test_dataset_has_tasks(self, dataset: ScreenshotBrowserDataset) -> None:
+    def test_dataset_has_tasks(self, dataset: BrowserDataset) -> None:
         """Test that dataset has tasks configured."""
         assert len(dataset.benign_tasks) > 0
         assert len(dataset.malicious_tasks) > 0
         assert len(dataset.task_couples) > 0
 
-    def test_dataset_environment_configured(self, dataset: ScreenshotBrowserDataset) -> None:
+    def test_dataset_environment_configured(self, dataset: BrowserDataset) -> None:
         """Test that dataset environment is properly configured."""
         env = dataset.environment
-        assert env.name == "browser-screenshot"
+        assert env.name == "browser"
         assert len(env.all_injection_ids) > 0
 
 

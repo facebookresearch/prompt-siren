@@ -1,9 +1,10 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-"""Base class for browser datasets with different observation modalities.
+"""Base class for the browser dataset.
 
-This module provides a base class that handles common browser dataset
-functionality (container setup, task definitions, injection handling) while
-allowing subclasses to customize observation rendering and tools.
+This module provides shared browser dataset functionality:
+- Container setup and management
+- Task definitions (benign, malicious, couples)
+- Injection handling
 """
 
 from __future__ import annotations
@@ -63,18 +64,7 @@ class BaseBrowserDataset(
     AbstractDataset[BrowserEnvState, Any, OutputT, StrContentAttack],
     Generic[OutputT],
 ):
-    """Base class for browser datasets with different observation modalities.
-
-    This class handles shared functionality:
-    - Container setup and management
-    - Task definitions (benign, malicious, couples)
-    - Injection handling
-
-    Concrete dataset classes are created via factory functions that configure:
-    - Observation rendering (screenshot, a11y tree, HTML)
-    - Tool definitions appropriate for the observation type
-    - System prompts guiding the agent
-    """
+    """Base class for browser datasets."""
 
     name: str
     _environment: BrowserEnvironment[OutputT] | None = None

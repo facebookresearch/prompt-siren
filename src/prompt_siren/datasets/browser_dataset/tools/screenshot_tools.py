@@ -5,7 +5,7 @@ These tools are designed for agents that see screenshots and need to
 interact using pixel coordinates.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic_ai import RunContext
 
@@ -24,7 +24,7 @@ async def click(
     x: int,
     y: int,
     button: Literal["left", "right", "middle"] = "left",
-) -> str:
+) -> Any:
     """Click at a specific position on the page.
 
     Args:
@@ -34,11 +34,11 @@ async def click(
         button: Mouse button to use (left, right, or middle)
 
     Returns:
-        Status message describing the click action
+        The current page (rendered as an observation by the environment)
     """
     page = ctx.deps.page
     await page.mouse.click(x, y, button=button)
-    return f"Clicked at ({x}, {y}) with {button} button"
+    return page
 
 
 async def scroll(
@@ -47,7 +47,7 @@ async def scroll(
     y: int,
     scroll_x: int,
     scroll_y: int,
-) -> str:
+) -> Any:
     """Scroll the page by a specified amount.
 
     Args:
@@ -58,18 +58,18 @@ async def scroll(
         scroll_y: Vertical scroll amount (positive = down)
 
     Returns:
-        Status message describing the scroll action
+        The current page (rendered as an observation by the environment)
     """
     page = ctx.deps.page
     await page.mouse.move(x, y)
     await page.evaluate(f"window.scrollBy({scroll_x}, {scroll_y})")
-    return f"Scrolled by ({scroll_x}, {scroll_y}) from position ({x}, {y})"
+    return page
 
 
 async def type_text(
     ctx: RunContext[BrowserEnvState],
     text: str,
-) -> str:
+) -> Any:
     """Type text using the keyboard.
 
     Args:
@@ -77,8 +77,8 @@ async def type_text(
         text: Text to type
 
     Returns:
-        Status message describing the typing action
+        The current page (rendered as an observation by the environment)
     """
     page = ctx.deps.page
     await page.keyboard.type(text)
-    return f"Typed: {_truncate(text)}"
+    return page

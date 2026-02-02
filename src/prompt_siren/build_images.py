@@ -8,7 +8,7 @@ each dataset needs, then builds them with proper dependency ordering.
 Usage:
     # Build images for a specific dataset
     prompt-siren-build-images --dataset swebench [OPTIONS]
-    prompt-siren-build-images --dataset browser-screenshot [OPTIONS]
+    prompt-siren-build-images --dataset browser [OPTIONS]
 
     # Build images for all datasets
     prompt-siren-build-images --all-datasets [OPTIONS]

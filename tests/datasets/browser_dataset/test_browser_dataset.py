@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 from prompt_siren.datasets.browser_dataset import (
+    BrowserDataset,
     BrowserDatasetConfig,
-    create_screenshot_browser_dataset,
-    ScreenshotBrowserDataset,
+    create_browser_dataset,
 )
 from prompt_siren.datasets.browser_dataset.config import (
     BrowserContainerConfig,
@@ -85,17 +85,17 @@ class TestSiteConfigGetUrl:
         assert config.get_url() == "http://localhost:8080"
 
 
-class TestScreenshotBrowserDataset:
-    """Tests for ScreenshotBrowserDataset class."""
+class TestBrowserDataset:
+    """Tests for BrowserDataset class."""
 
     @pytest.fixture
-    def dataset(self) -> ScreenshotBrowserDataset:
+    def dataset(self) -> BrowserDataset:
         """Create a dataset with default configuration and mock sandbox manager."""
         config = BrowserDatasetConfig()
         mock_manager = MagicMock()
-        return create_screenshot_browser_dataset(config, sandbox_manager=mock_manager)
+        return create_browser_dataset(config, sandbox_manager=mock_manager)
 
-    def test_task_couples_have_compatible_sites(self, dataset: ScreenshotBrowserDataset):
+    def test_task_couples_have_compatible_sites(self, dataset: BrowserDataset):
         """Test that task couples are defined with semantically compatible sites.
 
         Each couple must have at least one overlapping site between benign and
@@ -126,7 +126,7 @@ class TestScreenshotBrowserDataset:
                 f"benign={benign_sites}, malicious={malicious_sites}"
             )
 
-    def test_task_ids_unique(self, dataset: ScreenshotBrowserDataset):
+    def test_task_ids_unique(self, dataset: BrowserDataset):
         """Test that task IDs are unique (catches accidental duplicates)."""
         benign_ids = [t.id for t in dataset.benign_tasks]
         malicious_ids = [t.id for t in dataset.malicious_tasks]
@@ -142,7 +142,7 @@ class TestBrowserDatasetImageBuildingMode:
         """Verify image specs can be retrieved without instantiating full dataset."""
         config = BrowserDatasetConfig()
         # This is a classmethod, doesn't need an instance
-        specs = ScreenshotBrowserDataset.get_image_build_specs(config, str(tmp_path))
+        specs = BrowserDataset.get_image_build_specs(config, str(tmp_path))
 
         # Should return at least some specs for configured sites
         assert isinstance(specs, list)
