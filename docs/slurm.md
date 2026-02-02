@@ -61,22 +61,22 @@ prompt-siren jobs resume -s 2026-01-31_17-01-04 --dry-run
 
 ## Advanced: Hydra Sweep Configs
 
-For complex sweeps, define parameters in a config file:
+For complex sweeps with many parameters, define everything in a config file instead of CLI flags:
 
 ```yaml
 # config/my-sweep.yaml
 defaults:
   - config
-  - override /hydra/launcher: submitit_slurm
+  - override /hydra/launcher: submitit_slurm  # <-- SLURM launcher set here
   - _self_
 
 hydra:
-  mode: MULTIRUN
+  mode: MULTIRUN  # <-- Multirun mode set here
   sweeper:
     params:
-      +attack: mini-goat,mini-goat-aggressive
+      +attack: attack1,attack2
       agent.config.model: azure:gpt-4o,azure:gpt-5
-      +run_id: range(10)
+      +run_id: range(10)  # <-- Equivalent to -k 10 on CLI
 
 dataset:
   type: agentdojo
@@ -88,7 +88,7 @@ Run with:
 uv run --env-file .env prompt-siren run attack --config-name=my-sweep
 ```
 
-No `--multirun` or `--slurm` flags needed when launcher is set in config.
+**Note:** When the launcher and mode are set in the config file, you don't need `--slurm`, `--multirun`, or `-k` flags. The `+run_id: range(10)` in the sweeper params is equivalent to `-k 10` on the CLI. This approach is useful for reproducible experiment configurations that can be version-controlled.
 
 ## Key Config Options
 

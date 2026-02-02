@@ -104,6 +104,8 @@ prompt-siren run attack -k 10 --slurm +dataset=agentdojo-workspace +attack=mini-
     agent.config.model=azure:gpt-4,azure:gpt-5
 ```
 
+**Note:** `-k 10` is shorthand for adding `+run_id=range(10)` to the Hydra sweeper. When using config files for complex sweeps (see [SLURM docs](slurm.md#advanced-hydra-sweep-configs)), specify `+run_id: range(10)` in `hydra.sweeper.params` instead.
+
 ### SLURM Submission
 
 Use `--slurm` to submit jobs to a SLURM cluster instead of running locally:

@@ -26,6 +26,7 @@ traces
 
 .vscode/*
 /config/
+results/*
 
 .swebench_cache
 .claude/*
