@@ -96,14 +96,14 @@ class TestBrowserDataset:
     def test_has_example_benign_tasks(self, dataset: BrowserDataset):
         """Test that example benign tasks are present.
 
-        PR1 includes one example task per site to demonstrate the infrastructure works.
-        PR2 will add all remaining tasks.
+        PR1 includes only Gitea site with one example task.
+        PR2 will add Answer, WikiJS, and all remaining tasks.
         """
         benign_ids = {t.id for t in dataset.benign_tasks}
 
-        # PR1 includes one example task per site
-        assert "answer_find_question" in benign_ids, "Answer example task should be present"
+        # PR1 includes only Gitea with one example task
         assert "gitea_find_issue" in benign_ids, "Gitea example task should be present"
+        assert len(benign_ids) == 1, "PR1 should have exactly one benign task"
 
     def test_task_couples_empty_in_pr1(self, dataset: BrowserDataset):
         """Test that task couples are empty in PR1.
