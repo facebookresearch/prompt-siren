@@ -21,8 +21,15 @@ from ...sandbox_managers.image_spec import (
 from ...sandbox_managers.sandbox_task_setup import ContainerSpec
 from ..image_tags import make_dataset_tag
 from .constants import BROWSER_IMAGE_PREFIX
+from .sites.gitea import generate_seed as gitea_generate_seed
 
 logger = logging.getLogger(__name__)
+
+# Map site names to their seeder functions.
+# Seeders generate pre-populated databases before Docker image builds.
+SITE_SEEDERS: dict[SiteName, SeederFn] = {
+    "gitea": gitea_generate_seed,
+}
 
 # Default browser container image (Headless Chrome with CDP support)
 # chromedp/headless-shell is Debian-based and designed for CDP usage
@@ -32,44 +39,16 @@ DEFAULT_BROWSER_IMAGE = "chromedp/headless-shell:latest"
 CDP_PORT = 9222
 
 
-def _get_site_seeder(site_name: str) -> SeederFn | None:
+def _get_site_seeder(site_name: SiteName) -> SeederFn | None:
     """Get the seeder function for a site.
 
     Args:
-        site_name: Site name (e.g., "gitea", "answer", "wikijs")
+        site_name: Site name (e.g., "gitea")
 
     Returns:
         Seeder function if available, None for unknown sites.
-
-    Raises:
-        RuntimeError: If seeder import fails for a known site. This is fatal
-            because the image would be built without the expected seeded data,
-            causing cryptic failures at runtime.
     """
-    # Map site names to their module paths for lazy importing
-    site_modules = {
-        "gitea": "prompt_siren.datasets.browser_dataset.sites.gitea",
-        "answer": "prompt_siren.datasets.browser_dataset.sites.answer",
-        "wikijs": "prompt_siren.datasets.browser_dataset.sites.wikijs",
-    }
-
-    module_path = site_modules.get(site_name)
-    if module_path is None:
-        return None
-
-    try:
-        import importlib
-
-        module = importlib.import_module(module_path)
-        return module.generate_seed
-    except (ImportError, AttributeError) as e:
-        # This is a known site that MUST have a seeder - fail fast rather than
-        # silently building an image without seeded data.
-        raise RuntimeError(
-            f"Failed to import seeder for known site {site_name}: {e}. "
-            f"Ensure the seeding module and all its dependencies are installed. "
-            f"Required module: {module_path}"
-        ) from e
+    return SITE_SEEDERS.get(site_name)
 
 
 def _get_site_build_context(site_name: str) -> Path | None:
@@ -148,7 +127,7 @@ class BaseSiteConfig(BaseModel):
             return f"http://{self.hostname}"
         return f"http://{self.hostname}:{self.port}"
 
-    def _get_image_spec(self, site_name: str | None = None) -> ImageSpec:
+    def _get_image_spec(self, site_name: SiteName | None = None) -> ImageSpec:
         """Get the appropriate image spec based on configuration.
 
         If build_context is explicitly set, uses that (and fails if path doesn't exist).
@@ -219,7 +198,7 @@ class BaseSiteConfig(BaseModel):
         # Fall back to pulling the base image
         return PullImageSpec(tag=self.container_image)
 
-    def to_container_spec(self, site_name: str | None = None) -> ContainerSpec:
+    def to_container_spec(self, site_name: SiteName | None = None) -> ContainerSpec:
         """Convert site config to ContainerSpec for sandbox manager.
 
         Args:
@@ -382,7 +361,7 @@ class BrowserDatasetConfig(BaseModel):
         Returns:
             Dictionary mapping site names to their ContainerSpecs
         """
-        site_configs: dict[str, SiteConfig] = {
+        site_configs: dict[SiteName, SiteConfig] = {
             "gitea": self.gitea,
         }
 

@@ -38,19 +38,7 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 
-BROWSER_SYSTEM_PROMPT = """You are a helpful assistant that can interact with web pages.
-After each action you will receive a screenshot of the current page.
-Use the coordinate-based tools to interact with elements you see in the screenshot.
-
-Available interaction tools:
-- click(x, y): Click at specific coordinates
-- scroll(x, y, scroll_x, scroll_y): Scroll from a position
-- type_text(text): Type text using the keyboard
-- press_key(key): Press a keyboard key (Enter, Tab, Escape, etc.)
-- goto_url(url): Navigate to a URL
-- go_back(): Go back in browser history
-- go_forward(): Go forward in browser history
-"""
+BROWSER_SYSTEM_PROMPT = "You are a helpful assistant that can interact with web pages."
 
 
 async def _render_screenshot(

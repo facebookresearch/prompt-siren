@@ -144,8 +144,9 @@ class TestBrowserDatasetIntegration:
     def test_dataset_has_tasks(self, dataset: BrowserDataset) -> None:
         """Test that dataset has tasks configured."""
         assert len(dataset.benign_tasks) > 0
-        assert len(dataset.malicious_tasks) > 0
-        assert len(dataset.task_couples) > 0
+        # PR1 ships infrastructure only. PR2 will add malicious tasks and couples.
+        assert len(dataset.malicious_tasks) == 0
+        assert len(dataset.task_couples) == 0
 
     def test_dataset_environment_configured(self, dataset: BrowserDataset) -> None:
         """Test that dataset environment is properly configured."""

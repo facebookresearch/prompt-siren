@@ -326,10 +326,30 @@ class DockerSandboxManager:
         async with self._batch_state._lock:
             self._batch_state.contexts[execution_id] = context
 
-        # Create containers and network
-        return await context.create_containers(
-            task_setup, network_enabled=self._config.network_enabled
-        )
+        try:
+            # Create containers and network
+            return await context.create_containers(
+                task_setup, network_enabled=self._config.network_enabled
+            )
+        except BaseException:
+            # Roll back partially created resources and unregister the context.
+            # This mirrors setup_task() cleanup behavior, but only on failure
+            # because successful create_sandbox() leaves cleanup to the caller.
+            try:
+                await context.cleanup()
+            except BaseException as cleanup_error:
+                logger.warning(
+                    "[DockerSandboxManager] create_sandbox: cleanup failed for "
+                    "task_id=%s execution_id=%s: %s",
+                    task_setup.task_id,
+                    execution_id,
+                    cleanup_error,
+                    exc_info=cleanup_error,
+                )
+            finally:
+                async with self._batch_state._lock:
+                    self._batch_state.contexts.pop(execution_id, None)
+            raise
 
     async def replace_sandbox(
         self,

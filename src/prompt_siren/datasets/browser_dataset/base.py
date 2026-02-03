@@ -9,11 +9,9 @@ This module provides shared browser dataset functionality:
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
-from playwright.async_api import Page
 from pydantic_ai.toolsets import FunctionToolset
 
 from ...environments.abstract import AbstractEnvironment
@@ -21,11 +19,12 @@ from ...environments.browser_env import (
     BrowserEnvironment,
     BrowserEnvState,
     BrowserTaskMetadata,
+    RenderFn,
 )
 from ...sandbox_managers.abstract import AbstractSandboxManager
 from ...sandbox_managers.image_spec import BuildImageSpec, ImageBuildSpec
 from ...tasks import BenignTask, MaliciousTask, TaskCouple
-from ...types import InjectionAttacksDict, StrContentAttack
+from ...types import StrContentAttack
 from ..abstract import AbstractDataset
 from .config import BrowserDatasetConfig, SiteName
 from .injection import get_vectors_for_sites
@@ -54,10 +53,6 @@ def _compute_sites_with_tasks() -> frozenset[SiteName]:
 
 # Computed once at module load
 SITES_WITH_TASKS: frozenset[SiteName] = _compute_sites_with_tasks()
-
-
-# Type alias for render function
-RenderFn = Callable[[Page, InjectionAttacksDict[StrContentAttack] | None], Awaitable[OutputT]]
 
 
 @dataclass(frozen=True)
