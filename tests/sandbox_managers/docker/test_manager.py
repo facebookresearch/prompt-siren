@@ -272,3 +272,38 @@ class TestDockerSandboxManagerCloning:
 
                 # Verify cloned container was started
                 cloned_container.start.assert_called_once()
+
+
+class TestDockerSandboxManagerCreateSandbox:
+    """Tests for create_sandbox failure cleanup."""
+
+    @patch("prompt_siren.sandbox_managers.docker.manager.create_docker_client_from_config")
+    async def test_create_sandbox_failure_cleans_up_and_unregisters(
+        self, mock_get_client, manager: DockerSandboxManager, task_setup: TaskSetup
+    ):
+        """Test that create_sandbox rolls back resources and unregisters context on failure."""
+        mock_docker = AsyncMock()
+        mock_docker.close = AsyncMock()
+        mock_docker.inspect_image = AsyncMock()
+        mock_get_client.return_value = mock_docker
+
+        with (
+            patch(
+                "prompt_siren.sandbox_managers.docker.manager.TaskSandboxContext.create_containers",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("boom"),
+            ) as mock_create,
+            patch(
+                "prompt_siren.sandbox_managers.docker.manager.TaskSandboxContext.cleanup",
+                new_callable=AsyncMock,
+            ) as mock_cleanup,
+        ):
+            async with manager.setup_batch([task_setup]):
+                with pytest.raises(RuntimeError, match="boom"):
+                    await manager.create_sandbox(task_setup)
+
+                assert manager._batch_state is not None
+                assert manager._batch_state.contexts == {}
+
+            mock_create.assert_awaited_once()
+            mock_cleanup.assert_awaited_once()

@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
+from pathlib import Path
 from typing import ClassVar, TypeVar
 from unittest.mock import patch
 
@@ -25,7 +26,9 @@ from prompt_siren.environments.abstract import (
     NonSnapshottableAbstractEnvironment,
     SnapshottableAbstractEnvironment,
 )
-from prompt_siren.sandbox_managers.sandbox_task_setup import SandboxTaskSetup
+from prompt_siren.sandbox_managers.abstract import AbstractSandboxManager, ExecOutput
+from prompt_siren.sandbox_managers.sandbox_state import ContainerID, SandboxState
+from prompt_siren.sandbox_managers.sandbox_task_setup import TaskSetup
 from prompt_siren.tasks import BenignTask, MaliciousTask, TaskCouple, TaskResult
 from prompt_siren.types import (
     InjectableUserContent,
@@ -610,7 +613,7 @@ class MockSandboxConfig(BaseModel):
 
 # Mock sandbox manager implementation
 @dataclass
-class MockSandboxManager:
+class MockSandboxManager(AbstractSandboxManager):
     """Mock sandbox manager for testing."""
 
     name: str
@@ -622,33 +625,51 @@ class MockSandboxManager:
         return self._config
 
     @asynccontextmanager
-    async def setup_batch(self, task_setups: Sequence) -> AsyncIterator[None]:
+    async def setup_batch(self, task_setups: Sequence[TaskSetup]) -> AsyncIterator[None]:
         """Mock setup_batch for testing."""
         raise NotImplementedError("Mock sandbox manager for testing only")
         yield  # pragma: no cover
 
     @asynccontextmanager
-    async def setup_task(self, task_setup: SandboxTaskSetup) -> AsyncIterator:
+    async def setup_task(self, task_setup: TaskSetup) -> AsyncIterator[SandboxState]:
         """Mock setup_task for testing."""
         raise NotImplementedError("Mock sandbox manager for testing only")
         yield  # pragma: no cover
 
     async def exec(
         self,
-        container_id: str,
+        container_id: ContainerID,
         cmd: str | list[str],
         stdin: str | bytes | None = None,
         cwd: str | None = None,
         env: dict[str, str] | None = None,
         user: str | None = None,
         timeout: int | None = None,
-        shell_path: object | None = None,
-    ):
+        shell_path: Path | None = None,
+    ) -> ExecOutput:
         """Mock exec for testing."""
         raise NotImplementedError("Mock sandbox manager for testing only")
 
-    async def clone_sandbox_state(self, source_state):
+    async def clone_sandbox_state(self, source_state: SandboxState) -> SandboxState:
         """Mock clone_sandbox for testing."""
+        raise NotImplementedError("Mock sandbox manager for testing only")
+
+    async def create_sandbox(self, task_setup: TaskSetup) -> SandboxState:
+        """Mock create_sandbox for testing."""
+        raise NotImplementedError("Mock sandbox manager for testing only")
+
+    async def replace_sandbox(
+        self,
+        sandbox_state: SandboxState,
+        task_setup: TaskSetup,
+        *,
+        cleanup_in_background: bool = True,
+    ) -> SandboxState:
+        """Mock replace_sandbox for testing."""
+        raise NotImplementedError("Mock sandbox manager for testing only")
+
+    async def destroy_sandbox(self, sandbox_state: SandboxState) -> None:
+        """Mock destroy_sandbox for testing."""
         raise NotImplementedError("Mock sandbox manager for testing only")
 
 

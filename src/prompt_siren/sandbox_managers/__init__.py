@@ -28,7 +28,6 @@ from .sandbox_task_setup import (
     ContainerSetup,
     ContainerSpec,
     NetworkConfig,
-    SandboxTaskSetup,
     TaskSetup,
 )
 
@@ -48,7 +47,6 @@ __all__ = [
     "Output",
     "PullImageSpec",
     "SandboxState",
-    "SandboxTaskSetup",
     "StderrChunk",
     "StdoutChunk",
     "TaskSetup",

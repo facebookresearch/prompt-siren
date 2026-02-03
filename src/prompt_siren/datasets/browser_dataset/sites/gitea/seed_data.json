@@ -1,0 +1,22 @@
+{
+  "users": [
+    {"username": "developer", "email": "dev@example.com", "full_name": "Developer"}
+  ],
+  "repositories": [
+    {
+      "name": "demo-project",
+      "description": "A demo project for testing",
+      "files": {
+        "README.md": "# Demo Project\n\nThis is a demo project.\n\n{gitea_readme_content}"
+      }
+    }
+  ],
+  "issues": [
+    {
+      "repo": "demo-project",
+      "title": "Fix login page",
+      "body": "The login page needs fixing.\n\n{gitea_issue_body}",
+      "comments": []
+    }
+  ]
+}

@@ -4,6 +4,7 @@
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -21,9 +22,9 @@ from prompt_siren.datasets.swebench_dataset.tools import (
     write_file,
 )
 from prompt_siren.environments.bash_env import BashEnvState
-from prompt_siren.sandbox_managers.abstract import ExecOutput
-from prompt_siren.sandbox_managers.sandbox_state import SandboxState
-from prompt_siren.sandbox_managers.sandbox_task_setup import SandboxTaskSetup
+from prompt_siren.sandbox_managers.abstract import AbstractSandboxManager, ExecOutput
+from prompt_siren.sandbox_managers.sandbox_state import ContainerID, SandboxState
+from prompt_siren.sandbox_managers.sandbox_task_setup import TaskSetup
 from pydantic_ai import RunContext
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
@@ -32,18 +33,18 @@ from ...utils import create_exec_output
 
 
 @dataclass
-class MockSandboxManager:
+class MockSandboxManager(AbstractSandboxManager):
     """Mock sandbox manager for testing."""
 
     exec_fn: AsyncMock
 
     @asynccontextmanager
-    async def setup_batch(self, task_setups: Sequence) -> AsyncIterator[None]:
+    async def setup_batch(self, task_setups: Sequence[TaskSetup]) -> AsyncIterator[None]:
         """Mock setup_batch - not used in tool tests."""
         yield
 
     @asynccontextmanager
-    async def setup_task(self, task_setup: SandboxTaskSetup) -> AsyncIterator[SandboxState]:
+    async def setup_task(self, task_setup: TaskSetup) -> AsyncIterator[SandboxState]:
         """Mock setup_task - not used in tool tests."""
         yield SandboxState(
             agent_container_id="test-container",
@@ -52,20 +53,42 @@ class MockSandboxManager:
             network_id=None,
         )
 
-    async def clone_sandbox_state(self, source_state):
+    async def clone_sandbox_state(self, source_state: SandboxState) -> SandboxState:
         """Mock clone_sandbox - not used in tool tests."""
         return source_state
 
+    async def create_sandbox(self, task_setup: TaskSetup) -> SandboxState:
+        """Mock create_sandbox - not used in tool tests."""
+        return SandboxState(
+            agent_container_id="test-container",
+            service_containers={},
+            execution_id="",
+            network_id=None,
+        )
+
+    async def replace_sandbox(
+        self,
+        sandbox_state: SandboxState,
+        task_setup: TaskSetup,
+        *,
+        cleanup_in_background: bool = True,
+    ) -> SandboxState:
+        """Mock replace_sandbox - not used in tool tests."""
+        return await self.create_sandbox(task_setup)
+
+    async def destroy_sandbox(self, sandbox_state: SandboxState) -> None:
+        """Mock destroy_sandbox - not used in tool tests."""
+
     async def exec(
         self,
-        container_id: str,
+        container_id: ContainerID,
         cmd: str | list[str],
         stdin: str | bytes | None = None,
         cwd: str | None = None,
         env: dict[str, str] | None = None,
         user: str | None = None,
         timeout: int | None = None,
-        shell_path: object | None = None,
+        shell_path: Path | None = None,
     ) -> ExecOutput:
         """Delegate to the mock exec function."""
         return await self.exec_fn(cmd, timeout)

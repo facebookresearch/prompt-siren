@@ -6,15 +6,39 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..sandbox_state import ContainerID, SandboxState
+from ..sandbox_state import ContainerID, PortBindings, SandboxState
 from ..sandbox_task_setup import ContainerSetup, TaskSetup
 from .image_cache import ImageCache
 from .plugins import AbstractContainer, AbstractDockerClient
 
 logger = logging.getLogger(__name__)
+
+# Background task tracking for fire-and-forget cleanup operations
+_background_tasks: set[asyncio.Task[Any]] = set()
+
+
+def _fire_and_forget(coro: Coroutine[Any, Any, Any]) -> None:
+    """Schedule a coroutine to run in background without waiting."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+
+    def _on_done(t: asyncio.Task[Any]) -> None:
+        _background_tasks.discard(t)
+        if t.cancelled():
+            return
+        exc = t.exception()
+        if exc is not None:
+            logger.warning(
+                "Background cleanup task failed: %s. This may cause resource leaks.",
+                exc,
+                exc_info=exc,
+            )
+
+    task.add_done_callback(_on_done)
 
 
 @dataclass
@@ -70,12 +94,14 @@ class TaskSandboxContext:
         self,
         task_setup: TaskSetup,
         network_enabled: bool = True,
+        network_suffix: str | None = None,
     ) -> SandboxState:
         """Create all containers for this task.
 
         Args:
             task_setup: Task setup specification
             network_enabled: Whether networking is enabled globally
+            network_suffix: Optional suffix for network name to avoid collisions
 
         Returns:
             SandboxState with container IDs and network ID
@@ -83,22 +109,24 @@ class TaskSandboxContext:
         # Create network if needed (multi-container setup)
         network_id = None
         if task_setup.service_containers:
-            network_id = await self._create_network(task_setup, network_enabled)
+            network_id = await self._create_network(
+                task_setup, network_enabled, name_suffix=network_suffix
+            )
             # Track network for cleanup
             async with self._lock:
                 self._networks.add(network_id)
 
-        # Create agent container
-        agent_container_id = await self._create_single_container(
+        # Create agent container (we need port bindings for the agent)
+        agent_container_id, agent_port_bindings = await self._create_single_container(
             container_setup=task_setup.agent_container,
             task_id=task_setup.task_id,
             network_id=network_id,
             network_enabled=network_enabled,
         )
 
-        # Create service containers in parallel
+        # Create service containers in parallel (we don't need their port bindings)
         service_items = list(task_setup.service_containers.items())
-        service_ids = await asyncio.gather(
+        service_results = await asyncio.gather(
             *[
                 self._create_single_container(
                     container_setup=service_setup,
@@ -106,11 +134,12 @@ class TaskSandboxContext:
                     network_id=network_id,
                     network_enabled=network_enabled,
                 )
-                for service_name, service_setup in service_items
+                for _, service_setup in service_items
             ]
         )
+        # Extract just the container IDs (first element of each tuple)
         service_container_ids = dict(
-            zip([name for name, _ in service_items], service_ids, strict=False)
+            zip([name for name, _ in service_items], [r[0] for r in service_results], strict=False)
         )
 
         return SandboxState(
@@ -118,7 +147,49 @@ class TaskSandboxContext:
             service_containers=service_container_ids,
             network_id=network_id,
             execution_id=self.execution_id,
+            agent_port_bindings=agent_port_bindings,
         )
+
+    async def replace_sandbox(
+        self,
+        old_state: SandboxState,
+        task_setup: TaskSetup,
+        *,
+        network_enabled: bool = True,
+        cleanup_in_background: bool = True,
+    ) -> SandboxState:
+        """Replace an existing sandbox with a fresh one.
+
+        Creates a new sandbox and cleans up the old one. Cleanup can happen
+        asynchronously to avoid blocking reset/replay flows.
+        """
+        network_suffix = uuid.uuid4().hex[:8]
+        new_state = await self.create_containers(
+            task_setup,
+            network_enabled=network_enabled,
+            network_suffix=network_suffix,
+        )
+
+        if cleanup_in_background:
+            _fire_and_forget(self._cleanup_state(old_state))
+        else:
+            await self._cleanup_state(old_state)
+
+        return new_state
+
+    async def _cleanup_state(self, sandbox_state: SandboxState) -> None:
+        """Clean up containers and network for a specific sandbox state."""
+        container_ids = [
+            sandbox_state.agent_container_id,
+            *sandbox_state.service_containers.values(),
+        ]
+        if container_ids:
+            await asyncio.gather(
+                *[self._cleanup_container(container_id) for container_id in container_ids],
+                return_exceptions=True,
+            )
+        if sandbox_state.network_id:
+            await self._cleanup_network(sandbox_state.network_id)
 
     async def clone(self, source_state: SandboxState) -> SandboxState:
         """Clone all containers from source_state.
@@ -155,16 +226,21 @@ class TaskSandboxContext:
                     service_id,
                     network_id=new_network_id,
                 )
-                for service_name, service_id in service_items
+                for _, service_id in service_items
             ]
         )
         new_service_ids = dict(zip([name for name, _ in service_items], cloned_ids, strict=False))
 
+        # Note: Cloned containers do not have their own port bindings configured.
+        # We copy the source's agent_port_bindings, which is acceptable because
+        # cloning is only used for snapshottable environments that don't need
+        # host port access (browser environment uses replace_sandbox instead).
         return SandboxState(
             agent_container_id=new_agent_id,
             service_containers=new_service_ids,
             network_id=new_network_id,
             execution_id=self.execution_id,
+            agent_port_bindings=source_state.agent_port_bindings,
         )
 
     async def cleanup(self) -> None:
@@ -191,34 +267,45 @@ class TaskSandboxContext:
                 return_exceptions=True,  # Continue cleanup even if one fails
             )
 
-    async def _create_network(self, task_setup: TaskSetup, network_enabled: bool) -> str:
+    async def _create_network(
+        self,
+        task_setup: TaskSetup,
+        network_enabled: bool,
+        *,
+        name_suffix: str | None = None,
+    ) -> str:
         """Create a network for multi-container setup.
 
         Args:
             task_setup: Task setup with network configuration
             network_enabled: Whether networking is enabled globally
+            name_suffix: Optional suffix for network name to avoid collisions
 
         Returns:
             Network ID
         """
+        suffix = f"-{name_suffix}" if name_suffix else ""
         if not network_enabled:
             # Network disabled, but we still need to create one for container linking
             # It will be created as internal-only
             network_config = {
-                "Name": f"{self.batch_state.batch_id}-{self.execution_id}-network",
+                "Name": f"{self.batch_state.batch_id}-{self.execution_id}-network{suffix}",
                 "Driver": "bridge",
                 "Internal": True,
             }
         elif task_setup.network_config:
             network_config = {
-                "Name": f"{self.batch_state.batch_id}-{self.execution_id}-{task_setup.network_config.name}",
+                "Name": (
+                    f"{self.batch_state.batch_id}-{self.execution_id}-"
+                    f"{task_setup.network_config.name}{suffix}"
+                ),
                 "Driver": "bridge",
                 "Internal": task_setup.network_config.internal,
             }
         else:
             # Default network for multi-container
             network_config = {
-                "Name": f"{self.batch_state.batch_id}-{self.execution_id}-network",
+                "Name": f"{self.batch_state.batch_id}-{self.execution_id}-network{suffix}",
                 "Driver": "bridge",
                 "Internal": False,
             }
@@ -258,7 +345,7 @@ class TaskSandboxContext:
         task_id: str,
         network_id: str | None,
         network_enabled: bool,
-    ) -> ContainerID:
+    ) -> tuple[ContainerID, PortBindings]:
         """Create and start a single container.
 
         Args:
@@ -268,7 +355,7 @@ class TaskSandboxContext:
             network_enabled: Whether networking is enabled
 
         Returns:
-            Container ID
+            Tuple of (Container ID, port bindings as container_port -> host_port)
         """
         logger.debug(
             f"Creating container for task_id={task_id}, container_name={container_setup.name}, "
@@ -354,8 +441,18 @@ class TaskSandboxContext:
         async with self._lock:
             self._containers[container_id] = ContainerInfo(container=container, temp_image=None)
 
+        # Extract actual port bindings (container_port -> host_port)
+        # NetworkSettings.Ports is like {"9222/tcp": [{"HostIp": "0.0.0.0", "HostPort": "32768"}]}
+        port_bindings: PortBindings = {}
+        network_ports = container_info.get("NetworkSettings", {}).get("Ports") or {}
+        for port_proto, bindings in network_ports.items():
+            if bindings:  # bindings can be None if port is exposed but not bound
+                container_port = int(port_proto.split("/")[0])
+                host_port = int(bindings[0]["HostPort"])
+                port_bindings[container_port] = host_port
+
         logger.debug(f"Successfully created and tracked container {container_name}")
-        return container_id
+        return container_id, port_bindings
 
     async def _clone_container(
         self,
@@ -467,12 +564,16 @@ class TaskSandboxContext:
         Returns:
             Docker container configuration dict
         """
-        config: dict[str, Any] = {"Image": image_tag}
+        config: dict[str, Any] = {"Image": image_tag, "HostConfig": {}}
 
-        # Set command (default to sleep infinity to keep container running)
-        if container_setup.spec.command:
+        # Set command
+        # - command is not None: use the specified command
+        # - command is None + use_image_cmd=True: rely on image CMD/ENTRYPOINT
+        # - command is None + use_image_cmd=False: default to "sleep infinity"
+        # Note: "sleep infinity" is needed for images without a CMD (e.g., SWE-bench instances).
+        if container_setup.spec.command is not None:
             config["Cmd"] = container_setup.spec.command
-        else:
+        elif not container_setup.spec.use_image_cmd:
             config["Cmd"] = ["sleep", "infinity"]
 
         # Set environment variables
@@ -484,6 +585,12 @@ class TaskSandboxContext:
         # Set hostname
         if container_setup.spec.hostname:
             config["Hostname"] = container_setup.spec.hostname
+
+        # Set port bindings
+        config["ExposedPorts"] = {f"{cp}/tcp": {} for cp in container_setup.spec.ports.values()}
+        config["HostConfig"]["PortBindings"] = {
+            f"{cp}/tcp": [{"HostPort": str(hp)}] for hp, cp in container_setup.spec.ports.items()
+        }
 
         # Apply network configuration
         # Network isolation has two modes:
@@ -507,7 +614,7 @@ class TaskSandboxContext:
             }
         elif not network_enabled:
             # No network_id and networking disabled: isolate container completely
-            config["HostConfig"] = {"NetworkMode": "none"}
+            config["HostConfig"]["NetworkMode"] = "none"
 
         return config
 
@@ -544,6 +651,8 @@ class TaskSandboxContext:
         Args:
             network_id: Network ID to clean up
         """
+        async with self._lock:
+            self._networks.discard(network_id)
         try:
             network = await self.batch_state.docker_client.get_network(network_id)
             await network.delete()

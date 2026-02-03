@@ -66,6 +66,7 @@ mini-goat = "prompt_siren.attacks.mini_goat_attack:create_mini_goat_attack"
 [project.entry-points."prompt_siren.datasets"]
 agentdojo = "prompt_siren.datasets.agentdojo_dataset:agentdojo_entry"
 swebench = "prompt_siren.datasets.swebench_dataset:swebench_entry"
+browser = "prompt_siren.datasets.browser_dataset:browser_entry"
 
 [project.entry-points."prompt_siren.sandbox_managers"]
 local-docker = "prompt_siren.sandbox_managers.docker:create_docker_sandbox_manager"
@@ -81,9 +82,16 @@ local = "prompt_siren.sandbox_managers.docker.local_client:create_local_docker_c
 agentdojo = ["agentdojo>=0.1.35"]
 swebench = ["swebench", "jinja2>=3.1.6"]
 docker = ["aiodocker>=0.24.0"]
-playwright = ["playwright>=1.54.0"]
+browser = [
+    "aiodocker>=0.24.0",
+    "playwright>=1.57.0",
+]
+playwright = [
+    "aiodocker>=0.24.0",
+    "playwright>=1.57.0",
+]
 all = [
-    "prompt-siren[agentdojo,swebench,docker,playwright]",
+    "prompt-siren[agentdojo,swebench,docker,browser]",
 ]
 ufmt = [
     "black==25.12.0",

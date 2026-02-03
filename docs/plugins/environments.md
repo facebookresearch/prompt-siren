@@ -14,7 +14,7 @@ Create a custom environment when:
 - You need different dependency types than existing environments
 - You need custom rendering or injection detection logic
 
-**Note**: If you're just adding new tasks, consider creating a custom dataset that reuses an existing environment (like `AgentDojoEnv` or `PlaywrightEnv`).
+**Note**: If you're just adding new tasks, consider creating a custom dataset that reuses an existing environment (like `AgentDojoEnv` or `BrowserEnvironment`).
 
 ### Environment Implementation
 

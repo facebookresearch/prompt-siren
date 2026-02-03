@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from ..abstract import ExecOutput
 from ..sandbox_state import ContainerID, SandboxState
-from ..sandbox_task_setup import ContainerSetup, SandboxTaskSetup
+from ..sandbox_task_setup import ContainerSetup, TaskSetup
 from .contexts import BatchState, TaskSandboxContext
 from .exec_utils import exec_in_container
 from .image_cache import ImageCache
@@ -94,7 +94,7 @@ class DockerSandboxManager:
         self._batch_state: BatchState | None = None
 
     @asynccontextmanager
-    async def setup_batch(self, task_setups: Sequence[SandboxTaskSetup]) -> AsyncIterator[None]:
+    async def setup_batch(self, task_setups: Sequence[TaskSetup]) -> AsyncIterator[None]:
         """Prepare all images and resources for the batch.
 
         Creates Docker client based on config, builds/pulls all images
@@ -181,7 +181,7 @@ class DockerSandboxManager:
             logger.debug("[DockerSandboxManager] setup_batch: Cleanup completed")
 
     @asynccontextmanager
-    async def setup_task(self, task_setup: SandboxTaskSetup) -> AsyncIterator[SandboxState]:
+    async def setup_task(self, task_setup: TaskSetup) -> AsyncIterator[SandboxState]:
         """Create containers and network for a task.
 
         Creates a TaskSandboxContext, sets up all containers and network,
@@ -296,6 +296,111 @@ class DockerSandboxManager:
             timeout=timeout,
             shell_path=shell_path,
         )
+
+    async def create_sandbox(self, task_setup: TaskSetup) -> SandboxState:
+        """Create containers and network for a task without context manager.
+
+        Unlike setup_task(), this method does not manage cleanup automatically.
+        The caller is responsible for calling destroy_sandbox() when done.
+
+        Args:
+            task_setup: Task setup specification
+
+        Returns:
+            SandboxState with container IDs and network ID
+        """
+        if self._batch_state is None:
+            raise RuntimeError("create_sandbox called outside of setup_batch context")
+
+        # Generate unique execution ID
+        execution_id = uuid.uuid4().hex
+
+        # Create task context
+        context = TaskSandboxContext(
+            task_id=task_setup.task_id,
+            execution_id=execution_id,
+            batch_state=self._batch_state,
+        )
+
+        # Register context in batch state
+        async with self._batch_state._lock:
+            self._batch_state.contexts[execution_id] = context
+
+        try:
+            # Create containers and network
+            return await context.create_containers(
+                task_setup, network_enabled=self._config.network_enabled
+            )
+        except BaseException:
+            # Roll back partially created resources and unregister the context.
+            # This mirrors setup_task() cleanup behavior, but only on failure
+            # because successful create_sandbox() leaves cleanup to the caller.
+            try:
+                await context.cleanup()
+            except BaseException as cleanup_error:
+                logger.warning(
+                    "[DockerSandboxManager] create_sandbox: cleanup failed for "
+                    "task_id=%s execution_id=%s: %s",
+                    task_setup.task_id,
+                    execution_id,
+                    cleanup_error,
+                    exc_info=cleanup_error,
+                )
+            finally:
+                async with self._batch_state._lock:
+                    self._batch_state.contexts.pop(execution_id, None)
+            raise
+
+    async def replace_sandbox(
+        self,
+        sandbox_state: SandboxState,
+        task_setup: TaskSetup,
+        *,
+        cleanup_in_background: bool = True,
+    ) -> SandboxState:
+        """Replace an existing sandbox with a fresh one."""
+        if self._batch_state is None:
+            raise RuntimeError("replace_sandbox called outside of setup_batch context")
+
+        # Look up the context that owns the containers
+        async with self._batch_state._lock:
+            context = self._batch_state.contexts.get(sandbox_state.execution_id)
+
+        if context is None:
+            raise ValueError(
+                f"Cannot replace sandbox state: execution_id {sandbox_state.execution_id} not found"
+            )
+
+        return await context.replace_sandbox(
+            sandbox_state,
+            task_setup,
+            network_enabled=self._config.network_enabled,
+            cleanup_in_background=cleanup_in_background,
+        )
+
+    async def destroy_sandbox(self, sandbox_state: SandboxState) -> None:
+        """Destroy containers and network for a sandbox.
+
+        Cleans up all containers and network associated with the sandbox state.
+        Safe to call multiple times (idempotent).
+
+        Args:
+            sandbox_state: Sandbox state to destroy
+        """
+        if self._batch_state is None:
+            # Already cleaned up or never initialized - nothing to do
+            return
+
+        # Look up the context that owns the containers
+        async with self._batch_state._lock:
+            context = self._batch_state.contexts.pop(sandbox_state.execution_id, None)
+
+        if context is None:
+            # Already cleaned up - nothing to do
+            return
+
+        # Cleanup all resources
+        await context.cleanup()
 
 
 def create_docker_sandbox_manager(

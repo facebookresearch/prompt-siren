@@ -14,7 +14,6 @@ from ..sandbox_managers.sandbox_task_setup import (
     ContainerSetup,
     ContainerSpec,
     NetworkConfig,
-    SandboxTaskSetup,
     TaskSetup,
 )
 from ..tasks import BenignTask, MaliciousTask, TaskCouple
@@ -196,7 +195,7 @@ def _create_task_couple_setup(task: TaskCouple[BashEnvState]) -> TaskSetup:
 
 def _create_task_setup_from_task(
     task: TaskCouple[BashEnvState] | BenignTask[BashEnvState] | MaliciousTask[BashEnvState],
-) -> SandboxTaskSetup:
+) -> TaskSetup:
     """Convert task to unified setup structure.
 
     For TaskCouple: creates multi-container setup with benign + attack containers

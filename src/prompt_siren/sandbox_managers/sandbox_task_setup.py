@@ -1,19 +1,24 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 from dataclasses import dataclass
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .image_spec import ImageSpec
 
 
 class ContainerSpec(BaseModel):
-    """Specification for any container."""
+    """Specification for any container.
+
+    Attributes:
+        ports: Mapping of host_port -> container_port (e.g., {9222: 9222}).
+    """
 
     image_spec: ImageSpec
     hostname: str | None = None
-    ports: list[str] | None = None
+    ports: dict[int, int] = Field(default_factory=dict)
     environment: dict[str, str] | None = None
     command: str | list[str] | None = None
+    use_image_cmd: bool = False
 
 
 @dataclass(frozen=True)
@@ -49,6 +54,3 @@ class TaskSetup:
     agent_container: ContainerSetup  # Required: container where agent tools execute
     service_containers: dict[str, ContainerSetup]  # Optional: named service containers
     network_config: NetworkConfig | None = None  # Auto-create if service_containers non-empty
-
-
-SandboxTaskSetup = TaskSetup

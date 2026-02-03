@@ -29,14 +29,21 @@ def get_testable_datasets() -> list[str]:
     return [dataset_type for dataset_type in get_registered_datasets() if dataset_type != "mock"]
 
 
-@pytest.fixture(params=get_testable_datasets())
-def dataset_instance(request) -> AbstractDataset:
-    """Fixture that provides dataset instances for all registered datasets.
+def get_datasets_with_malicious_tasks() -> list[str]:
+    """Get list of dataset types that have malicious tasks defined.
 
-    Creates datasets using default configurations from their config classes.
-    Provides a mock sandbox manager for datasets that require it.
+    Filters out 'mock' and 'browser' datasets.
+    'browser' is excluded because PR1 ships infrastructure only; PR2 will add malicious tasks.
     """
-    dataset_type = request.param
+    return [
+        dataset_type
+        for dataset_type in get_registered_datasets()
+        if dataset_type not in ("mock", "browser")
+    ]
+
+
+def _create_dataset_instance(dataset_type: str) -> AbstractDataset:
+    """Helper to create a dataset instance with mock sandbox manager."""
     config_class = get_dataset_config_class(dataset_type)
     config = config_class()  # Use defaults
 
@@ -45,6 +52,25 @@ def dataset_instance(request) -> AbstractDataset:
     mock_sandbox = create_mock_sandbox(mock_sandbox_config)
 
     return create_dataset(dataset_type, config, sandbox_manager=mock_sandbox)
+
+
+@pytest.fixture(params=get_testable_datasets())
+def dataset_instance(request) -> AbstractDataset:
+    """Fixture that provides dataset instances for all registered datasets.
+
+    Creates datasets using default configurations from their config classes.
+    Provides a mock sandbox manager for datasets that require it.
+    """
+    return _create_dataset_instance(request.param)
+
+
+@pytest.fixture(params=get_datasets_with_malicious_tasks())
+def dataset_with_malicious_tasks(request) -> AbstractDataset:
+    """Fixture that provides datasets which have malicious tasks defined.
+
+    This excludes datasets like 'browser' that ship with infrastructure-only in PR1.
+    """
+    return _create_dataset_instance(request.param)
 
 
 class TestDatasetProperties:
@@ -67,9 +93,13 @@ class TestDatasetProperties:
             assert ":" not in task.id, f"Benign task ID should not contain ':': {task.id}"
             assert task.prompt is not None
 
-    def test_malicious_tasks_property(self, dataset_instance: AbstractDataset):
-        """Test that malicious_tasks returns deduplicated malicious tasks."""
-        malicious_tasks = dataset_instance.malicious_tasks
+    def test_malicious_tasks_property(self, dataset_with_malicious_tasks: AbstractDataset):
+        """Test that malicious_tasks returns deduplicated malicious tasks.
+
+        This test only runs on datasets with malicious tasks defined.
+        Browser dataset is excluded (PR1 ships infrastructure only).
+        """
+        malicious_tasks = dataset_with_malicious_tasks.malicious_tasks
 
         # Should be a list of Task objects
         assert isinstance(malicious_tasks, list)
@@ -84,9 +114,13 @@ class TestDatasetProperties:
             assert ":" not in task.id, f"Malicious task ID should not contain ':': {task.id}"
             assert task.goal is not None
 
-    def test_task_couples_property(self, dataset_instance: AbstractDataset):
-        """Test that task_couples returns valid couples."""
-        couples = dataset_instance.task_couples
+    def test_task_couples_property(self, dataset_with_malicious_tasks: AbstractDataset):
+        """Test that task_couples returns valid couples.
+
+        This test only runs on datasets with malicious tasks/couples defined.
+        Browser dataset is excluded (PR1 ships infrastructure only).
+        """
+        couples = dataset_with_malicious_tasks.task_couples
 
         # Should be a list of TaskCouple objects
         assert isinstance(couples, list)
@@ -133,11 +167,15 @@ class TestDatasetProperties:
         assert hasattr(environment, "create_batch_context")
         assert hasattr(environment, "create_task_context")
 
-    def test_task_lists_are_independent(self, dataset_instance: AbstractDataset):
-        """Test that the three lists are independent and correctly formed."""
-        benign_tasks = dataset_instance.benign_tasks
-        malicious_tasks = dataset_instance.malicious_tasks
-        couples = dataset_instance.task_couples
+    def test_task_lists_are_independent(self, dataset_with_malicious_tasks: AbstractDataset):
+        """Test that the three lists are independent and correctly formed.
+
+        This test only runs on datasets with malicious tasks/couples defined.
+        Browser dataset is excluded (PR1 ships infrastructure only).
+        """
+        benign_tasks = dataset_with_malicious_tasks.benign_tasks
+        malicious_tasks = dataset_with_malicious_tasks.malicious_tasks
+        couples = dataset_with_malicious_tasks.task_couples
 
         # Lists should not be empty
         assert len(benign_tasks) > 0

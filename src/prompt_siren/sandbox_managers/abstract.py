@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Protocol, TypeAlias
 
 from .sandbox_state import ContainerID, SandboxState
-from .sandbox_task_setup import SandboxTaskSetup
+from .sandbox_task_setup import TaskSetup
 
 
 @dataclass(frozen=True)
@@ -97,7 +97,7 @@ class AbstractSandboxManager(Protocol):
 
     @asynccontextmanager
     @abstractmethod
-    async def setup_batch(self, task_setups: Sequence[SandboxTaskSetup]) -> AsyncIterator[None]:
+    async def setup_batch(self, task_setups: Sequence[TaskSetup]) -> AsyncIterator[None]:
         """Prepare all images (with modifications) for the batch.
 
         Responsibilities:
@@ -110,7 +110,7 @@ class AbstractSandboxManager(Protocol):
 
     @asynccontextmanager
     @abstractmethod
-    async def setup_task(self, task_setup: SandboxTaskSetup) -> AsyncIterator[SandboxState]:
+    async def setup_task(self, task_setup: TaskSetup) -> AsyncIterator[SandboxState]:
         """Create sandbox (containers and network) for a task.
 
         Uses configuration from task_setup to create containers and network.
@@ -164,5 +164,59 @@ class AbstractSandboxManager(Protocol):
 
         Returns:
             New SandboxState with fresh container IDs (and network ID for multi-container)
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def create_sandbox(self, task_setup: TaskSetup) -> SandboxState:
+        """Create a sandbox (containers and network) for a task without context manager.
+
+        Unlike setup_task(), this method does not manage cleanup automatically.
+        The caller is responsible for calling destroy_sandbox() when done.
+
+        This is useful for environments that need to recreate containers during
+        reset operations (e.g., NonSnapshottable environments).
+
+        Args:
+            task_setup: Task setup specification
+
+        Returns:
+            SandboxState with container IDs and network ID
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def replace_sandbox(
+        self,
+        sandbox_state: SandboxState,
+        task_setup: TaskSetup,
+        *,
+        cleanup_in_background: bool = True,
+    ) -> SandboxState:
+        """Replace an existing sandbox with a fresh one.
+
+        Creates a new sandbox for the same task and cleans up the old sandbox.
+        Implementations should support background cleanup to avoid blocking
+        replay/reset flows.
+
+        Args:
+            sandbox_state: Existing sandbox state to replace
+            task_setup: Task setup specification for the new sandbox
+            cleanup_in_background: Whether to clean up the old sandbox asynchronously
+
+        Returns:
+            New SandboxState with fresh container IDs and network ID
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def destroy_sandbox(self, sandbox_state: SandboxState) -> None:
+        """Destroy a sandbox (containers and network).
+
+        Cleans up all containers and network associated with the sandbox state.
+        Safe to call multiple times (idempotent).
+
+        Args:
+            sandbox_state: Sandbox state to destroy
         """
         raise NotImplementedError()

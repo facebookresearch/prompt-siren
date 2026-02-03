@@ -167,16 +167,16 @@ async with manager.setup_task(task_setup) as state:
 ```python
 from pathlib import Path
 from prompt_siren.sandbox_managers.abstract import AbstractSandboxManager
-from prompt_siren.sandbox_managers.sandbox_task_setup import SandboxTaskSetup
+from prompt_siren.sandbox_managers.sandbox_task_setup import TaskSetup
 from prompt_siren.sandbox_managers.sandbox_state import SandboxState
 
 class AbstractSandboxManager(Protocol):
     @asynccontextmanager
-    async def setup_batch(self, task_setups: Sequence[SandboxTaskSetup]) -> AsyncIterator[None]:
+    async def setup_batch(self, task_setups: Sequence[TaskSetup]) -> AsyncIterator[None]:
         """Prepare all images (pull/build) and shared resources for batch."""
 
     @asynccontextmanager
-    async def setup_task(self, task_setup: SandboxTaskSetup) -> AsyncIterator[SandboxState]:
+    async def setup_task(self, task_setup: TaskSetup) -> AsyncIterator[SandboxState]:
         """Create containers and network for task. MUST be async-safe for parallel execution."""
 
     async def exec(
@@ -219,7 +219,7 @@ manager = create_docker_sandbox_manager(config)
 **1. Define config and implement protocol**:
 ```python
 from prompt_siren.sandbox_managers.abstract import AbstractSandboxManager
-from prompt_siren.sandbox_managers.sandbox_task_setup import SandboxTaskSetup
+from prompt_siren.sandbox_managers.sandbox_task_setup import TaskSetup
 from prompt_siren.sandbox_managers.sandbox_state import SandboxState
 
 class MyCustomSandboxConfig(BaseModel):
@@ -231,12 +231,12 @@ class MyCustomSandboxManager:
         self._contexts: dict[str, Any] = {}
 
     @asynccontextmanager
-    async def setup_batch(self, task_setups: Sequence[SandboxTaskSetup]) -> AsyncIterator[None]:
+    async def setup_batch(self, task_setups: Sequence[TaskSetup]) -> AsyncIterator[None]:
         # Build all images
         yield
 
     @asynccontextmanager
-    async def setup_task(self, task_setup: SandboxTaskSetup) -> AsyncIterator[SandboxState]:
+    async def setup_task(self, task_setup: TaskSetup) -> AsyncIterator[SandboxState]:
         # Create containers and network
         yield SandboxState(...)
 
