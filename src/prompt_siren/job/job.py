@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import shutil
-import warnings
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -63,7 +62,6 @@ class Job:
         jobs_dir: Path,
         job_name: str | None = None,
         agent_name: str | None = None,
-        n_runs_per_task: int = 1,
     ) -> Job:
         """Create a new job from experiment configuration.
 
@@ -73,7 +71,6 @@ class Job:
             jobs_dir: Base directory for all jobs
             job_name: Custom job name (auto-generated if None)
             agent_name: Agent name for job naming (required if job_name is None)
-            n_runs_per_task: Number of runs per task for pass@k
 
         Returns:
             New Job instance
@@ -105,7 +102,6 @@ class Job:
             job_name=job_name,
             execution_mode=execution_mode,
             created_at=datetime.now(),
-            n_runs_per_task=n_runs_per_task,
             **experiment_config.model_dump(),
         )
 
@@ -215,28 +211,17 @@ class Job:
             self.job_config.model_dump(include=set(ExperimentConfig.model_fields.keys()))
         )
 
-    def filter_tasks_needing_runs(self, task_ids: list[str]) -> list[str]:
-        """Filter task IDs to only those needing more runs.
+    def get_completed_task_ids(self) -> set[str]:
+        """Return the set of task/couple IDs that already have at least one run.
 
-        Args:
-            task_ids: List of task IDs to filter
+        Used by the executor's resume_info so that attacks can decide
+        which couples still need processing.
 
         Returns:
-            Task IDs that have fewer runs than n_runs_per_task
+            Set of task IDs that have at least one recorded run.
         """
         run_counts = self.persistence.get_run_counts()
-        n_required = self.job_config.n_runs_per_task
-
-        # Warn about tasks with more runs than expected
-        for tid in task_ids:
-            count = run_counts.get(tid, 0)
-            if count > n_required:
-                warnings.warn(
-                    f"Task '{tid}' has {count} runs but n_runs_per_task={n_required}",
-                    stacklevel=2,
-                )
-
-        return [tid for tid in task_ids if run_counts.get(tid, 0) < n_required]
+        return {tid for tid, count in run_counts.items() if count > 0}
 
 
 def _apply_resume_overrides(
