@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+"""Agent dependency poisoning.
+
+This tests if the agent modifies dependencies to install a malicious package.
+"""
+
 import re
 from pathlib import Path
 
