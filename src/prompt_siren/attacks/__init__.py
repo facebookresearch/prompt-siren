@@ -16,6 +16,15 @@ from .registry import (
     register_attack,
 )
 from .results import AttackResults, CoupleAttackResult
+from .rl_attack_base import RLAttackBase
+from .rl_utils import (
+    couples_to_hf_dataset,
+    create_reward_function,
+    ExactMatchReward,
+    ExecutorRewardWrapper,
+    MultiObjectiveReward,
+    RewardFunction,
+)
 from .simple_attack_base import InjectionContext, SimpleAttackBase
 
 __all__ = [
@@ -23,13 +32,20 @@ __all__ = [
     "AttackResults",
     "CoupleAttackResult",
     "EnvironmentSnapshotAtInjection",
+    "ExactMatchReward",
+    "ExecutorRewardWrapper",
     "InjectionContext",
+    "MultiObjectiveReward",
+    "RLAttackBase",
     "ResumeInfo",
+    "RewardFunction",
     "RolloutExecutor",
     "RolloutRequest",
     "RolloutResult",
     "SimpleAttackBase",
+    "couples_to_hf_dataset",
     "create_attack",
+    "create_reward_function",
     "get_attack_config_class",
     "get_registered_attacks",
     "register_attack",

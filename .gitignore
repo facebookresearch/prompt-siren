@@ -26,6 +26,9 @@ traces
 
 .vscode/*
 /config/
+wandb/*
+results/*
+jobs-tree-search/*
 
 .swebench_cache
 .claude/*

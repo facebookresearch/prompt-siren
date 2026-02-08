@@ -62,6 +62,7 @@ template_string = "prompt_siren.attacks.template_string_attack:create_template_s
 dict = "prompt_siren.attacks.dict_attack:create_dict_attack"
 file = "prompt_siren.attacks.dict_attack:create_dict_attack_from_file"
 mini-goat = "prompt_siren.attacks.mini_goat_attack:create_mini_goat_attack"
+grpo = "prompt_siren.attacks.grpo_attack:create_grpo_attack"
 
 [project.entry-points."prompt_siren.datasets"]
 agentdojo = "prompt_siren.datasets.agentdojo_dataset:create_agentdojo_dataset"
@@ -82,8 +83,15 @@ agentdojo = ["agentdojo>=0.1.35"]
 swebench = ["swebench", "jinja2>=3.1.6"]
 docker = ["aiodocker>=0.24.0"]
 playwright = ["playwright>=1.54.0"]
+rl = [
+    "transformers>=4.40.0",
+    "trl>=0.9.0",
+    "peft>=0.11.0",
+    "torch>=2.0.0",
+    "datasets>=2.19.0",
+]
 all = [
-    "prompt-siren[agentdojo,swebench,docker,playwright]",
+    "prompt-siren[agentdojo,swebench,docker,playwright,rl]",
 ]
 ufmt = [
     "black==25.12.0",

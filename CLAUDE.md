@@ -58,6 +58,14 @@ uv run prompt-siren run benign --multirun +dataset=agentdojo-workspace agent.con
 # Parameter sweep with attacks
 uv run prompt-siren run attack --multirun +dataset=agentdojo-workspace +attack=template_string,mini-goat
 
+# Run RL-based GRPO attack (trains automatically if model not found)
+uv run prompt-siren run attack +dataset=agentdojo-workspace +attack=grpo
+
+# Configure GRPO attack parameters
+uv run prompt-siren run attack +dataset=agentdojo-workspace +attack=grpo \
+    attack.config.policy_model=meta-llama/Llama-3.1-8B-Instruct \
+    attack.config.num_train_epochs=5
+
 # Validate configuration
 uv run prompt-siren config validate +dataset=agentdojo-workspace +attack=template_string
 
@@ -131,6 +139,10 @@ uv run prompt-siren run attack --config-dir=./my_config
      - `dict_attack.py` - Dictionary-based attacks from config or files
      - `mini_goat_attack.py` - Mini-GOAT attack implementation
      - `target_string_attack.py` - Target string-based attacks
+     - `grpo_attack.py` - GRPO-based RL attack (requires `[rl]` extras)
+   - RL attack infrastructure:
+     - `rl_attack_base.py` - Base class for RL-based attacks with training support
+     - `rl_utils.py` - Utilities for reward functions and dataset conversion
    - `attack_utils.py` provides common utilities
 
 5. **Configuration System** (`src/prompt_siren/config/`)
@@ -235,6 +247,7 @@ The workbench uses Python entry points for extensibility. Components are registe
   - `dict` - Dictionary-based attacks from config
   - `file` - Dictionary-based attacks from file
   - `mini-goat` - Mini-GOAT attacks
+  - `grpo` - GRPO-based RL attacks (requires `[rl]` extras)
 
 - **Dataset plugins**: `prompt_siren.datasets` entry point
   - `agentdojo-workspace` - AgentDojo workspace dataset
@@ -301,6 +314,7 @@ Install optional features with: `pip install 'prompt-siren[feature]'`
 | `[swebench]` | `swebench`, `jinja2>=3.1.6` | SWE-bench dataset for code editing benchmarks |
 | `[docker]` | `aiodocker>=0.24.0` | Docker sandbox manager |
 | `[playwright]` | `playwright>=1.54.0` | Web automation environment |
+| `[rl]` | `transformers`, `trl`, `peft`, `torch`, `datasets` | RL-based attacks (GRPO) |
 | `[all]` | All optional deps | Full installation with all features |
 
 **Examples:**
@@ -313,6 +327,9 @@ pip install 'prompt-siren[agentdojo]'
 
 # SWE-bench with Docker sandbox manager
 pip install 'prompt-siren[swebench,docker]'
+
+# RL-based attacks (GRPO)
+pip install 'prompt-siren[rl]'
 
 # Everything
 pip install 'prompt-siren[all]'

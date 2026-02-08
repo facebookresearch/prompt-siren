@@ -395,6 +395,7 @@ async def run_attack(
         instrument=instrument,
         persistence=persistence,
         completed_task_ids=completed_task_ids,
+        job_dir=persistence.job_dir if persistence else None,
     )
 
     # Let the attack drive the execution
