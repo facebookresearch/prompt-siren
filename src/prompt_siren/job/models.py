@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.usage import RunUsage
 
@@ -75,7 +75,6 @@ class JobConfig(ExperimentConfig):
     job_name: str
     execution_mode: ExecutionMode
     created_at: datetime
-    n_runs_per_task: int = Field(default=1, ge=1, description="Number of runs per task for pass@k")
 
 
 class RunIndexEntry(BaseModel):
@@ -90,6 +89,25 @@ class RunIndexEntry(BaseModel):
     path: Path  # Relative path to run directory from job directory
 
 
+class AttackerExecution(BaseModel):
+    """Execution data for attacker LLM conversations in multi-turn attacks.
+
+    This captures the conversation between the attack orchestrator and the
+    attacker LLM that generates injection payloads.
+    """
+
+    task_id: str
+    run_id: str
+    strategy_name: str
+    round_num: int
+    total_rounds: int
+    timestamp: datetime
+    messages: list[ModelMessage]
+    final_injection: str | None = None
+    success: bool = False
+    num_turns: int = 0
+
+
 # Constants for file names
 CONFIG_FILENAME = "config.yaml"
 INDEX_FILENAME = "index.jsonl"
@@ -97,3 +115,4 @@ RESULT_FILENAME = "result.json"
 INDEX_LOCK_FILENAME = "index.jsonl.lock"
 TASK_RESULT_FILENAME = "result.json"
 TASK_EXECUTION_FILENAME = "execution.json"
+ATTACKER_EXECUTION_FILENAME = "attacker_execution.json"

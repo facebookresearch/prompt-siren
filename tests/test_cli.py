@@ -221,14 +221,12 @@ class TestJobsResumeCommand:
         assert captured_job is not None
         assert captured_job.job_config.execution.concurrency == 8
 
-    def test_resume_filters_tasks_by_n_runs_per_task(self, cli_runner: CliRunner, tmp_path: Path):
-        """Test that resume filters out tasks that have enough runs."""
-        # Create a job config with n_runs_per_task=2
+    def test_resume_tracks_completed_task_ids(self, cli_runner: CliRunner, tmp_path: Path):
+        """Test that resume correctly identifies completed tasks via get_completed_task_ids."""
         job_config = JobConfig(
             job_name="test_job",
             execution_mode="benign",
             created_at=datetime.now(),
-            n_runs_per_task=2,
             dataset=DatasetConfig(type="mock", config={}),
             agent=AgentConfig(type="plain", config={"model": "test"}),
             attack=None,
@@ -241,7 +239,7 @@ class TestJobsResumeCommand:
         job_dir.mkdir()
         _save_config_yaml(job_dir / "config.yaml", job_config)
 
-        # Create index entries: task1 has 2 runs (at limit), task2 has 1 run (needs more)
+        # Create index entries: task1 has 2 runs, task2 has 1 run
         index_entries = [
             RunIndexEntry(
                 task_id="task1",
@@ -289,10 +287,9 @@ class TestJobsResumeCommand:
         assert result.exit_code == 0, f"CLI failed: {result.output}"
         assert captured_job is not None
 
-        # Verify that filter_tasks_needing_runs correctly identifies which tasks need more runs
-        tasks_needing_runs = captured_job.filter_tasks_needing_runs(["task1", "task2", "task3"])
-        # task1 has 2 runs (at n_runs_per_task limit), task2 has 1 run, task3 has 0 runs
-        assert set(tasks_needing_runs) == {"task2", "task3"}
+        # Verify that get_completed_task_ids correctly identifies which tasks have runs
+        completed = captured_job.get_completed_task_ids()
+        assert completed == {"task1", "task2"}
 
 
 class TestJobsStartCommand:

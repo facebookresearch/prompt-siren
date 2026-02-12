@@ -29,7 +29,7 @@ class PydanticAILlamaProvider(Provider[AsyncOpenAI]):
 
     @property
     def base_url(self) -> str:
-        return "https://api.llama.com/compat/v1/"
+        return "https://api.llama.com/experimental/compat/openai/v1/"
 
     @property
     def client(self) -> AsyncOpenAI:

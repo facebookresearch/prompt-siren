@@ -490,18 +490,17 @@ class TestJobRunCounts:
         run_counts = job.persistence.get_run_counts()
         assert run_counts == {"task1": 3, "task2": 1}
 
-    def test_filter_tasks_needing_runs(self, experiment_config: ExperimentConfig, tmp_path: Path):
-        """Test that filter_tasks_needing_runs filters correctly."""
+    def test_get_completed_task_ids(self, experiment_config: ExperimentConfig, tmp_path: Path):
+        """Test that get_completed_task_ids returns IDs with at least one run."""
         job = Job.create(
             experiment_config=experiment_config,
             execution_mode="benign",
             jobs_dir=tmp_path,
             job_name="test_job",
             agent_name="test",
-            n_runs_per_task=2,
         )
 
-        # Create 2 runs for task1 (at limit), 1 for task2 (needs 1 more), 0 for task3
+        # Create runs for task1 and task2 but not task3
         for task_id, run_id in [
             ("task1", "aaa11111"),
             ("task1", "bbb22222"),
@@ -529,57 +528,21 @@ class TestJobRunCounts:
             with open(job.job_dir / "index.jsonl", "a") as f:
                 f.write(index_entry.model_dump_json() + "\n")
 
-        # task1 has 2 runs (at limit), task2 has 1 run (needs more), task3 has 0 runs
-        result = job.filter_tasks_needing_runs(["task1", "task2", "task3"])
-        assert set(result) == {"task2", "task3"}
+        completed = job.get_completed_task_ids()
+        assert completed == {"task1", "task2"}
 
-    def test_filter_warns_when_task_has_more_runs_than_expected(
+    def test_get_completed_task_ids_returns_empty_for_no_runs(
         self, experiment_config: ExperimentConfig, tmp_path: Path
     ):
-        """Test that a warning is emitted when a task has more runs than n_runs_per_task."""
+        """Test that get_completed_task_ids returns empty set when no runs exist."""
         job = Job.create(
             experiment_config=experiment_config,
             execution_mode="benign",
             jobs_dir=tmp_path,
             job_name="test_job",
             agent_name="test",
-            n_runs_per_task=1,
         )
-
-        # Create 3 runs for task1 (more than n_runs_per_task=1)
-        for run_id in ["aaa11111", "bbb22222", "ccc33333"]:
-            run_dir = job.job_dir / "task1" / run_id
-            run_dir.mkdir(parents=True)
-            result = TaskRunResult(
-                task_id="task1",
-                run_id=run_id,
-                started_at=datetime.now(),
-                finished_at=datetime.now(),
-            )
-            (run_dir / "result.json").write_text(result.model_dump_json())
-
-            index_entry = RunIndexEntry(
-                task_id="task1",
-                run_id=run_id,
-                timestamp=datetime.now(),
-                benign_score=1.0,
-                attack_score=None,
-                exception_type=None,
-                path=Path(f"task1/{run_id}"),
-            )
-            with open(job.job_dir / "index.jsonl", "a") as f:
-                f.write(index_entry.model_dump_json() + "\n")
-
-        import warnings
-
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            job.filter_tasks_needing_runs(["task1"])
-
-            assert len(w) == 1
-            assert "task1" in str(w[0].message)
-            assert "3 runs" in str(w[0].message)
-            assert "n_runs_per_task=1" in str(w[0].message)
+        assert job.get_completed_task_ids() == set()
 
 
 class TestJobToExperimentConfig:

@@ -1,21 +1,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 """Tests for job data models."""
 
-from datetime import datetime
-from pathlib import Path
-
-import pytest
-from prompt_siren.config.experiment_config import (
-    AgentConfig,
-    DatasetConfig,
-    ExecutionConfig,
-    OutputConfig,
-    TelemetryConfig,
-)
-from prompt_siren.job.models import (
-    ExceptionInfo,
-    JobConfig,
-)
+from prompt_siren.job.models import ExceptionInfo
 
 
 class TestExceptionInfo:
@@ -54,19 +40,3 @@ class TestExceptionInfo:
 
 class TestJobConfig:
     """Tests for JobConfig validation."""
-
-    def test_n_runs_per_task_rejects_zero(self):
-        """Test that n_runs_per_task must be >= 1."""
-        with pytest.raises(ValueError, match="greater than or equal to 1"):
-            JobConfig(
-                job_name="test",
-                execution_mode="benign",
-                created_at=datetime.now(),
-                n_runs_per_task=0,
-                dataset=DatasetConfig(type="test", config={}),
-                agent=AgentConfig(type="plain", config={}),
-                attack=None,
-                execution=ExecutionConfig(),
-                telemetry=TelemetryConfig(),
-                output=OutputConfig(jobs_dir=Path("jobs")),
-            )
