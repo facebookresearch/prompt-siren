@@ -6,6 +6,7 @@ Documentation for the Siren prompt injection research tool.
 
 - **[Configuration Guide](configuration.md)** - Basic usage and configuration
 - **[CLI Reference](cli.md)** - Running experiments, resuming jobs, viewing results
+- **[SLURM & Parallel Sweeps](slurm.md)** - Running on SLURM clusters with parameter sweeps
 - **[Docker Backends](docker_backends.md)** - Running with Local Docker
 - **[Usage Limits](usage_limits.md)** - Resource limits and cost controls
 - **[Plugins](plugins/README.md)** - Adding custom agents, attacks, environments

@@ -294,6 +294,56 @@ class TestJobsResumeCommand:
         # task1 has 2 runs (at n_runs_per_task limit), task2 has 1 run, task3 has 0 runs
         assert set(tasks_needing_runs) == {"task2", "task3"}
 
+    def test_resume_requires_one_of_path_sweep_or_pattern(self, cli_runner: CliRunner):
+        """Test that resume requires -p, -s, or --pattern."""
+        result = cli_runner.invoke(main, ["jobs", "resume"])
+        assert result.exit_code == 1
+        assert "Must specify one of" in result.output
+
+    def test_resume_rejects_multiple_targeting_options(self, cli_runner: CliRunner, tmp_path: Path):
+        """Test that resume rejects using multiple of -p, -s, --pattern together."""
+        job_dir = tmp_path / "test_job"
+        job_dir.mkdir()
+
+        result = cli_runner.invoke(
+            main,
+            ["jobs", "resume", "-p", str(job_dir), "-s", "2026-01-31_17-01-04"],
+        )
+        assert result.exit_code == 1
+        assert "Cannot specify multiple" in result.output
+
+    def test_resume_sweep_dry_run(
+        self, cli_runner: CliRunner, mock_job_config: JobConfig, tmp_path: Path
+    ):
+        """Test that resume with -s and --dry-run shows jobs without running them."""
+        # Create multiple job directories matching a sweep pattern
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+
+        for i in range(3):
+            job_dir = jobs_dir / f"job_2026-01-31_17-01-04_{i}"
+            job_dir.mkdir()
+            _save_config_yaml(job_dir / "config.yaml", mock_job_config)
+
+        result = cli_runner.invoke(
+            main,
+            [
+                "jobs",
+                "resume",
+                "-s",
+                "2026-01-31_17-01-04",
+                "-d",
+                str(jobs_dir),
+                "--dry-run",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Dry run" in result.output
+        assert "job_2026-01-31_17-01-04_0" in result.output
+        assert "job_2026-01-31_17-01-04_1" in result.output
+        assert "job_2026-01-31_17-01-04_2" in result.output
+
 
 class TestJobsStartCommand:
     """Tests for the 'jobs start' CLI command."""
@@ -356,6 +406,77 @@ class TestJobsStartCommand:
         call_kwargs = mock_run_hydra.call_args.kwargs
         overrides = call_kwargs["overrides"]
         assert any("output.job_name=my-custom-job" in o for o in overrides)
+
+    def test_start_with_runs_flag(self, cli_runner: CliRunner, tmp_path: Path):
+        """Test that -k/--runs adds run_id sweep and enables multirun."""
+        with patch("prompt_siren.cli._run_hydra") as mock_run_hydra:
+            cli_runner.invoke(
+                main,
+                [
+                    "jobs",
+                    "start",
+                    "benign",
+                    "-k",
+                    "10",
+                    f"--jobs-dir={tmp_path}",
+                    "+dataset=agentdojo-workspace",
+                ],
+            )
+
+        mock_run_hydra.assert_called_once()
+        call_kwargs = mock_run_hydra.call_args.kwargs
+        overrides = call_kwargs["overrides"]
+        # Should add run_id sweep override
+        assert any("run_id=range(10)" in o for o in overrides)
+        # Should enable multirun
+        assert call_kwargs["multirun"] is True
+
+    def test_start_with_runs_flag_short_option(self, cli_runner: CliRunner, tmp_path: Path):
+        """Test that -k is the short form of --runs."""
+        with patch("prompt_siren.cli._run_hydra") as mock_run_hydra:
+            cli_runner.invoke(
+                main,
+                [
+                    "jobs",
+                    "start",
+                    "attack",
+                    "-k",
+                    "50",
+                    f"--jobs-dir={tmp_path}",
+                    "+dataset=agentdojo-workspace",
+                    "+attack=mini-goat",
+                ],
+            )
+
+        mock_run_hydra.assert_called_once()
+        call_kwargs = mock_run_hydra.call_args.kwargs
+        overrides = call_kwargs["overrides"]
+        assert any("run_id=range(50)" in o for o in overrides)
+
+    def test_start_with_runs_and_slurm_flags(self, cli_runner: CliRunner, tmp_path: Path):
+        """Test that -k combined with --slurm works correctly."""
+        with patch("prompt_siren.cli._run_hydra") as mock_run_hydra:
+            cli_runner.invoke(
+                main,
+                [
+                    "jobs",
+                    "start",
+                    "benign",
+                    "-k",
+                    "100",
+                    "--slurm",
+                    f"--jobs-dir={tmp_path}",
+                    "+dataset=agentdojo-workspace",
+                ],
+            )
+
+        mock_run_hydra.assert_called_once()
+        call_kwargs = mock_run_hydra.call_args.kwargs
+        overrides = call_kwargs["overrides"]
+        # Should have both run_id sweep and slurm launcher
+        assert any("run_id=range(100)" in o for o in overrides)
+        assert any("hydra/launcher=submitit_slurm" in o for o in overrides)
+        assert call_kwargs["multirun"] is True
 
 
 class TestRunCommandAliases:

@@ -40,7 +40,9 @@ def _get_model_name(model_name: str | KnownModelName) -> str:
         return "ChatGPT"
     if "gemini" in model_name:
         return "Gemini"
-    raise UnknownModelError(f"Unknown model error: '{model_name}'")
+    if "llama" in model_name:
+        return "Llama"
+    return "Assistant"
 
 
 _DEFAULT_ATTACK_TEMPLATE = (

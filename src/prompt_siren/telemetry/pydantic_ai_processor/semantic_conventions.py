@@ -18,19 +18,44 @@ from opentelemetry.semconv._incubating.attributes.gen_ai_attributes import (
     GEN_AI_REQUEST_MAX_TOKENS,
     GEN_AI_REQUEST_MODEL,
     GEN_AI_REQUEST_PRESENCE_PENALTY,
-    GEN_AI_REQUEST_SEED,
     GEN_AI_REQUEST_STOP_SEQUENCES,
     GEN_AI_REQUEST_TEMPERATURE,
     GEN_AI_REQUEST_TOP_K,
     GEN_AI_REQUEST_TOP_P,
     GEN_AI_SYSTEM,
-    GEN_AI_TOOL_CALL_ID,
-    GEN_AI_TOOL_DESCRIPTION,
-    GEN_AI_TOOL_NAME,
     GEN_AI_USAGE_INPUT_TOKENS,
     GEN_AI_USAGE_OUTPUT_TOKENS,
     GenAiOperationNameValues,
 )
+
+# These constants were removed/renamed in opentelemetry-semantic-conventions >= 1.28.0
+try:
+    from opentelemetry.semconv._incubating.attributes.gen_ai_attributes import (
+        GEN_AI_REQUEST_SEED,
+    )
+except ImportError:
+    GEN_AI_REQUEST_SEED = "gen_ai.request.seed"
+
+try:
+    from opentelemetry.semconv._incubating.attributes.gen_ai_attributes import (
+        GEN_AI_TOOL_CALL_ID,
+    )
+except ImportError:
+    GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id"
+
+try:
+    from opentelemetry.semconv._incubating.attributes.gen_ai_attributes import (
+        GEN_AI_TOOL_DESCRIPTION,
+    )
+except ImportError:
+    GEN_AI_TOOL_DESCRIPTION = "gen_ai.tool.description"
+
+try:
+    from opentelemetry.semconv._incubating.attributes.gen_ai_attributes import (
+        GEN_AI_TOOL_NAME,
+    )
+except ImportError:
+    GEN_AI_TOOL_NAME = "gen_ai.tool.name"
 
 
 # Many event related conventions are not in the opentelemetry-python package yet

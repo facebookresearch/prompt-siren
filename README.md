@@ -79,6 +79,12 @@ uv run prompt-siren run benign +dataset=agentdojo-workspace agent.config.model=a
 # Parameter sweep (multirun)
 uv run prompt-siren run benign --multirun +dataset=agentdojo-workspace agent.config.model=azure:gpt-5,azure:gpt-5-nano
 
+# SLURM sweep with repetitions (2 models × 10 runs = 20 jobs)
+uv run --env-file .env prompt-siren run attack --multirun \
+  +dataset=agentdojo-workspace +attack=mini-goat \
+  agent.config.model=azure:gpt-4o,azure:gpt-5 '+run_id=range(10)' \
+  hydra/launcher=submitit_slurm
+
 # Validate configuration without running
 uv run prompt-siren config validate +dataset=agentdojo-workspace
 
@@ -86,7 +92,7 @@ uv run prompt-siren config validate +dataset=agentdojo-workspace
 uv run prompt-siren run attack --config-dir=./my_config
 ```
 
-**Tip**: Environment and attack can be specified via CLI overrides or included directly in config files. See the [Configuration Guide](docs/configuration.md) for details.
+**Tip**: Environment and attack can be specified via CLI overrides or included directly in config files. See the [Configuration Guide](docs/configuration.md) for details. For SLURM sweeps, see [SLURM & Parallel Sweeps](docs/slurm.md).
 
 ## Analyzing Results
 

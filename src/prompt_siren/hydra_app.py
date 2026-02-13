@@ -4,6 +4,8 @@
 import asyncio
 
 import hydra
+import logfire
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 from pydantic import ValidationError
 from pydantic_ai.exceptions import UserError
@@ -19,12 +21,61 @@ from .config.registry_bridge import (
     create_sandbox_manager_from_config,
 )
 from .datasets.registry import get_dataset_config_class
-from .job import Job
+from .job import Job, SweepRegistry
 from .registry_base import UnknownComponentError
 from .run import run_single_tasks_without_attack, run_task_couples_with_attack
-from .telemetry import setup_telemetry
+from .telemetry import add_file_logging, close_file_logging, setup_telemetry
 from .telemetry.formatted_span import formatted_span
 from .types import ExecutionMode
+
+
+def _register_job_in_sweep(job: Job, jobs_dir) -> None:
+    """Register a job as part of a Hydra sweep if in multirun mode.
+
+    Args:
+        job: The job instance to register
+        jobs_dir: Base directory for jobs
+    """
+    if not HydraConfig.initialized():
+        return
+
+    hydra_cfg = HydraConfig.get()
+
+    # Check if we're in multirun mode
+    if hydra_cfg.mode is None or hydra_cfg.mode.name != "MULTIRUN":
+        return
+
+    # Extract sweep info from Hydra config
+    # The sweep dir is typically like: /path/to/sweeps/2026-01-31_17-01-04
+    sweep_dir = hydra_cfg.sweep.dir
+    sweep_id = sweep_dir.split("/")[-1] if sweep_dir else None
+
+    if not sweep_id:
+        return
+
+    # Get launcher info if available
+    launcher = None
+    if hasattr(hydra_cfg, "launcher") and hydra_cfg.launcher:
+        launcher = hydra_cfg.launcher.get("_target_", None)
+        if launcher:
+            # Extract launcher name from class path
+            launcher = launcher.split(".")[-1] if "." in launcher else launcher
+
+    # Register this job in the sweep
+    registry = SweepRegistry(jobs_dir)
+    registry.register_job(
+        sweep_id=sweep_id,
+        job_name=job.job_config.job_name,
+        hydra_sweep_dir=sweep_dir,
+        launcher=launcher,
+        config_name=hydra_cfg.job.config_name if hasattr(hydra_cfg.job, "config_name") else None,
+    )
+
+    logfire.debug(
+        "Registered job in sweep: {sweep_id}",
+        sweep_id=sweep_id,
+        job_name=job.job_config.job_name,
+    )
 
 
 def validate_config(cfg: DictConfig, execution_mode: ExecutionMode) -> ExperimentConfig:
@@ -119,23 +170,35 @@ async def run_benign_experiment(
     Returns:
         Dictionary mapping task IDs to evaluation results
     """
-    # Setup telemetry
+    # Setup telemetry (includes console output based on config)
     setup_telemetry(
         enable_console_export=experiment_config.telemetry.trace_console,
         otlp_endpoint=experiment_config.telemetry.otel_endpoint,
+        log_level=experiment_config.logging.level,
     )
 
     # Create components
     agent = create_agent_from_config(experiment_config.agent)
+    logfire.info(
+        "Agent: {agent_name} (type: {agent_type})",
+        agent_name=agent.get_agent_name(),
+        agent_type=experiment_config.agent.type,
+    )
 
     # Create sandbox manager if configured
     sandbox_manager = None
     if experiment_config.sandbox_manager is not None:
         sandbox_manager = create_sandbox_manager_from_config(experiment_config.sandbox_manager)
+        logfire.info(
+            "Sandbox manager: {sandbox_type}",
+            sandbox_type=experiment_config.sandbox_manager.type,
+        )
 
     dataset = create_dataset_from_config(experiment_config.dataset, sandbox_manager)
     env_instance = dataset.environment
     toolsets = dataset.default_toolsets
+    logfire.info("Dataset: {dataset_type}", dataset_type=experiment_config.dataset.type)
+    logfire.info("Environment: {env_name}", env_name=env_instance.name)
 
     # Get tasks from dataset: benign + malicious (both can be run as benign)
     all_tasks = dataset.benign_tasks + dataset.malicious_tasks
@@ -161,19 +224,34 @@ async def run_benign_experiment(
             jobs_dir=experiment_config.output.jobs_dir,
             job_name=experiment_config.output.job_name,
             agent_name=agent.get_agent_name(),
+            n_runs_per_task=experiment_config.execution.n_runs_per_task,
         )
-        print(f"Job: {job.job_config.job_name}")
-        print(f"Job directory: {job.job_dir}")
+        logfire.info("Created new job: {job_name}", job_name=job.job_config.job_name)
+        logfire.info("Job directory: {job_dir}", job_dir=str(job.job_dir))
+
+        # Register job in sweep if running in multirun mode
+        _register_job_in_sweep(job, experiment_config.output.jobs_dir)
     else:
-        print(f"Resuming job: {job.job_config.job_name}")
-        print(f"Job directory: {job.job_dir}")
+        logfire.info("Resuming job: {job_name}", job_name=job.job_config.job_name)
+        logfire.info("Job directory: {job_dir}", job_dir=str(job.job_dir))
 
         # Filter out tasks that already have enough runs
         task_ids_needing_runs = set(job.filter_tasks_needing_runs([t.id for t in selected_tasks]))
         selected_tasks = [t for t in selected_tasks if t.id in task_ids_needing_runs]
         if not selected_tasks:
-            print("All tasks have completed the required number of runs.")
+            logfire.info("All tasks have completed the required number of runs.")
             return {}
+
+    # Set up file logging to job directory
+    if experiment_config.logging.file:
+        add_file_logging(job.job_dir / "siren.log", log_level=experiment_config.logging.level)
+        logfire.debug("Logging to file: {log_file}", log_file=str(job.job_dir / "siren.log"))
+
+    logfire.info(
+        "Tasks to run: {task_count} (concurrency: {concurrency})",
+        task_count=len(selected_tasks),
+        concurrency=experiment_config.execution.concurrency,
+    )
 
     # Run benign experiment
     with formatted_span(
@@ -192,6 +270,12 @@ async def run_benign_experiment(
             persistence=job.persistence,
             instrument=True,
         )
+
+        logfire.info("Completed {task_count} tasks", task_count=len(results))
+
+        # Close file logging if enabled
+        if experiment_config.logging.file:
+            close_file_logging()
 
         # Convert results to expected format
         return {result.task_id: result.results for result in results}
@@ -213,24 +297,37 @@ async def run_attack_experiment(
     if experiment_config.attack is None:
         raise ValueError("Attack configuration required for attack experiments")
 
-    # Setup telemetry
+    # Setup telemetry (includes console output based on config)
     setup_telemetry(
         enable_console_export=experiment_config.telemetry.trace_console,
         otlp_endpoint=experiment_config.telemetry.otel_endpoint,
+        log_level=experiment_config.logging.level,
     )
 
     # Create components
     agent = create_agent_from_config(experiment_config.agent)
+    logfire.info(
+        "Agent: {agent_name} (type: {agent_type})",
+        agent_name=agent.get_agent_name(),
+        agent_type=experiment_config.agent.type,
+    )
 
     # Create sandbox manager if configured
     sandbox_manager = None
     if experiment_config.sandbox_manager is not None:
         sandbox_manager = create_sandbox_manager_from_config(experiment_config.sandbox_manager)
+        logfire.info(
+            "Sandbox manager: {sandbox_type}",
+            sandbox_type=experiment_config.sandbox_manager.type,
+        )
 
     dataset = create_dataset_from_config(experiment_config.dataset, sandbox_manager)
     env_instance = dataset.environment
     attack_instance = create_attack_from_config(experiment_config.attack)
     toolsets = dataset.default_toolsets
+    logfire.info("Dataset: {dataset_type}", dataset_type=experiment_config.dataset.type)
+    logfire.info("Environment: {env_name}", env_name=env_instance.name)
+    logfire.info("Attack: {attack_type}", attack_type=experiment_config.attack.type)
 
     # Get task couples from dataset
     all_couples = dataset.task_couples
@@ -256,12 +353,16 @@ async def run_attack_experiment(
             jobs_dir=experiment_config.output.jobs_dir,
             job_name=experiment_config.output.job_name,
             agent_name=agent.get_agent_name(),
+            n_runs_per_task=experiment_config.execution.n_runs_per_task,
         )
-        print(f"Job: {job.job_config.job_name}")
-        print(f"Job directory: {job.job_dir}")
+        logfire.info("Created new job: {job_name}", job_name=job.job_config.job_name)
+        logfire.info("Job directory: {job_dir}", job_dir=str(job.job_dir))
+
+        # Register job in sweep if running in multirun mode
+        _register_job_in_sweep(job, experiment_config.output.jobs_dir)
     else:
-        print(f"Resuming job: {job.job_config.job_name}")
-        print(f"Job directory: {job.job_dir}")
+        logfire.info("Resuming job: {job_name}", job_name=job.job_config.job_name)
+        logfire.info("Job directory: {job_dir}", job_dir=str(job.job_dir))
 
         # Filter out couples that already have enough runs
         couple_ids_needing_runs = set(
@@ -269,8 +370,19 @@ async def run_attack_experiment(
         )
         selected_couples = [c for c in selected_couples if c.id in couple_ids_needing_runs]
         if not selected_couples:
-            print("All task couples have completed the required number of runs.")
+            logfire.info("All task couples have completed the required number of runs.")
             return {}
+
+    # Set up file logging to job directory
+    if experiment_config.logging.file:
+        add_file_logging(job.job_dir / "siren.log", log_level=experiment_config.logging.level)
+        logfire.debug("Logging to file: {log_file}", log_file=str(job.job_dir / "siren.log"))
+
+    logfire.info(
+        "Task couples to run: {count} (concurrency: {concurrency})",
+        count=len(selected_couples),
+        concurrency=experiment_config.execution.concurrency,
+    )
 
     # Run attack experiment
     with formatted_span(
@@ -296,6 +408,12 @@ async def run_attack_experiment(
         for benign_result, malicious_result in results:
             formatted_results[benign_result.task_id] = benign_result.results
             formatted_results[malicious_result.task_id] = malicious_result.results
+
+        logfire.info("Completed {count} task couples", count=len(results))
+
+        # Close file logging if enabled
+        if experiment_config.logging.file:
+            close_file_logging()
 
         return formatted_results
 
@@ -333,7 +451,7 @@ def hydra_main_with_config_path(config_path: str, execution_mode: ExecutionMode)
             ValueError,
             UserError,
         ) as e:
-            print(f"Configuration validation failed: {e}")
+            logfire.error("Configuration validation failed: {error}", error=str(e))
             raise SystemExit(1) from e
 
         # Dispatch to appropriate experiment runner based on mode

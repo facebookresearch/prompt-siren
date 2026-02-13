@@ -1,0 +1,44 @@
+# @package hydra.launcher
+# Submitit SLURM launcher - Generic template
+# Copy this to config/hydra/launcher/submitit_slurm.yaml and customize
+_target_: hydra_plugins.hydra_submitit_launcher.submitit_launcher.SlurmLauncher
+
+# Note: Log directory is controlled by hydra.sweep.dir in the main config file
+
+# SLURM account for billing/resource tracking
+# REQUIRED: Set your account name
+account: null
+
+# QoS (Quality of Service) for job prioritization
+# REQUIRED: Set your QoS
+qos: null
+
+# SLURM partition (optional if using QoS)
+partition: null
+
+# Job timeout in minutes
+timeout_min: 240
+
+# Resource allocation
+cpus_per_task: 16
+gpus_per_node: 0
+tasks_per_node: 1
+mem_gb: 8
+nodes: 1
+
+# Limit concurrent jobs (0 = no limit)
+max_num_timeout: 0
+
+# Setup commands (module loads, environment activation, etc.)
+# Example: ["module load python/3.10", "source ~/.bashrc"]
+setup: null
+
+# Additional SLURM parameters
+# export: ALL ensures environment variables (like API keys) are propagated
+additional_parameters:
+  export: ALL
+
+# Other settings
+comment: null
+name: ${hydra.job.name}
+stderr_to_stdout: false

@@ -292,12 +292,23 @@ async def run_single_tasks_without_attack(
     Raises:
         ExceptionGroup: If any tasks fail, contains all exceptions from failed tasks
     """
+    total_tasks = len(tasks)
+    completed_count = 0
+    completed_lock = asyncio.Lock()
+
     concurrency_limiter = (
         asyncio.BoundedSemaphore(max_concurrency) if max_concurrency is not None else nullcontext()
     )
 
-    async def run_single(task: Task[EnvStateT]) -> SingleTaskExecutionResult[EnvStateT]:
+    async def run_single(task: Task[EnvStateT], index: int) -> SingleTaskExecutionResult[EnvStateT]:
         """Run task and return result or error without propagating."""
+        nonlocal completed_count
+        logfire.debug(
+            "Starting task {index}/{total}: {task_id}",
+            index=index + 1,
+            total=total_tasks,
+            task_id=task.id,
+        )
         try:
             result = await _run_single_task_without_attack(
                 task,
@@ -310,8 +321,28 @@ async def run_single_tasks_without_attack(
                 instrument,
                 persistence,
             )
+            async with completed_lock:
+                completed_count += 1
+                score = _calculate_evaluation_score(result)
+                logfire.info(
+                    "Completed task {completed}/{total}: {task_id} (score: {score:.2f})",
+                    completed=completed_count,
+                    total=total_tasks,
+                    task_id=task.id,
+                    score=score,
+                )
             return ExecutionOk(task, result)
         except (Exception, asyncio.CancelledError) as e:
+            async with completed_lock:
+                completed_count += 1
+                logfire.warn(
+                    "Failed task {completed}/{total}: {task_id} - {error_type}: {error}",
+                    completed=completed_count,
+                    total=total_tasks,
+                    task_id=task.id,
+                    error_type=type(e).__name__,
+                    error=str(e),
+                )
             return ExecutionError(task, e)
 
     # TODO(py3.10): Replace with asyncio.TaskGroup once Python 3.10 support is dropped
@@ -320,7 +351,7 @@ async def run_single_tasks_without_attack(
     execution_results: list[tuple[int, SingleTaskExecutionResult[EnvStateT]]] = []
 
     async def run_and_collect(index: int, task: Task[EnvStateT]) -> None:
-        result = await run_single(task)
+        result = await run_single(task, index)
         execution_results.append((index, result))
 
     async with env.create_batch_context(tasks):
@@ -500,14 +531,26 @@ async def run_task_couples_with_attack(
     Raises:
         ExceptionGroup: If any couples fail, contains all exceptions from failed couples
     """
+    total_couples = len(couples)
+    completed_count = 0
+    completed_lock = asyncio.Lock()
+
     concurrency_limiter = (
         asyncio.BoundedSemaphore(max_concurrency) if max_concurrency is not None else nullcontext()
     )
 
     async def run_couple(
         couple: TaskCouple[EnvStateT],
+        index: int,
     ) -> CoupleExecutionResult[EnvStateT]:
         """Run couple and return result or error without propagating."""
+        nonlocal completed_count
+        logfire.debug(
+            "Starting couple {index}/{total}: {couple_id}",
+            index=index + 1,
+            total=total_couples,
+            couple_id=couple.id,
+        )
         try:
             result = await _run_task_couple_with_attack(
                 couple,
@@ -521,8 +564,30 @@ async def run_task_couples_with_attack(
                 attack,
                 persistence,
             )
+            async with completed_lock:
+                completed_count += 1
+                benign_score = _calculate_evaluation_score(result[0])
+                attack_score = _calculate_evaluation_score(result[1])
+                logfire.info(
+                    "Completed couple {completed}/{total}: {couple_id} (benign: {benign_score:.2f}, attack: {attack_score:.2f})",
+                    completed=completed_count,
+                    total=total_couples,
+                    couple_id=couple.id,
+                    benign_score=benign_score,
+                    attack_score=attack_score,
+                )
             return ExecutionOk(couple, result)
         except (Exception, asyncio.CancelledError) as e:
+            async with completed_lock:
+                completed_count += 1
+                logfire.warn(
+                    "Failed couple {completed}/{total}: {couple_id} - {error_type}: {error}",
+                    completed=completed_count,
+                    total=total_couples,
+                    couple_id=couple.id,
+                    error_type=type(e).__name__,
+                    error=str(e),
+                )
             return ExecutionError(couple, e)
 
     # TODO(py3.10): Replace with asyncio.TaskGroup once Python 3.10 support is dropped
@@ -531,7 +596,7 @@ async def run_task_couples_with_attack(
     execution_results: list[tuple[int, CoupleExecutionResult[EnvStateT]]] = []
 
     async def run_and_collect(index: int, couple: TaskCouple[EnvStateT]) -> None:
-        result = await run_couple(couple)
+        result = await run_couple(couple, index)
         execution_results.append((index, result))
 
     async with env.create_batch_context(couples):

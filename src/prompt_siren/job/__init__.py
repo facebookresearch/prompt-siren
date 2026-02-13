@@ -4,6 +4,12 @@
 from .job import Job, JobConfigMismatchError
 from .models import JobConfig, RunIndexEntry
 from .persistence import JobPersistence
+from .sweep import (
+    find_sweep_jobs_by_pattern,
+    get_job_status,
+    SweepMetadata,
+    SweepRegistry,
+)
 
 __all__ = [
     "Job",
@@ -11,4 +17,8 @@ __all__ = [
     "JobConfigMismatchError",
     "JobPersistence",
     "RunIndexEntry",
+    "SweepMetadata",
+    "SweepRegistry",
+    "find_sweep_jobs_by_pattern",
+    "get_job_status",
 ]

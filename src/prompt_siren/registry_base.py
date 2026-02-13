@@ -12,6 +12,7 @@ import typing
 from collections.abc import Callable
 from typing import Any, Generic, TypeAlias, TypeVar
 
+import logfire
 from pydantic import BaseModel
 
 ComponentT = TypeVar("ComponentT")
@@ -106,10 +107,16 @@ class BaseRegistry(Generic[ComponentT, ContextT]):
                     # Store the import error silently - will be raised when plugin is actually requested
                     self._failed_entry_points[ep.name] = e
                 except Exception as e:
-                    print(f"Warning: Failed to load entry point {ep.name}: {e}")
+                    logfire.warn(
+                        "Failed to load entry point {name}: {error}", name=ep.name, error=str(e)
+                    )
 
         except Exception as e:
-            print(f"Warning: Failed to load entry points for {self._entry_point_group}: {e}")
+            logfire.warn(
+                "Failed to load entry points for {group}: {error}",
+                group=self._entry_point_group,
+                error=str(e),
+            )
 
         self._entry_points_loaded = True
 
