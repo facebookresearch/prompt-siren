@@ -36,6 +36,7 @@ class GroupBy(StrEnum):
     AGENT = auto()
     ATTACK = auto()
     AGENT_NAME = auto()
+    TARGET_LANGUAGE = auto()
     ALL = auto()
 
 
@@ -49,7 +50,7 @@ class Format(StrEnum):
 
 # Grouping columns used for aggregation
 # Note: job_name is not included to allow grouping across jobs with the same agent/attack config
-_ALL_GROUP_COLS = ["dataset", "agent_type", "agent_name", "attack_type"]
+_ALL_GROUP_COLS = ["dataset", "agent_type", "agent_name", "attack_type", "target_language"]
 
 
 def estimate_pass_at_k(num_samples: int | list[int], num_correct: list[int], k: int) -> np.ndarray:
@@ -117,6 +118,12 @@ def _parse_index_entry(line: str, job_config: JobConfig) -> dict[str, Any]:
         row["attack_type"] = attack_type
         row["attack_config"] = attack_config
 
+        # Extract target_language from attack config (for multilingual attacks)
+        if attack_config and "target_language" in attack_config:
+            row["target_language"] = attack_config["target_language"]
+        else:
+            row["target_language"] = None
+
         # For template_string attacks, append the template_short_name
         if attack_type == "template_string" and attack_config:
             template_short_name = attack_config.get("template_short_name")
@@ -125,6 +132,7 @@ def _parse_index_entry(line: str, job_config: JobConfig) -> dict[str, Any]:
     else:
         row["attack_type"] = "benign"
         row["attack_config"] = None
+        row["target_language"] = None
 
     row["job_name"] = job_config.job_name
 
@@ -231,7 +239,7 @@ def _group_by_task(df: pd.DataFrame, k: int = 1) -> pd.DataFrame:
     if k == 1:
         # Original behavior: average across timestamps
         numeric_cols = ["benign_score", "attack_score"]
-        grouped = df.groupby(group_cols)
+        grouped = df.groupby(group_cols, dropna=False)
         result = grouped[numeric_cols].mean().reset_index()
         # Add metadata: average number of samples per task
         result["n_samples"] = grouped.size().values
@@ -241,7 +249,7 @@ def _group_by_task(df: pd.DataFrame, k: int = 1) -> pd.DataFrame:
 
     # For k > 1: compute pass@k metric
     results = []
-    for group_key, group in df.groupby(group_cols):
+    for group_key, group in df.groupby(group_cols, dropna=False):
         n_samples = len(group)
 
         # Error if we don't have enough samples
@@ -349,7 +357,7 @@ def aggregate_results(
     # Stage 2: Optional grouping by user selection
     if group_by == "all":
         # Show all configurations - group by all config columns (averaging across tasks)
-        grouped = df.groupby(_ALL_GROUP_COLS)
+        grouped = df.groupby(_ALL_GROUP_COLS, dropna=False)
         result = grouped[score_cols].mean().reset_index()
         # Add metadata columns
         result["n_tasks"] = grouped.size().values
@@ -365,7 +373,7 @@ def aggregate_results(
             "agent_name",
             "attack_type",
         ]
-        grouped = df.groupby(dataset_suite_group_cols)
+        grouped = df.groupby(dataset_suite_group_cols, dropna=False)
         result = grouped[score_cols].mean().reset_index()
         # Add metadata columns
         result["n_tasks"] = grouped.size().values
@@ -373,18 +381,20 @@ def aggregate_results(
         return result
 
     # Group by specific dimension
-    # Handle agent_name explicitly
+    # Handle special cases explicitly
     if group_by == GroupBy.AGENT_NAME:
         group_col = "agent_name"
     elif group_by == GroupBy.DATASET:
         group_col = "dataset"
+    elif group_by == GroupBy.TARGET_LANGUAGE:
+        group_col = "target_language"
     else:
         group_col = f"{group_by}_type"
 
     if group_col not in df.columns:
         return df
 
-    grouped = df.groupby(group_col)
+    grouped = df.groupby(group_col, dropna=False)
     result = grouped[score_cols].mean().reset_index()
     # Add metadata columns
     result["n_tasks"] = grouped.size().values
@@ -406,6 +416,10 @@ def format_as_table(df: pd.DataFrame) -> str:
 
     display_df = df.copy()
 
+    # Replace NaN in non-numeric columns with "N/A" for display
+    if "target_language" in display_df.columns:
+        display_df["target_language"] = display_df["target_language"].fillna("N/A")
+
     # Format numeric columns as floats (handle both pass@k and legacy column names)
     for col in display_df.columns:
         if col in ["benign_score", "attack_score"]:
@@ -419,7 +433,7 @@ def format_as_table(df: pd.DataFrame) -> str:
             # Format as integers
             display_df[col] = display_df[col].apply(lambda x: str(int(x)) if pd.notna(x) else "N/A")
 
-    return tabulate(display_df, headers="keys", tablefmt="grid", showindex=False)
+    return tabulate(display_df, headers="keys", tablefmt="grid", showindex=False, missingval="N/A")
 
 
 def format_as_json(df: pd.DataFrame) -> str:
