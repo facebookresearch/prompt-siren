@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import final, Generic, Protocol, TypeAlias, TypeVar
 
 from pydantic import BaseModel
 from pydantic_ai import ModelMessage, RunContext, UserContent
-from typing_extensions import assert_never
 
 from .types import InjectableUserContent
 
@@ -65,10 +65,10 @@ class BenignTask(Generic[EnvStateT]):
 
     id: TaskID
     """Unique identifier for this task"""
-    prompt: str | list[UserContent | InjectableUserContent]
+    prompt: str | Sequence[UserContent | InjectableUserContent]
     """The user's request to the agent. Can be:
         - str: A simple text prompt
-        - list[UserContent | InjectableUserContent]: A complex prompt with multiple
+        - Sequence[UserContent | InjectableUserContent]: A complex prompt with multiple
             parts (text, images, etc.) that may include injectable content for attack
             testing. Use this form when testing prompt injection attacks that require
             specific content types or injection points."""
@@ -87,15 +87,12 @@ class BenignTask(Generic[EnvStateT]):
 
     def __post_init__(self) -> None:
         """Validate that prompt is not empty."""
-        match self.prompt:
-            case str():
-                if not self.prompt.strip():
-                    raise ValueError(f"BenignTask {self.id}: prompt string cannot be empty")
-            case list():
-                if not self.prompt:
-                    raise ValueError(f"BenignTask {self.id}: prompt list cannot be empty")
-            case _:
-                assert_never(self.prompt)
+        if isinstance(self.prompt, str):
+            if not self.prompt.strip():
+                raise ValueError(f"BenignTask {self.id}: prompt string cannot be empty")
+        else:
+            if not self.prompt:
+                raise ValueError(f"BenignTask {self.id}: prompt sequence cannot be empty")
 
     async def evaluate(self, task_result: TaskResult) -> EvaluationResult:
         """Evaluate the task result using all evaluators.
