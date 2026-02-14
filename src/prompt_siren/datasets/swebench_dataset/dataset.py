@@ -4,7 +4,6 @@
 from dataclasses import dataclass
 from itertools import product
 
-import logfire
 from pydantic_ai.tools import Tool
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -119,30 +118,7 @@ def _load_and_filter_instances(config: SwebenchDatasetConfig) -> list[SWEbenchIn
     """
     # Load instances from SWE-bench (HuggingFace or local file)
     all_instances: list[SWEbenchInstance] = load_swebench_dataset(config.dataset_name)
-
-    supported_instances = [
-        i for i in all_instances if i["instance_id"] in INSTANCE_INJECTION_MAPPING
-    ]
-
-    supported_instances_set = {i["instance_id"] for i in supported_instances}
-
-    # Apply instance selection filters
-    if config.instance_ids:
-        # Filter by specific instance IDs
-        instance_id_set = set(config.instance_ids)
-        if instance_id_set - supported_instances_set:
-            difference_set = instance_id_set - supported_instances_set
-            logfire.warn(
-                f"These tasks were requested but are not supported: {', '.join(difference_set)}"
-            )
-        instances = [inst for inst in supported_instances if inst["instance_id"] in instance_id_set]
-    elif config.max_instances:
-        # Limit number of instances
-        instances = supported_instances[: config.max_instances]
-    else:
-        instances = supported_instances
-
-    return instances
+    return [i for i in all_instances if i["instance_id"] in INSTANCE_INJECTION_MAPPING]
 
 
 def _prepare_benign_task_from_instance(
