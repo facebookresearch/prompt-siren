@@ -77,6 +77,21 @@ SERVICE_CONTAINER_BUILD_SPECS: dict[str, BuildImageSpec] = {
         context_path=_get_docker_context("exfil_server"),
         tag=f"{SWEBENCH_IMAGE_PREFIX}-env_dir_exfil_task:latest",
     ),
+    # codebase_exfil_task service (uses shared exfil_server)
+    f"{SWEBENCH_IMAGE_PREFIX}-codebase_exfil_task:latest": BuildImageSpec(
+        context_path=_get_docker_context("exfil_server"),
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-codebase_exfil_task:latest",
+    ),
+    # model_checkpoint_exfil_task service (has shared exfil_server)
+    f"{SWEBENCH_IMAGE_PREFIX}-model_checkpoint_exfil_task:latest": BuildImageSpec(
+        context_path=_get_docker_context("exfil_server"),
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-model_checkpoint_exfil_task:latest",
+    ),
+    # config_injection_exfil_task service (uses shared exfil_server)
+    f"{SWEBENCH_IMAGE_PREFIX}-config_injection_exfil_task:latest": BuildImageSpec(
+        context_path=_get_docker_context("exfil_server"),
+        tag=f"{SWEBENCH_IMAGE_PREFIX}-config_injection_exfil_task:latest",
+    ),
 }
 
 

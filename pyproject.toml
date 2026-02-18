@@ -62,6 +62,7 @@ template_string = "prompt_siren.attacks.template_string_attack:create_template_s
 dict = "prompt_siren.attacks.dict_attack:create_dict_attack"
 file = "prompt_siren.attacks.dict_attack:create_dict_attack_from_file"
 mini-goat = "prompt_siren.attacks.mini_goat_attack:create_mini_goat_attack"
+multilingual = "prompt_siren.attacks.multilingual_attack:create_multilingual_attack"
 
 [project.entry-points."prompt_siren.datasets"]
 agentdojo = "prompt_siren.datasets.agentdojo_dataset:create_agentdojo_dataset"
@@ -94,7 +95,7 @@ ufmt = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.8.2,<0.10.0"]
+requires = ["uv_build>=0.8.2,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.ruff]
@@ -123,6 +124,10 @@ select = [
     "UP",
     "RUF",
 ]
+
+# HTTP server handlers require specific method names (do_GET, do_POST)
+[tool.ruff.lint.per-file-ignores]
+"src/prompt_siren/datasets/swebench_dataset/dockerfiles/**/server.py" = ["N802"]
 
 # Settings to ensure compatibility with Meta code style guides
 [tool.ruff.lint.isort]

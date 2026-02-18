@@ -131,10 +131,11 @@ async def inject_injectable_model_request(
             case InjectableUserPromptPart(content, _):
                 injected_content_parts = []
                 for content_part in content:
-                    if isinstance(content_part, UserContent):
+                    if isinstance(content_part, InjectableStrContent | InjectableBinaryContent):
+                        injected_content_parts.append(content_part.inject(attacks))
+                    else:
+                        # It's UserContent
                         injected_content_parts.append(content_part)
-                        continue
-                    injected_content_parts.append(content_part.inject(attacks))
                 injected_parts.append(UserPromptPart(injected_content_parts))
             case InjectableRetryPromptPart():
                 injected_parts.append(
