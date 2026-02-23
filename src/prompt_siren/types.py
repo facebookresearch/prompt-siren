@@ -148,10 +148,11 @@ class InjectableUserPromptPart:
     ) -> Sequence[UserContent]:
         injected_content_parts = []
         for content_part in self.content:
-            if isinstance(content_part, UserContent):
+            if isinstance(content_part, InjectableStrContent | InjectableBinaryContent):
+                injected_content_parts.append(content_part.inject(attacks))
+            else:
+                # It's UserContent
                 injected_content_parts.append(content_part)
-                continue
-            injected_content_parts.append(content_part.inject(attacks))
         return injected_content_parts
 
 

@@ -54,8 +54,7 @@ from importlib.resources import files
 
 from ....sandbox_managers.image_spec import BuildImageSpec, PullImageSpec
 from ....sandbox_managers.sandbox_task_setup import ContainerSpec
-from ..constants import SWEBENCH_IMAGE_PREFIX
-from ..image_tags import get_basic_agent_image_tag
+from ..image_tags import get_basic_agent_image_tag, get_service_image_tag
 
 # Get the docker directory path using importlib.resources
 _DOCKER_CONTEXT_PATH = files("prompt_siren.datasets.swebench_dataset").joinpath("dockerfiles")
@@ -141,7 +140,8 @@ def get_certificate_install_dockerfile(hostname: str) -> str:
         hostname: The hostname for the certificate (must be in _CERTIFICATES)
 
     Returns:
-        Dockerfile RUN commands to install and trust the certificate
+        Dockerfile RUN commands to install and trust the certificate, plus
+        ENV commands to ensure Python's ssl module uses the system CA bundle.
 
     Raises:
         KeyError: If hostname is not in _CERTIFICATES
@@ -150,11 +150,18 @@ def get_certificate_install_dockerfile(hostname: str) -> str:
         Uses base64 encoding to avoid issues with heredocs in Dockerfiles.
         Dockerfile RUN commands don't properly handle multi-line heredocs
         because each line is parsed independently.
+
+        Sets SSL_CERT_FILE and REQUESTS_CA_BUNDLE environment variables so that
+        Python's urllib and the requests library use the updated system CA bundle.
+        This is necessary because Python may use a bundled CA store by default.
     """
     certificate = _CERTIFICATES[hostname]
     cert_b64 = base64.b64encode(certificate.encode()).decode()
     return f"""# Install certificate for {hostname}
-RUN echo '{cert_b64}' | base64 -d > /usr/local/share/ca-certificates/{hostname}.crt && update-ca-certificates"""
+RUN echo '{cert_b64}' | base64 -d > /usr/local/share/ca-certificates/{hostname}.crt && update-ca-certificates
+# Set SSL_CERT_FILE so Python's ssl module uses the updated system CA bundle
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"""
 
 
 def get_service_container_build_spec(dockerfile_subdir: str, task_id: str) -> BuildImageSpec:
@@ -169,7 +176,7 @@ def get_service_container_build_spec(dockerfile_subdir: str, task_id: str) -> Bu
     """
     return BuildImageSpec(
         context_path=str(_DOCKER_CONTEXT_PATH.joinpath(dockerfile_subdir)),
-        tag=f"{SWEBENCH_IMAGE_PREFIX}-{task_id}:latest",
+        tag=get_service_image_tag(task_id),
     )
 
 
@@ -182,4 +189,4 @@ def get_service_container_pull_spec(task_id: str) -> PullImageSpec:
     Returns:
         PullImageSpec for pulling the pre-built service container
     """
-    return PullImageSpec(tag=f"{SWEBENCH_IMAGE_PREFIX}-{task_id}:latest")
+    return PullImageSpec(tag=get_service_image_tag(task_id))

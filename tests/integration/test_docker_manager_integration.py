@@ -9,7 +9,6 @@ Skip with: pytest -vx -m "not docker_integration"
 """
 
 import asyncio
-import contextlib
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -229,17 +228,9 @@ class TestMultiContainerNetworking:
         test_image: str,
         docker_client_type: str,
         create_manager_config,
-        docker_client,
+        build_test_images,  # Pre-builds the network test image
     ):
         """Test that containers on the same network can resolve each other by hostname."""
-        # PRE-TEST CLEANUP: Remove any existing test image
-        # Use docker_client fixture ONLY for pre-cleanup
-        try:
-            await docker_client.delete_image("prompt-siren-network-test:latest", force=True)
-        except Exception:
-            pass  # Image might not exist, that's fine
-
-        # Now create manager and run the actual test
         config = create_manager_config(
             docker_client_type, network_enabled=True, test_images=test_image
         )
@@ -723,24 +714,20 @@ class TestConcurrentExecution:
 
 @pytest.mark.docker_integration
 class TestImageBuilding:
-    """Tests for building Docker images from Dockerfiles."""
+    """Tests for using pre-built Docker images.
+
+    Note: Images are pre-built by the build_test_images fixture. The ImageCache
+    no longer builds images at runtime - it only verifies they exist.
+    """
 
     async def test_build_image_from_dockerfile(
         self,
         test_image: str,
         docker_client_type: str,
         create_manager_config,
-        docker_client,
+        build_test_images,  # Pre-builds the test images
     ):
-        """Test building an image from a Dockerfile using BuildImageSpec."""
-        # PRE-TEST CLEANUP: Remove any existing test image
-        # Use docker_client fixture ONLY for pre-cleanup
-        try:
-            await docker_client.delete_image("prompt-siren-test-build:latest", force=True)
-        except Exception:
-            pass  # Image might not exist, that's fine
-
-        # Now create manager and run the actual test
+        """Test using a pre-built image from a Dockerfile using BuildImageSpec."""
         config = create_manager_config(
             docker_client_type, network_enabled=False, test_images=test_image
         )
@@ -761,7 +748,7 @@ class TestImageBuilding:
         )
 
         async with manager.setup_batch([task_setup]):
-            # Verify image was built by using it to create a container
+            # Verify image exists by using it to create a container
             async with manager.setup_task(task_setup) as sandbox_state:
                 result = await manager.exec(
                     sandbox_state.agent_container_id,
@@ -771,28 +758,14 @@ class TestImageBuilding:
                 assert result.stdout is not None
                 assert "Test build successful" in result.stdout
 
-            # Cleanup using abstract interface
-            assert manager._batch_state is not None
-            await manager._batch_state.docker_client.delete_image(
-                "prompt-siren-test-build:latest", force=True
-            )
-
     async def test_build_with_build_args(
         self,
         test_image: str,
         docker_client_type: str,
         create_manager_config,
-        docker_client,
+        build_test_images,  # Pre-builds the test images
     ):
-        """Test building an image with build_args and custom dockerfile_path."""
-        # PRE-TEST CLEANUP: Remove any existing test image
-        # Use docker_client fixture ONLY for pre-cleanup
-        try:
-            await docker_client.delete_image("prompt-siren-test-build-args:latest", force=True)
-        except Exception:
-            pass  # Image might not exist, that's fine
-
-        # Now create manager and run the actual test
+        """Test using a pre-built image with build_args and custom dockerfile_path."""
         config = create_manager_config(
             docker_client_type, network_enabled=False, test_images=test_image
         )
@@ -825,28 +798,14 @@ class TestImageBuilding:
                 assert result.stdout is not None
                 assert "custom_value" in result.stdout
 
-            # Cleanup using abstract interface
-            assert manager._batch_state is not None
-            await manager._batch_state.docker_client.delete_image(
-                "prompt-siren-test-build-args:latest", force=True
-            )
-
     async def test_mixed_pull_and_build_specs(
         self,
         test_image: str,
         docker_client_type: str,
         create_manager_config,
-        docker_client,
+        build_test_images,  # Pre-builds the test images
     ):
-        """Test using both PullImageSpec and BuildImageSpec in the same batch."""
-        # PRE-TEST CLEANUP: Remove any existing test image
-        # Use docker_client fixture ONLY for pre-cleanup
-        try:
-            await docker_client.delete_image("prompt-siren-test-mixed:latest", force=True)
-        except Exception:
-            pass  # Image might not exist, that's fine
-
-        # Now create manager and run the actual test
+        """Test using both PullImageSpec and (pre-built) BuildImageSpec in the same batch."""
         config = create_manager_config(
             docker_client_type, network_enabled=False, test_images=test_image
         )
@@ -894,12 +853,6 @@ class TestImageBuilding:
                 assert result2.stdout is not None
                 assert "Test build successful" in result2.stdout
 
-            # Cleanup using abstract interface
-            assert manager._batch_state is not None
-            await manager._batch_state.docker_client.delete_image(
-                "prompt-siren-test-mixed:latest", force=True
-            )
-
 
 # ==================== Multi-Stage Build Tests ====================
 
@@ -913,20 +866,13 @@ class TestMultiStageBuild:
         multistage_test_images: list[str],
         docker_client_type: str,
         create_manager_config,
-        docker_client,
+        build_multistage_test_images,  # Pre-builds the multi-stage test images
     ):
-        """Test that multi-stage build creates all three stages correctly."""
+        """Test that pre-built multi-stage images work correctly."""
         base_tag = "test-multistage-base:latest"
         env_tag = "test-multistage-env:latest"
         instance_tag = "test-multistage-instance:latest"
 
-        # PRE-TEST CLEANUP: Remove any existing images
-        # Use docker_client fixture ONLY for pre-cleanup
-        for tag in [base_tag, env_tag, instance_tag]:
-            with contextlib.suppress(Exception):
-                await docker_client.delete_image(tag, force=True)
-
-        # Now create manager and run the actual test
         config = create_manager_config(
             docker_client_type, network_enabled=False, test_images=multistage_test_images
         )
@@ -951,7 +897,7 @@ class TestMultiStageBuild:
             ),
         ]
 
-        multi_stage_spec = MultiStageBuildImageSpec(stages=stages, final_tag=instance_tag)
+        multi_stage_spec = MultiStageBuildImageSpec(stages=stages)
 
         container_spec = ContainerSpec(image_spec=multi_stage_spec)
         agent_container = ContainerSetup(name="agent", spec=container_spec)
@@ -985,31 +931,18 @@ class TestMultiStageBuild:
                 assert result.stdout is not None
                 assert "Instance ready" in result.stdout
 
-            # Cleanup using abstract interface
-            assert manager._batch_state is not None
-            docker_client = manager._batch_state.docker_client
-            for tag in [base_tag, env_tag, instance_tag]:
-                await docker_client.delete_image(tag, force=True)
-
     async def test_multi_stage_build_caching(
         self,
         multistage_test_images: list[str],
         docker_client_type: str,
         create_manager_config,
-        docker_client,
+        build_multistage_test_images,  # Pre-builds the multi-stage test images
     ):
-        """Test that multi-stage build properly caches intermediate stages."""
+        """Test that pre-built multi-stage images can be used in multiple batches."""
         base_tag = "test-multistage-cache-base:latest"
         env_tag = "test-multistage-cache-env:latest"
         instance_tag = "test-multistage-cache-instance:latest"
 
-        # PRE-TEST CLEANUP: Remove any existing images
-        # Use docker_client fixture ONLY for pre-cleanup
-        for tag in [base_tag, env_tag, instance_tag]:
-            with contextlib.suppress(Exception):
-                await docker_client.delete_image(tag, force=True)
-
-        # Now create manager and run the actual test
         config = create_manager_config(
             docker_client_type, network_enabled=False, test_images=multistage_test_images
         )
@@ -1034,12 +967,12 @@ class TestMultiStageBuild:
             ),
         ]
 
-        multi_stage_spec = MultiStageBuildImageSpec(stages=stages, final_tag=instance_tag)
+        multi_stage_spec = MultiStageBuildImageSpec(stages=stages)
 
         container_spec = ContainerSpec(image_spec=multi_stage_spec)
         agent_container = ContainerSetup(name="agent", spec=container_spec)
 
-        # First build - all stages should be built
+        # First batch - verify images exist and work
         task_setup1 = TaskSetup(
             task_id="cache-test-1",
             agent_container=agent_container,
@@ -1048,7 +981,7 @@ class TestMultiStageBuild:
         )
 
         async with manager.setup_batch([task_setup1]):
-            # Verify all images created by inspecting them
+            # Verify all images exist by inspecting them
             assert manager._batch_state is not None
             docker_client = manager._batch_state.docker_client
 
@@ -1057,10 +990,7 @@ class TestMultiStageBuild:
             await docker_client.inspect_image(env_tag)
             await docker_client.inspect_image(instance_tag)
 
-            # Delete only instance image
-            await docker_client.delete_image(instance_tag, force=True)
-
-        # Second build - base and env should be cached
+        # Second batch - verify images still work
         task_setup2 = TaskSetup(
             task_id="cache-test-2",
             agent_container=agent_container,
@@ -1069,14 +999,6 @@ class TestMultiStageBuild:
         )
 
         async with manager.setup_batch([task_setup2]):
-            # Verify all images exist again by inspecting them
-            assert manager._batch_state is not None
-            docker_client = manager._batch_state.docker_client
-
-            await docker_client.inspect_image(base_tag)
-            await docker_client.inspect_image(env_tag)
-            await docker_client.inspect_image(instance_tag)
-
             # Verify functionality
             async with manager.setup_task(task_setup2) as sandbox_state:
                 result = await manager.exec(
@@ -1087,16 +1009,12 @@ class TestMultiStageBuild:
                 assert result.stdout is not None
                 assert "Instance ready" in result.stdout
 
-            # Cleanup using abstract interface
-            for tag in [base_tag, env_tag, instance_tag]:
-                await docker_client.delete_image(tag, force=True)
-
     async def test_shared_base_and_env_stages(
         self,
         multistage_test_images: list[str],
         docker_client_type: str,
         create_manager_config,
-        docker_client,
+        build_multistage_test_images,  # Pre-builds the multi-stage test images
     ):
         """Test multiple instances sharing base and env stages."""
         base_tag = "test-shared-base:latest"
@@ -1104,13 +1022,6 @@ class TestMultiStageBuild:
         instance1_tag = "test-shared-instance1:latest"
         instance2_tag = "test-shared-instance2:latest"
 
-        # PRE-TEST CLEANUP: Remove any existing images
-        # Use docker_client fixture ONLY for pre-cleanup
-        for tag in [base_tag, env_tag, instance1_tag, instance2_tag]:
-            with contextlib.suppress(Exception):
-                await docker_client.delete_image(tag, force=True)
-
-        # Now create manager and run the actual test
         config = create_manager_config(
             docker_client_type, network_enabled=False, test_images=multistage_test_images
         )
@@ -1136,7 +1047,6 @@ class TestMultiStageBuild:
                     parent_tag=env_tag,
                 ),
             ],
-            final_tag=instance1_tag,
         )
 
         spec2 = MultiStageBuildImageSpec(
@@ -1158,7 +1068,6 @@ class TestMultiStageBuild:
                     parent_tag=env_tag,
                 ),
             ],
-            final_tag=instance2_tag,
         )
 
         task_setups = [
@@ -1183,7 +1092,7 @@ class TestMultiStageBuild:
         ]
 
         async with manager.setup_batch(task_setups):
-            # Verify all images created by inspecting them
+            # Verify all images exist by inspecting them
             assert manager._batch_state is not None
             docker_client = manager._batch_state.docker_client
 
@@ -1207,10 +1116,6 @@ class TestMultiStageBuild:
                     ["cat", "/env-marker.txt"],
                 )
                 assert result.exit_code == 0
-
-            # Cleanup using abstract interface
-            for tag in [base_tag, env_tag, instance1_tag, instance2_tag]:
-                await docker_client.delete_image(tag, force=True)
 
 
 # ==================== Stdin Handling Tests ====================

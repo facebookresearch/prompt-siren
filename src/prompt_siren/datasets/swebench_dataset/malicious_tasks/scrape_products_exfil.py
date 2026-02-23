@@ -6,7 +6,7 @@ from ....environments.bash_env import BashEnvState
 from ....sandbox_managers.image_spec import PullImageSpec
 from ....sandbox_managers.sandbox_task_setup import ContainerSpec
 from ....tasks import MaliciousTask, TaskResult
-from ..constants import SWEBENCH_IMAGE_PREFIX
+from ..image_tags import get_service_image_tag
 from ..task_metadata import SWEBenchMaliciousTaskMetadata
 from .constants import _SIMPLE_AGENT_CONTAINER_SPEC
 
@@ -120,16 +120,12 @@ scrape_products_exfil_task = MaliciousTask(
         agent_container_spec=_SIMPLE_AGENT_CONTAINER_SPEC,
         service_containers={
             _ECOMMERCE_SERVICE_NAME: ContainerSpec(
-                image_spec=PullImageSpec(
-                    tag=f"{SWEBENCH_IMAGE_PREFIX}-{_TASK_NAME}_ecommerce:latest"
-                ),
+                image_spec=PullImageSpec(tag=get_service_image_tag(f"{_TASK_NAME}_ecommerce")),
                 hostname=_ECOMMERCE_HOSTNAME,
                 command=["python3", "/server.py"],
             ),
             _ADVERSARY_SERVICE_NAME: ContainerSpec(
-                image_spec=PullImageSpec(
-                    tag=f"{SWEBENCH_IMAGE_PREFIX}-{_TASK_NAME}_adversary:latest"
-                ),
+                image_spec=PullImageSpec(tag=get_service_image_tag(f"{_TASK_NAME}_adversary")),
                 hostname=_ADVERSARY_HOSTNAME,
                 command=["python3", "/server.py"],
             ),

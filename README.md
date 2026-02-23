@@ -67,9 +67,6 @@ uv run prompt-siren run attack +dataset=agentdojo-workspace +attack=template_str
 # Run SWE-bench evaluation (requires Docker)
 uv run prompt-siren run benign +dataset=swebench
 
-# Run SWE-bench with specific instances
-uv run prompt-siren run benign +dataset=swebench dataset.config.instance_ids='["django__django-11179"]'
-
 # Run SWE-bench Lite (smaller benchmark)
 uv run prompt-siren run benign +dataset=swebench dataset.config.dataset_name="SWE-bench/SWE-bench_Lite"
 
@@ -163,6 +160,9 @@ uv run pytest -v
 ### Pre-building Docker Images for SWE-bench
 
 The main `prompt-siren` CLI only works with pre-built Docker images. To build all required images for SWE-bench evaluations, use the `prompt-siren-build-images` command:
+
+Default registry for pushes: `ghcr.io/ethz-spylab/prompt-siren-images`. Use `--registry ""`
+to disable pushes or override with your own registry.
 
 ```sh
 # Build all images (benign, malicious service containers, and pairs)

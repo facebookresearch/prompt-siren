@@ -15,9 +15,6 @@ class SwebenchDatasetConfig(BaseModel):
     dataset_name: str = "SWE-bench/SWE-bench_Lite"
     """HuggingFace dataset name or path to local JSON/JSONL file."""
 
-    max_instances: int | None = None
-    """Maximum number of instances to load (None = all). Useful for testing."""
-
     # Build options
     use_cache: bool = True
     """Whether to use Docker build cache."""
@@ -25,13 +22,10 @@ class SwebenchDatasetConfig(BaseModel):
     build_timeout: int = 1800
     """Docker build timeout in seconds (default: 30 minutes)."""
 
-    cache_dir: str = ".swebench_cache"
-    """Directory to cache build contexts and generated scripts."""
-
     # Registry configuration
-    registry: str | None = None
-    """Optional Docker registry prefix for pulling pre-built images.
-    If specified, this prefix will be prepended to image tags when pulling.
+    registry: str | None = "ghcr.io/ethz-spylab/prompt-siren-images"
+    """Docker registry prefix for pulling pre-built images.
+    This prefix is prepended to image tags when pulling (can be set to None to disable).
     Example: 'my-registry.com/myrepo' would make 'image:tag' become
     'my-registry.com/myrepo/image:tag'.
     """
