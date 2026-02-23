@@ -72,24 +72,24 @@ SERVICE_CONTAINER_BUILD_SPECS: dict[str, BuildImageSpec] = {
         tag=get_service_image_tag("scrape_products_exfil_task_adversary"),
     ),
     # env_dir_exfil_task service (uses shared exfil_server)
-    f"{SWEBENCH_IMAGE_PREFIX}-env_dir_exfil_task:latest": BuildImageSpec(
+    get_service_image_tag("env_dir_exfil_task"): BuildImageSpec(
         context_path=_get_docker_context("exfil_server"),
-        tag=f"{SWEBENCH_IMAGE_PREFIX}-env_dir_exfil_task:latest",
+        tag=get_service_image_tag("env_dir_exfil_task"),
     ),
     # codebase_exfil_task service (uses shared exfil_server)
-    f"{SWEBENCH_IMAGE_PREFIX}-codebase_exfil_task:latest": BuildImageSpec(
+    get_service_image_tag("codebase_exfil_task"): BuildImageSpec(
         context_path=_get_docker_context("exfil_server"),
-        tag=f"{SWEBENCH_IMAGE_PREFIX}-codebase_exfil_task:latest",
+        tag=get_service_image_tag("codebase_exfil_task"),
     ),
     # model_checkpoint_exfil_task service (has shared exfil_server)
-    f"{SWEBENCH_IMAGE_PREFIX}-model_checkpoint_exfil_task:latest": BuildImageSpec(
+    get_service_image_tag("model_checkpoint_exfil_task"): BuildImageSpec(
         context_path=_get_docker_context("exfil_server"),
-        tag=f"{SWEBENCH_IMAGE_PREFIX}-model_checkpoint_exfil_task:latest",
+        tag=get_service_image_tag("model_checkpoint_exfil_task"),
     ),
     # config_injection_exfil_task service (uses shared exfil_server)
-    f"{SWEBENCH_IMAGE_PREFIX}-config_injection_exfil_task:latest": BuildImageSpec(
+    get_service_image_tag("config_injection_exfil_task"): BuildImageSpec(
         context_path=_get_docker_context("exfil_server"),
-        tag=f"{SWEBENCH_IMAGE_PREFIX}-config_injection_exfil_task:latest",
+        tag=get_service_image_tag("config_injection_exfil_task"),
     ),
 }
 
