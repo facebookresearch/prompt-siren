@@ -27,12 +27,14 @@ from .dockerfiles import (
     _DOCKERFILE_INSTANCE_PY,
     DOCKERFILE_TEMPLATE,
 )
+from .image_tags import get_base_image_tag, get_benign_image_tag, get_env_image_tag
 from .swebench_imports import _ACTIVATE_ENV_COMMAND, make_test_spec
 
 
 def prepare_build_context(
     instance: SWEbenchInstance,
     config: SwebenchDatasetConfig,
+    build_context_dir: str | Path,
 ) -> tuple[MultiStageBuildImageSpec, TestSpec]:
     """Prepare multi-stage Docker build specification for a SWE-bench instance.
 
@@ -44,6 +46,7 @@ def prepare_build_context(
     Args:
         instance: SWE-bench instance data
         config: Dataset configuration
+        build_context_dir: Directory to store build contexts and generated scripts
 
     Returns:
         Tuple of (MultiStageBuildImageSpec, TestSpec) where the spec contains
@@ -62,7 +65,7 @@ def prepare_build_context(
     test_spec = make_test_spec(instance, injection_spec=injection_spec)
 
     # Create cache directory structure
-    cache_dir = Path(config.cache_dir)
+    cache_dir = Path(build_context_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     stages = []
@@ -70,6 +73,7 @@ def prepare_build_context(
     # Stage 1: Base image
     # Shared across all instances - use test_spec.base_image_key for caching
     base_key_hash = hashlib.sha256(test_spec.base_image_key.encode()).hexdigest()[:16]
+    base_tag = get_base_image_tag(base_key_hash)
     base_context = cache_dir / "base" / base_key_hash
     base_context.mkdir(parents=True, exist_ok=True)
 
@@ -79,7 +83,7 @@ def prepare_build_context(
 
     stages.append(
         BuildStage(
-            tag=test_spec.base_image_key,
+            tag=base_tag,
             context_path=str(base_context),
             parent_tag=None,  # FROM ghcr.io/astral-sh/uv:bookworm-slim
             cache_key=test_spec.base_image_key,  # Reuse across same base
@@ -89,13 +93,14 @@ def prepare_build_context(
     # Stage 2: Environment image
     # Shared across instances with same dependencies - use test_spec.env_image_key for caching
     env_key_hash = hashlib.sha256(test_spec.env_image_key.encode()).hexdigest()[:16]
+    env_tag = get_env_image_tag(env_key_hash)
     env_context = cache_dir / "env" / env_key_hash
     env_context.mkdir(parents=True, exist_ok=True)
 
     # Only write if not using cache or doesn't exist
     if not config.use_cache or not (env_context / "Dockerfile").exists():
         env_dockerfile = _DOCKERFILE_ENV_PY.format(
-            base_image_key=test_spec.base_image_key,
+            base_image_key=base_tag,
             activate_env_command=_ACTIVATE_ENV_COMMAND,
         )
         (env_context / "Dockerfile").write_text(env_dockerfile)
@@ -103,15 +108,16 @@ def prepare_build_context(
 
     stages.append(
         BuildStage(
-            tag=test_spec.env_image_key,
+            tag=env_tag,
             context_path=str(env_context),
-            parent_tag=test_spec.base_image_key,
+            parent_tag=base_tag,
             cache_key=test_spec.env_image_key,  # Reuse across same env
         )
     )
 
     # Stage 3: Instance image
     # Unique per instance - use instance_id for directory
+    benign_tag = get_benign_image_tag(instance_id)
     instance_context = (
         cache_dir / "instance" / instance["instance_id"].replace("/", "_").replace(":", "_")
     )
@@ -120,7 +126,7 @@ def prepare_build_context(
     # Only write if not using cache or doesn't exist
     if not config.use_cache or not (instance_context / "Dockerfile").exists():
         instance_dockerfile = _DOCKERFILE_INSTANCE_PY.format(
-            env_image_name=test_spec.env_image_key,
+            env_image_name=env_tag,
         )
         (instance_context / "Dockerfile").write_text(instance_dockerfile)
         (instance_context / "setup_repo.sh").write_text(test_spec.install_repo_script)
@@ -129,17 +135,14 @@ def prepare_build_context(
 
     stages.append(
         BuildStage(
-            tag=test_spec.instance_image_key,
+            tag=benign_tag,
             context_path=str(instance_context),
-            parent_tag=test_spec.env_image_key,
+            parent_tag=env_tag,
             cache_key=None,  # Always rebuild instances
         )
     )
 
     return (
-        MultiStageBuildImageSpec(
-            stages=stages,
-            final_tag=test_spec.instance_image_key,
-        ),
+        MultiStageBuildImageSpec(stages=stages),
         test_spec,
     )

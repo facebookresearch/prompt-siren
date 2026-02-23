@@ -13,7 +13,7 @@ from ....environments.bash_env import BashEnvState
 from ....sandbox_managers.image_spec import PullImageSpec
 from ....sandbox_managers.sandbox_task_setup import ContainerSpec
 from ....tasks import MaliciousTask, TaskResult
-from ..constants import SWEBENCH_IMAGE_PREFIX
+from ..image_tags import get_service_image_tag
 from ..task_metadata import SWEBenchMaliciousTaskMetadata
 from .constants import (
     _SIMPLE_AGENT_CONTAINER_SPEC,
@@ -116,7 +116,7 @@ exec_curl_bash_task = MaliciousTask(
         agent_container_spec=_SIMPLE_AGENT_CONTAINER_SPEC,
         service_containers={
             _ATTACK_SERVICE_NAME: ContainerSpec(
-                image_spec=PullImageSpec(tag=f"{SWEBENCH_IMAGE_PREFIX}-{_TASK_NAME}:latest"),
+                image_spec=PullImageSpec(tag=get_service_image_tag(_TASK_NAME)),
                 hostname=_HOSTNAME,
                 command=["python3", "/server.py"],
             )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from prompt_siren.sandbox_managers.abstract import ExecOutput
@@ -20,6 +21,11 @@ from prompt_siren.sandbox_managers.docker.plugins import (
 )
 
 pytestmark = pytest.mark.anyio
+
+
+def _unique_name(prefix: str) -> str:
+    """Generate a unique Docker object name for integration tests."""
+    return f"{prefix}-{uuid4().hex[:8]}"
 
 
 @pytest.fixture
@@ -319,7 +325,8 @@ class TestLocalDockerClientIntegration:
                 "Image": "debian:bookworm-slim",
                 "Cmd": ["sleep", "300"],
             }
-            container = await client.create_container(config, name="test-local-container-lifecycle")
+            container_name = _unique_name("test-local-container-lifecycle")
+            container = await client.create_container(config, name=container_name)
 
             try:
                 # Start container
@@ -351,7 +358,8 @@ class TestLocalDockerClientIntegration:
                 "Image": "debian:bookworm-slim",
                 "Cmd": ["sleep", "300"],
             }
-            container = await client.create_container(config, name="test-local-exec-command")
+            container_name = _unique_name("test-local-exec-command")
+            container = await client.create_container(config, name=container_name)
 
             try:
                 await container.start()
@@ -371,6 +379,7 @@ class TestLocalDockerClientIntegration:
                 assert "hello world" in result.stdout
                 assert result.exit_code == 0
             finally:
+                await container.stop()
                 await container.delete()
         finally:
             await client.close()
@@ -381,8 +390,9 @@ class TestLocalDockerClientIntegration:
 
         try:
             # Create network
+            network_name = _unique_name("test-local-network-lifecycle")
             config = {
-                "Name": "test-local-network-lifecycle",
+                "Name": network_name,
                 "Driver": "bridge",
                 "Internal": False,
             }
@@ -391,7 +401,7 @@ class TestLocalDockerClientIntegration:
             try:
                 # Verify network exists
                 info = await network.show()
-                assert info["Name"] == "test-local-network-lifecycle"
+                assert info["Name"] == network_name
                 assert info["Driver"] == "bridge"
             finally:
                 # Clean up network
@@ -424,7 +434,8 @@ class TestLocalDockerClientIntegration:
                 "Image": "debian:bookworm-slim",
                 "Cmd": ["sh", "-c", "'echo \"test log output\" && sleep 300'"],
             }
-            container = await client.create_container(config, name="test-local-container-logs")
+            container_name = _unique_name("test-local-container-logs")
+            container = await client.create_container(config, name=container_name)
 
             try:
                 await container.start()
@@ -453,7 +464,8 @@ class TestLocalDockerClientIntegration:
                 "Image": "debian:bookworm-slim",
                 "Cmd": ["sleep", "300"],
             }
-            container = await client.create_container(config, name="test-local-container-commit")
+            container_name = _unique_name("test-local-container-commit")
+            container = await client.create_container(config, name=container_name)
 
             try:
                 await container.start()
@@ -476,6 +488,7 @@ class TestLocalDockerClientIntegration:
                 assert image_info["Id"] is not None
             finally:
                 # Clean up
+                await container.stop()
                 await container.delete()
                 try:
                     await client.delete_image("test-local-committed-image:v1", force=True)

@@ -43,9 +43,6 @@ uv run prompt-siren run attack +dataset=agentdojo-workspace +attack=template_str
 # Run SWE-bench evaluation
 uv run prompt-siren run benign +dataset=swebench
 
-# Run SWE-bench with specific instances
-uv run prompt-siren run benign +dataset=swebench dataset.config.instance_ids='["django__django-11179"]'
-
 # Override parameters
 uv run prompt-siren run benign +dataset=agentdojo-workspace agent.config.model=azure:gpt-5 execution.concurrency=4
 
