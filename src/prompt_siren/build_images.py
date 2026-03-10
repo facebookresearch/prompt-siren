@@ -492,6 +492,7 @@ async def run_build(
     rebuild_existing: bool = False,
     registry: str | None = None,
     max_instances: int | None = None,
+    instance_ids: tuple[str, ...] | None = None,
     dataset_name: str = "SWE-bench/SWE-bench_Lite",
     skip_benign: bool = False,
     skip_malicious: bool = False,
@@ -531,6 +532,12 @@ async def run_build(
         i for i in all_instances if i["instance_id"] in INSTANCE_INJECTION_MAPPING
     ]
     logger.info(f"Found {len(supported_instances)} supported instances")
+
+    if instance_ids:
+        supported_instances = [
+            i for i in supported_instances if i["instance_id"] in instance_ids
+        ]
+        logger.info(f"Filtered to {len(supported_instances)} specified instances")
 
     if max_instances:
         logger.warning(
@@ -668,6 +675,7 @@ def main(
     rebuild_existing: bool,
     registry: str | None,
     max_instances: int | None,
+    instance_ids: tuple[str, ...],
     dataset: str,
     skip_benign: bool,
     skip_malicious: bool,
@@ -694,6 +702,7 @@ def main(
                 rebuild_existing=rebuild_existing,
                 registry=registry,
                 max_instances=max_instances,
+                instance_ids=instance_ids if instance_ids else None,
                 dataset_name=dataset,
                 skip_benign=skip_benign,
                 skip_malicious=skip_malicious,

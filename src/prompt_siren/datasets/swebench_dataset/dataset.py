@@ -118,7 +118,11 @@ def _load_and_filter_instances(config: SwebenchDatasetConfig) -> list[SWEbenchIn
     """
     # Load instances from SWE-bench (HuggingFace or local file)
     all_instances: list[SWEbenchInstance] = load_swebench_dataset(config.dataset_name)
-    return [i for i in all_instances if i["instance_id"] in INSTANCE_INJECTION_MAPPING]
+    instances = [i for i in all_instances if i["instance_id"] in INSTANCE_INJECTION_MAPPING]
+    if config.instance_ids:
+        instance_id_set = set(config.instance_ids)
+        instances = [i for i in instances if i["instance_id"] in instance_id_set]
+    return instances
 
 
 def _prepare_benign_task_from_instance(
@@ -158,6 +162,11 @@ def _prepare_benign_task_from_instance(
 
     # Format task prompt
     prompt = _format_task_prompt(instance, config)
+
+    # Apply benign prompt prefix if specified in injection spec
+    benign_prompt_prefix = injection_spec.get("benign_prompt_prefix")
+    if benign_prompt_prefix:
+        prompt = benign_prompt_prefix + prompt
 
     # Create evaluator
     evaluator = create_test_evaluator(instance, test_spec, sandbox_manager)
@@ -250,10 +259,10 @@ def create_swebench_dataset(
     # Load toolsets for this dataset
     toolsets = make_swebench_toolsets()
 
-    # Create the BashEnvironment with the sandbox manager
+    # Create the BashEnvironment with the sandbox manager and injection specs
     environment = BashEnvironment[
         AbstractSandboxManager, SWEBenchBenignTaskMetadata, SWEBenchMaliciousTaskMetadata
-    ](sandbox_manager, injection_ids)
+    ](sandbox_manager, injection_ids, injection_specs=INSTANCE_INJECTION_MAPPING)
 
     prompt_template = load_prompt_template(config.prompt_template)
     # set to None if null or empty string or not provided
