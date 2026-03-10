@@ -507,12 +507,6 @@ async def run_build(
     cache_dir: str = DEFAULT_BUILD_CONTEXT_TEMPLATE,
     rebuild_existing: bool = False,
     registry: str | None = None,
-    max_instances: int | None = None,
-    instance_ids: tuple[str, ...] | None = None,
-    dataset_name: str = "SWE-bench/SWE-bench_Lite",
-    skip_benign: bool = False,
-    skip_malicious: bool = False,
-    skip_pairs: bool = False,
 ) -> None:
     """Run the image building process for specified datasets.
 
@@ -526,39 +520,7 @@ async def run_build(
         ExceptionGroup: If any image builds failed
         ValueError: If a dataset name is invalid or doesn't support image building
     """
-
-    # Create dataset config
-    config = SwebenchDatasetConfig(
-        dataset_name=dataset_name,
-        cache_dir=cache_dir,
-        max_instances=max_instances,
-    )
-
-    # Load and filter instances
-    logger.info(f"Loading SWEBench dataset: {dataset_name}")
-    all_instances = load_swebench_dataset(dataset_name)
-
-    # Filter to supported instances
-    supported_instances = [
-        i for i in all_instances if i["instance_id"] in INSTANCE_INJECTION_MAPPING
-    ]
-    logger.info(f"Found {len(supported_instances)} supported instances")
-
-    if instance_ids:
-        supported_instances = [
-            i for i in supported_instances if i["instance_id"] in instance_ids
-        ]
-        logger.info(f"Filtered to {len(supported_instances)} specified instances")
-
-    if max_instances:
-        logger.warning(
-            f"The parameter max_instances was specified, ignoring some instance_ids, and building up to {max_instances}. This is probably only desired for testing!"
-        )
-        instances = supported_instances[:max_instances]
-    else:
-        instances = supported_instances
-
-    logger.info(f"Building images for {len(instances)} instances")
+    _validate_datasets(datasets)
 
     # Create Docker client - always use local client for image building
     logger.warning(
@@ -644,12 +606,6 @@ def main(
     cache_dir: str,
     rebuild_existing: bool,
     registry: str | None,
-    max_instances: int | None,
-    instance_ids: tuple[str, ...],
-    dataset: str,
-    skip_benign: bool,
-    skip_malicious: bool,
-    skip_pairs: bool,
     verbose: bool,
 ) -> None:
     """Build Docker images for datasets.
@@ -693,12 +649,6 @@ def main(
                 cache_dir=cache_dir,
                 rebuild_existing=rebuild_existing,
                 registry=registry,
-                max_instances=max_instances,
-                instance_ids=instance_ids if instance_ids else None,
-                dataset_name=dataset,
-                skip_benign=skip_benign,
-                skip_malicious=skip_malicious,
-                skip_pairs=skip_pairs,
             )
         )
     except ExceptionGroup as eg:
