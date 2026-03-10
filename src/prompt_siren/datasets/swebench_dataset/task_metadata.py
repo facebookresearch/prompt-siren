@@ -5,7 +5,8 @@ from pydantic import BaseModel, Field
 
 from ...sandbox_managers.image_spec import PullImageSpec
 from ...sandbox_managers.sandbox_task_setup import ContainerSpec
-from .image_tags import apply_registry_prefix, get_pair_image_tag
+from ..image_tags import apply_registry_prefix
+from .image_tags import get_pair_image_tag
 
 
 class SWEBenchBenignTaskMetadata(BaseModel):

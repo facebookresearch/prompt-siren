@@ -308,7 +308,9 @@ class LocalDockerClient(AbstractDockerClient):
         try:
             await self._docker.images.pull(from_image=tag)
         except DockerError as e:
-            raise DockerClientError(f"Failed to pull image {tag}: {e.message}") from e
+            raise DockerClientError(
+                f"Failed to pull image {tag}: {e.message}", status=e.status
+            ) from e
 
     async def build_image(
         self,
