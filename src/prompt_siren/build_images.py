@@ -19,6 +19,7 @@ import asyncio
 import logging
 import sys
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -353,7 +354,7 @@ class ImageBuilder:
         self._built_images.add(tag)
         logger.info(f"Successfully built image {tag}")
 
-    async def build_all_specs(self, specs: list[ImageBuildSpec]) -> list[BuildError]:
+    async def build_all_specs(self, specs: Sequence[ImageBuildSpec]) -> list[BuildError]:
         """Build all image specs with proper dependency ordering.
 
         First builds all non-derived specs (BuildImageSpec, MultiStageBuildImageSpec),
