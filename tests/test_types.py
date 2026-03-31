@@ -16,7 +16,12 @@ from prompt_siren.types import (
     InjectionAttacksDictTypeAdapter,
     StrContentAttack,
 )
-from pydantic_ai.messages import BinaryContent, ModelRequest, UserPromptPart
+from pydantic_ai.messages import (
+    BinaryContent,
+    ModelMessage,
+    ModelRequest,
+    UserPromptPart,
+)
 
 
 def test_injectable_model_messages_adapter_roundtrip():
@@ -38,7 +43,7 @@ def test_injectable_model_messages_adapter_roundtrip():
     injectable_msg = InjectableModelRequest(parts=[injectable_part])
 
     # Create the list
-    messages = [regular_msg, injectable_msg]
+    messages: list[ModelMessage | InjectableModelRequest] = [regular_msg, injectable_msg]
 
     # Serialize to JSON and verify binary encoding
     json_data = InjectableModelMessagesTypeAdapter.dump_json(messages)
