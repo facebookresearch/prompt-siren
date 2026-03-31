@@ -16,7 +16,12 @@ from prompt_siren.types import (
     InjectionAttacksDictTypeAdapter,
     StrContentAttack,
 )
-from pydantic_ai.messages import BinaryContent, ModelMessage, ModelRequest, UserPromptPart
+from pydantic_ai.messages import (
+    BinaryContent,
+    ModelMessage,
+    ModelRequest,
+    UserPromptPart,
+)
 
 
 def test_injectable_model_messages_adapter_roundtrip():
