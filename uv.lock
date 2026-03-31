@@ -2286,7 +2286,7 @@ wheels = [
 
 [[package]]
 name = "openinference-instrumentation"
-version = "0.1.44"
+version = "0.1.46"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "openinference-semantic-conventions" },
@@ -2294,9 +2294,9 @@ dependencies = [
     { name = "opentelemetry-sdk" },
     { name = "wrapt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/41/d9/c0d3040c0b5dc2b97ad20c35fb3fc1e3f2006bb4b08741ff325efcf3a96a/openinference_instrumentation-0.1.44.tar.gz", hash = "sha256:141953d2da33d54d428dfba2bfebb27ce0517dc43d52e1449a09db72ec7d318e", size = 23959, upload-time = "2026-02-01T01:45:55.88Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/64/8d/9b76b43e8b2ee2ccf1fe15b21c924095f9c0e4839919bcd4951b1c99c2ab/openinference_instrumentation-0.1.46.tar.gz", hash = "sha256:0b520002a1c682c525dcab49005c209bfd71611e8e4e4933b49779d5e899e6db", size = 23937, upload-time = "2026-03-04T10:13:48.883Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/6d/6a19587b26ffa273eb27ba7dd2482013afe3b47c8d9f1f39295216975f9f/openinference_instrumentation-0.1.44-py3-none-any.whl", hash = "sha256:86b2a8931e0f39ecfb739901f8987c654961da03baf3cfa5d5b4f45a96897b2d", size = 30093, upload-time = "2026-02-01T01:45:54.932Z" },
+    { url = "https://files.pythonhosted.org/packages/25/d1/f6668492152a4180492044313e2dc427fbc237904f6bb1629abd030e3469/openinference_instrumentation-0.1.46-py3-none-any.whl", hash = "sha256:f7b63ccd5f93ce82e4e40035c9faa6b021984cbe06ad791f4cf033551533bc48", size = 30124, upload-time = "2026-03-04T10:13:47.613Z" },
 ]
 
 [[package]]
