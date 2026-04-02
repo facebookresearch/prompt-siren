@@ -35,7 +35,7 @@ from pydantic_ai.usage import RunUsage
 from ..conftest import MockEnvironment, MockEnvState
 
 pytestmark = pytest.mark.anyio
-models.ALLOW_MODEL_REQUESTS = False  # ty: ignore[invalid-assignment]
+models.ALLOW_MODEL_REQUESTS = False  # type: ignore[assignment, ty:invalid-assignment]
 
 
 # Tests for make_fake_context
@@ -96,7 +96,7 @@ class TestGetHistoryWithAttack:
         def mock_tool_1(input_text: str) -> str:
             return f"Response: {input_text} {{INJECT:vector1}}"
 
-        toolsets: list[FunctionToolset[MockEnvState]] = [FunctionToolset([mock_tool_1])]
+        toolsets: list[FunctionToolset[MockEnvState]] = [FunctionToolset([mock_tool_1])]  # type: ignore[ty:invalid-argument-type, ty:invalid-assignment]
 
         result_history = await get_history_with_attack(
             mock_environment, mock_env_state, toolsets, history, attacks
@@ -158,7 +158,7 @@ class TestGetHistoryWithAttack:
         def mock_tool_1(input_text: str) -> str:
             return f"Response: {input_text}"
 
-        toolsets: list[FunctionToolset[MockEnvState]] = [FunctionToolset([mock_tool_1])]
+        toolsets: list[FunctionToolset[MockEnvState]] = [FunctionToolset([mock_tool_1])]  # type: ignore[ty:invalid-argument-type, ty:invalid-assignment]
 
         result_history = await get_history_with_attack(
             mock_environment, mock_env_state, toolsets, original_history, attacks
@@ -201,8 +201,8 @@ class TestGetHistoryWithAttack:
         def mock_tool_2(query: str) -> str:
             return f"Tool2: {query} {{INJECT:vector2}}"
 
-        toolsets: list[FunctionToolset[MockEnvState]] = [
-            FunctionToolset([mock_tool_1, mock_tool_2])
+        toolsets: list[FunctionToolset[MockEnvState]] = [  # type: ignore[ty:invalid-assignment]
+            FunctionToolset([mock_tool_1, mock_tool_2])  # type: ignore[ty:invalid-argument-type]
         ]
 
         result_history = await get_history_with_attack(
@@ -248,7 +248,7 @@ class TestGetHistoryWithAttack:
         def mock_tool_1(input_text: str) -> str:
             return f"Response: {input_text} {{INJECT:vector1}}"
 
-        toolsets: list[FunctionToolset[MockEnvState]] = [FunctionToolset([mock_tool_1])]
+        toolsets: list[FunctionToolset[MockEnvState]] = [FunctionToolset([mock_tool_1])]  # type: ignore[ty:invalid-argument-type, ty:invalid-assignment]
 
         result_history = await get_history_with_attack(
             mock_environment, mock_env_state, toolsets, history, attacks
@@ -280,7 +280,7 @@ class TestGetHistoryWithAttack:
         def mock_tool_1(input_text: str) -> str:
             return f"Response: {input_text}"
 
-        toolsets: list[FunctionToolset[MockEnvState]] = [FunctionToolset([mock_tool_1])]
+        toolsets: list[FunctionToolset[MockEnvState]] = [FunctionToolset([mock_tool_1])]  # type: ignore[ty:invalid-argument-type, ty:invalid-assignment]
 
         result_history = await get_history_with_attack(
             mock_environment, mock_env_state, toolsets, history, attacks
@@ -319,7 +319,7 @@ class TestRunToolHistory:
         def mock_tool(input_text: str) -> str:
             return f"Tool called with: {input_text}"
 
-        toolsets: list[FunctionToolset[MockEnvState]] = [FunctionToolset([mock_tool])]
+        toolsets: list[FunctionToolset[MockEnvState]] = [FunctionToolset([mock_tool])]  # type: ignore[ty:invalid-argument-type, ty:invalid-assignment]
 
         # History with only text messages, no tool calls
         history = [

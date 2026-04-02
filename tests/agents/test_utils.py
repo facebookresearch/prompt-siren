@@ -37,7 +37,7 @@ from pydantic_ai.usage import RunUsage
 from ..conftest import MockEnvState
 
 pytestmark = pytest.mark.anyio
-models.ALLOW_MODEL_REQUESTS = False  # ty: ignore[invalid-assignment]
+models.ALLOW_MODEL_REQUESTS = False  # type: ignore[assignment, ty:invalid-assignment]
 
 
 # Test helper functions

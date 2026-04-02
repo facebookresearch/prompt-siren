@@ -60,7 +60,7 @@ class TestImageBuilderImageExists:
     @pytest.fixture
     def builder(self, mock_docker: MockDockerClient) -> ImageBuilder:
         return ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
         )
 
     @pytest.mark.anyio
@@ -100,7 +100,7 @@ class TestImageBuilderPushToRegistry:
     ) -> None:
         """Test that push_to_registry does nothing when no registry configured."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
             registry=None,
         )
 
@@ -113,7 +113,7 @@ class TestImageBuilderPushToRegistry:
     async def test_push_to_registry_tags_and_pushes(self, mock_docker: MockDockerClient) -> None:
         """Test that push_to_registry tags and pushes when registry configured."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
             registry="my-registry.com/repo",
         )
 
@@ -132,7 +132,7 @@ class TestImageBuilderPushToRegistry:
     ) -> None:
         """Test that push_to_registry skips when image already exists in registry."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
             registry="my-registry.com/repo",
         )
 
@@ -154,7 +154,7 @@ class TestImageBuilderBuildFromContext:
     @pytest.fixture
     def builder(self, mock_docker: MockDockerClient) -> ImageBuilder:
         return ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
         )
 
     @pytest.mark.anyio
@@ -196,7 +196,7 @@ class TestImageBuilderBuildFromContext:
     ) -> None:
         """Test that build deletes and rebuilds when rebuild_existing=True."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
             rebuild_existing=True,
         )
         mock_docker.inspect_image.return_value = {"Id": "sha256:abc123"}
@@ -284,7 +284,7 @@ class TestImageBuilderBuildAllSpecs:
     @pytest.fixture
     def builder(self, mock_docker: MockDockerClient) -> ImageBuilder:
         return ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
         )
 
     @pytest.mark.anyio
@@ -293,7 +293,7 @@ class TestImageBuilderBuildAllSpecs:
     ) -> None:
         """Verify derived specs are built after all base specs complete."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
         )
 
         # Track build order at the _build_single_spec and build_modified_image level
@@ -322,8 +322,8 @@ class TestImageBuilderBuildAllSpecs:
             build_order.append(f"derived:{output_tag}")
             await original_modified(base_tag, dockerfile_extra, output_tag)
 
-        builder._build_single_spec = tracking_build_single  # type: ignore[method-assign]
-        builder.build_modified_image = tracking_modified  # type: ignore[method-assign]
+        builder._build_single_spec = tracking_build_single  # type: ignore[method-assign, ty:invalid-assignment]
+        builder.build_modified_image = tracking_modified  # type: ignore[method-assign, ty:invalid-assignment]
 
         # Create specs: 2 base specs and 2 derived specs
         specs = [
@@ -364,7 +364,7 @@ class TestImageBuilderBuildAllSpecs:
     ) -> None:
         """Verify multi-stage build specs are handled correctly."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
         )
 
         # Create context dir with Dockerfile
@@ -409,7 +409,7 @@ class TestImageBuilderBuildAllSpecs:
     ) -> None:
         """Verify build errors are collected but don't stop other builds."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
         )
 
         # Create context dir with Dockerfile
@@ -427,7 +427,7 @@ class TestImageBuilderBuildAllSpecs:
             else:
                 yield {"stream": "Done\n"}
 
-        mock_docker.build_image = build_side_effect  # type: ignore[method-assign]
+        mock_docker.build_image = build_side_effect  # type: ignore[method-assign, ty:invalid-assignment]
 
         specs = [
             BuildImageSpec(context_path=str(context_dir), tag="fail:latest"),
@@ -447,7 +447,7 @@ class TestImageBuilderBuildAllSpecs:
     ) -> None:
         """Verify derived specs are skipped when their base image fails to build."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
         )
 
         # Create context dir with Dockerfile
@@ -465,7 +465,7 @@ class TestImageBuilderBuildAllSpecs:
             else:
                 yield {"stream": "Done\n"}
 
-        mock_docker.build_image = build_side_effect  # type: ignore[method-assign]
+        mock_docker.build_image = build_side_effect  # type: ignore[method-assign, ty:invalid-assignment]
 
         specs = [
             BuildImageSpec(context_path=str(context_dir), tag="fail-base:latest"),
@@ -513,7 +513,7 @@ class TestBuildAllSpecsPushToRegistry:
     ) -> None:
         """push_image is called for each successfully built spec."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
             registry="test-registry",
         )
 
@@ -543,7 +543,7 @@ class TestBuildAllSpecsPushToRegistry:
     ) -> None:
         """push_image is NOT called for specs that failed to build."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
             registry="test-registry",
         )
 
@@ -560,7 +560,7 @@ class TestBuildAllSpecsPushToRegistry:
             else:
                 yield {"stream": "Done\n"}
 
-        mock_docker.build_image = build_side_effect  # type: ignore[method-assign]
+        mock_docker.build_image = build_side_effect  # type: ignore[method-assign, ty:invalid-assignment]
 
         specs = [
             BuildImageSpec(context_path=str(context_dir), tag="fail:latest"),
@@ -581,7 +581,7 @@ class TestBuildAllSpecsPushToRegistry:
     ) -> None:
         """push_image is NOT called for derived specs skipped due to base failure."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
             registry="test-registry",
         )
 
@@ -595,7 +595,7 @@ class TestBuildAllSpecsPushToRegistry:
         async def build_side_effect(*args: Any, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
             yield {"error": "Build failed"}
 
-        mock_docker.build_image = build_side_effect  # type: ignore[method-assign]
+        mock_docker.build_image = build_side_effect  # type: ignore[method-assign, ty:invalid-assignment]
 
         specs = [
             BuildImageSpec(context_path=str(context_dir), tag="base:latest"),
@@ -619,7 +619,7 @@ class TestBuildAllSpecsPushToRegistry:
     ) -> None:
         """A push failure should NOT cause derived images to be skipped."""
         builder = ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
             registry="test-registry",
         )
 

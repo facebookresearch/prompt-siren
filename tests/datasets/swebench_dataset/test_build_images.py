@@ -50,7 +50,7 @@ class TestBuildDatasetImagesValidation:
     @pytest.fixture
     def builder(self, mock_docker: MockDockerClient) -> ImageBuilder:
         return ImageBuilder(
-            docker_client=mock_docker,  # type: ignore[arg-type]
+            docker_client=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
         )
 
     @pytest.mark.anyio

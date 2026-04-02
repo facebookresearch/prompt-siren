@@ -7,31 +7,13 @@ import json
 from argparse import Namespace
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any, TypeVar
+from typing import Any
 
 from logfire import LogfireSpan
 from pydantic_ai.messages import BaseToolCallPart
 
 from ..attacks.abstract import AbstractAttack
-from ..types import InjectionAttack
 from .formatted_span import formatted_span
-
-KT = TypeVar("KT")
-EnvStateT = TypeVar("EnvStateT")
-RawOutputT = TypeVar("RawOutputT")
-FinalOutputT = TypeVar("FinalOutputT")
-InjectionAttackT = TypeVar("InjectionAttackT", bound=InjectionAttack)
-
-
-# Flattening is now handled automatically in formatted_span
-# This function is kept for backwards compatibility but may be removed in the future
-def flatten(prefix: str, d: dict[str, KT]) -> Generator[tuple[str, KT]]:
-    for k, v in d.items():
-        key = f"{prefix}.{k}" if prefix else k
-        if isinstance(v, dict):
-            yield from flatten(key, v)
-        else:
-            yield key, v
 
 
 @contextmanager

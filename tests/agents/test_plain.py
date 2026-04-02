@@ -29,7 +29,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from ..conftest import MockEnvironment, MockEnvState
 
 pytestmark = pytest.mark.anyio
-models.ALLOW_MODEL_REQUESTS = False  # ty: ignore[invalid-assignment]
+models.ALLOW_MODEL_REQUESTS = False  # type: ignore[assignment, ty:invalid-assignment]
 
 
 # Test Agent class

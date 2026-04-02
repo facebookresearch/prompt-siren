@@ -845,179 +845,164 @@ def _extract_from_gen_ai_messages(
 
     # Extract input messages
     if GenAIMessageAttributes.INPUT_MESSAGES in gen_ai_attrs:
-        input_messages_str = gen_ai_attrs[GenAIMessageAttributes.INPUT_MESSAGES]
-        if isinstance(input_messages_str, str):
-            try:
-                input_messages = json.loads(input_messages_str)
-                if isinstance(input_messages, list):
-                    first_user_message_found = False
-                    for index, msg in enumerate(input_messages):
-                        if MessagePartFields.ROLE in msg:
-                            yield (
-                                f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_ROLE}",
-                                msg[MessagePartFields.ROLE],
-                            )
+        input_messages = _parse_events(gen_ai_attrs[GenAIMessageAttributes.INPUT_MESSAGES])
+        if input_messages:
+            first_user_message_found = False
+            for index, msg in enumerate(input_messages):
+                if MessagePartFields.ROLE in msg:
+                    yield (
+                        f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_ROLE}",
+                        msg[MessagePartFields.ROLE],
+                    )
 
-                        # Extract content from parts
-                        if MessagePartFields.PARTS in msg and isinstance(
-                            msg[MessagePartFields.PARTS], list
-                        ):
-                            tool_call_count = 0
-                            for part in msg[MessagePartFields.PARTS]:
-                                if isinstance(part, dict):
-                                    part_type = part.get(MessagePartFields.TYPE)
+                # Extract content from parts
+                if MessagePartFields.PARTS in msg and isinstance(
+                    msg[MessagePartFields.PARTS], list
+                ):
+                    tool_call_count = 0
+                    for part in msg[MessagePartFields.PARTS]:
+                        if isinstance(part, dict):
+                            part_type = part.get(MessagePartFields.TYPE)
 
-                                    if (
-                                        part_type == PydanticMessagePartType.TEXT
-                                        and MessagePartFields.CONTENT in part
-                                    ):
-                                        yield (
-                                            f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_CONTENT}",
-                                            part[MessagePartFields.CONTENT],
-                                        )
+                            if (
+                                part_type == PydanticMessagePartType.TEXT
+                                and MessagePartFields.CONTENT in part
+                            ):
+                                yield (
+                                    f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_CONTENT}",
+                                    part[MessagePartFields.CONTENT],
+                                )
 
-                                        # Set INPUT_VALUE for the first user message found
-                                        if (
-                                            not first_user_message_found
-                                            and msg.get(MessagePartFields.ROLE)
-                                            == PydanticMessageRole.USER
-                                        ):
-                                            yield (
-                                                SpanAttributes.INPUT_VALUE,
-                                                part[MessagePartFields.CONTENT],
-                                            )
-                                            first_user_message_found = True
+                                # Set INPUT_VALUE for the first user message found
+                                if (
+                                    not first_user_message_found
+                                    and msg.get(MessagePartFields.ROLE) == PydanticMessageRole.USER
+                                ):
+                                    yield (
+                                        SpanAttributes.INPUT_VALUE,
+                                        part[MessagePartFields.CONTENT],
+                                    )
+                                    first_user_message_found = True
 
-                                    elif part_type == PydanticMessagePartType.TOOL_CALL:
-                                        # Handle tool calls in input messages (for assistant messages)
-                                        if MessagePartFields.ID in part:
-                                            yield (
-                                                f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_ID}",
-                                                part[MessagePartFields.ID],
-                                            )
-                                        if MessagePartFields.NAME in part:
-                                            yield (
-                                                f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_FUNCTION_NAME}",
-                                                part[MessagePartFields.NAME],
-                                            )
-                                        if MessagePartFields.ARGUMENTS in part:
-                                            # Convert arguments to JSON string if it's a dict
-                                            arguments = part[MessagePartFields.ARGUMENTS]
-                                            if isinstance(arguments, dict):
-                                                arguments = safe_json_dumps(arguments)
-                                            yield (
-                                                f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_FUNCTION_ARGUMENTS_JSON}",
-                                                arguments,
-                                            )
-                                        tool_call_count += 1
+                            elif part_type == PydanticMessagePartType.TOOL_CALL:
+                                # Handle tool calls in input messages (for assistant messages)
+                                if MessagePartFields.ID in part:
+                                    yield (
+                                        f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_ID}",
+                                        part[MessagePartFields.ID],
+                                    )
+                                if MessagePartFields.NAME in part:
+                                    yield (
+                                        f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_FUNCTION_NAME}",
+                                        part[MessagePartFields.NAME],
+                                    )
+                                if MessagePartFields.ARGUMENTS in part:
+                                    # Convert arguments to JSON string if it's a dict
+                                    arguments = part[MessagePartFields.ARGUMENTS]
+                                    if isinstance(arguments, dict):
+                                        arguments = safe_json_dumps(arguments)
+                                    yield (
+                                        f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_FUNCTION_ARGUMENTS_JSON}",
+                                        arguments,
+                                    )
+                                tool_call_count += 1
 
-                                    elif part_type == PydanticMessagePartType.TOOL_CALL_RESPONSE:
-                                        # Handle tool response messages (treated as tool messages)
-                                        # Override role to "tool" for OpenInference compatibility
-                                        yield (
-                                            f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_ROLE}",
-                                            PydanticMessageRole.TOOL,
-                                        )
-                                        if MessagePartFields.RESULT in part:
-                                            yield (
-                                                f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_CONTENT}",
-                                                str(part[MessagePartFields.RESULT]),
-                                            )
-                                        if "name" in part:
-                                            # Include tool name for OpenInference
-                                            yield (
-                                                f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_NAME}",
-                                                part["name"],
-                                            )
-                                        # Note: Removed break to handle multiple parts in tool_call_response messages
-
-                                    else:
-                                        # Log unexpected part types for debugging
-                                        logfire.warning(
-                                            f"Unexpected part type in input message: {part_type}",
-                                            part_type=part_type,
-                                        )
-                                else:
-                                    logfire.warning(
-                                        f"Invalid part in input message (not a dict): {type(part)}",
-                                        part_type=type(part),
+                            elif part_type == PydanticMessagePartType.TOOL_CALL_RESPONSE:
+                                # Handle tool response messages (treated as tool messages)
+                                # Override role to "tool" for OpenInference compatibility
+                                yield (
+                                    f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_ROLE}",
+                                    PydanticMessageRole.TOOL,
+                                )
+                                if MessagePartFields.RESULT in part:
+                                    yield (
+                                        f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_CONTENT}",
+                                        str(part[MessagePartFields.RESULT]),
+                                    )
+                                if "name" in part:
+                                    # Include tool name for OpenInference
+                                    yield (
+                                        f"{SpanAttributes.LLM_INPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_NAME}",
+                                        part["name"],
                                     )
 
-            except json.JSONDecodeError:
-                pass
+                            else:
+                                logfire.warning(
+                                    f"Unexpected part type in input message: {part_type}",
+                                    part_type=part_type,
+                                )
+                        else:
+                            logfire.warning(
+                                f"Invalid part in input message (not a dict): {type(part)}",
+                                part_type=type(part),
+                            )
 
     # Extract output messages
     if GenAIMessageAttributes.OUTPUT_MESSAGES in gen_ai_attrs:
-        output_messages_str = gen_ai_attrs[GenAIMessageAttributes.OUTPUT_MESSAGES]
-        if isinstance(output_messages_str, str):
-            try:
-                output_messages = json.loads(output_messages_str)
-                if isinstance(output_messages, list):
-                    for index, msg in enumerate(output_messages):
-                        if MessagePartFields.ROLE in msg:
-                            yield (
-                                f"{SpanAttributes.LLM_OUTPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_ROLE}",
-                                msg[MessagePartFields.ROLE],
-                            )
+        output_messages = _parse_events(gen_ai_attrs[GenAIMessageAttributes.OUTPUT_MESSAGES])
+        if output_messages:
+            for index, msg in enumerate(output_messages):
+                if MessagePartFields.ROLE in msg:
+                    yield (
+                        f"{SpanAttributes.LLM_OUTPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_ROLE}",
+                        msg[MessagePartFields.ROLE],
+                    )
 
-                        # Extract content or tool calls from parts
-                        if MessagePartFields.PARTS in msg and isinstance(
-                            msg[MessagePartFields.PARTS], list
-                        ):
-                            tool_call_count = 0
-                            for part in msg[MessagePartFields.PARTS]:
-                                if isinstance(part, dict):
-                                    part_type = part.get(MessagePartFields.TYPE)
+                # Extract content or tool calls from parts
+                if MessagePartFields.PARTS in msg and isinstance(
+                    msg[MessagePartFields.PARTS], list
+                ):
+                    tool_call_count = 0
+                    for part in msg[MessagePartFields.PARTS]:
+                        if isinstance(part, dict):
+                            part_type = part.get(MessagePartFields.TYPE)
+                            if (
+                                part_type == PydanticMessagePartType.TEXT
+                                and MessagePartFields.CONTENT in part
+                            ):
+                                yield (
+                                    f"{SpanAttributes.LLM_OUTPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_CONTENT}",
+                                    part[MessagePartFields.CONTENT],
+                                )
+                            elif part_type == PydanticMessagePartType.TOOL_CALL:
+                                # Extract tool call information
+                                if MessagePartFields.ID in part:
+                                    yield (
+                                        f"{SpanAttributes.LLM_OUTPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_ID}",
+                                        part[MessagePartFields.ID],
+                                    )
+                                if MessagePartFields.NAME in part:
+                                    yield (
+                                        f"{SpanAttributes.LLM_OUTPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_FUNCTION_NAME}",
+                                        part[MessagePartFields.NAME],
+                                    )
+                                if MessagePartFields.ARGUMENTS in part:
+                                    # Convert arguments to JSON string if it's a dict
+                                    arguments = part[MessagePartFields.ARGUMENTS]
+                                    if isinstance(arguments, dict):
+                                        arguments = safe_json_dumps(arguments)
+                                    yield (
+                                        f"{SpanAttributes.LLM_OUTPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_FUNCTION_ARGUMENTS_JSON}",
+                                        arguments,
+                                    )
+
+                                    # Also set OUTPUT_VALUE for final_result
                                     if (
-                                        part_type == PydanticMessagePartType.TEXT
-                                        and MessagePartFields.CONTENT in part
+                                        part.get(MessagePartFields.NAME)
+                                        == PydanticMessageToolCallFunctionFinalResult.FINAL_RESULT
                                     ):
                                         yield (
-                                            f"{SpanAttributes.LLM_OUTPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_CONTENT}",
-                                            part[MessagePartFields.CONTENT],
+                                            SpanAttributes.OUTPUT_VALUE,
+                                            arguments,
                                         )
-                                    elif part_type == PydanticMessagePartType.TOOL_CALL:
-                                        # Extract tool call information
-                                        if MessagePartFields.ID in part:
-                                            yield (
-                                                f"{SpanAttributes.LLM_OUTPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_ID}",
-                                                part[MessagePartFields.ID],
-                                            )
-                                        if MessagePartFields.NAME in part:
-                                            yield (
-                                                f"{SpanAttributes.LLM_OUTPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_FUNCTION_NAME}",
-                                                part[MessagePartFields.NAME],
-                                            )
-                                        if MessagePartFields.ARGUMENTS in part:
-                                            # Convert arguments to JSON string if it's a dict
-                                            arguments = part[MessagePartFields.ARGUMENTS]
-                                            if isinstance(arguments, dict):
-                                                arguments = safe_json_dumps(arguments)
-                                            yield (
-                                                f"{SpanAttributes.LLM_OUTPUT_MESSAGES}.{index}.{MessageAttributes.MESSAGE_TOOL_CALLS}.{tool_call_count}.{ToolCallAttributes.TOOL_CALL_FUNCTION_ARGUMENTS_JSON}",
-                                                arguments,
-                                            )
-
-                                            # Also set OUTPUT_VALUE for final_result
-                                            if (
-                                                part.get(MessagePartFields.NAME)
-                                                == PydanticMessageToolCallFunctionFinalResult.FINAL_RESULT
-                                            ):
-                                                yield (
-                                                    SpanAttributes.OUTPUT_VALUE,
-                                                    arguments,
-                                                )
-                                        tool_call_count += 1
-                                    else:
-                                        # Log unexpected part types for debugging
-                                        logfire.warning(
-                                            f"Unexpected part type in output message: {part_type}",
-                                            part_type=part_type,
-                                        )
-                                else:
-                                    logfire.warning(
-                                        f"Invalid part in output message (not a dict): {type(part)}",
-                                        part_type=type(part),
-                                    )
-            except json.JSONDecodeError:
-                pass
+                                tool_call_count += 1
+                            else:
+                                logfire.warning(
+                                    f"Unexpected part type in output message: {part_type}",
+                                    part_type=part_type,
+                                )
+                        else:
+                            logfire.warning(
+                                f"Invalid part in output message (not a dict): {type(part)}",
+                                part_type=type(part),
+                            )
