@@ -144,7 +144,7 @@ class TestFailedEntryPointErrorHandling:
         """String annotation resolution failure chains the original error."""
         registry = BaseRegistry[DummyComponent, None]("test")
 
-        def factory_with_string_annotation(config: "NonexistentType") -> DummyComponent:  # type: ignore[name-defined]  # noqa: F821
+        def factory_with_string_annotation(config: "NonexistentType") -> DummyComponent:  # type: ignore[name-defined, ty:unresolved-reference]  # noqa: F821
             return DummyComponent()
 
         with pytest.raises(ValueError, match="Cannot resolve string annotation"):

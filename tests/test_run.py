@@ -663,7 +663,7 @@ class TestSystemPromptIntegration:
         # Mock the attack method to capture parameters
         original_attack = mock_attack_instance.attack
         attack_mock = AsyncMock(side_effect=original_attack)
-        mock_attack_instance.attack = attack_mock  # ty: ignore[invalid-assignment]
+        mock_attack_instance.attack = attack_mock  # type: ignore[assignment, ty:invalid-assignment]
 
         await run_task_couples_with_attack(
             couples=[couple],
@@ -729,7 +729,7 @@ class TestSystemPromptIntegration:
         # Mock the attack method to capture parameters
         original_attack = mock_attack_instance.attack
         attack_mock = AsyncMock(side_effect=original_attack)
-        mock_attack_instance.attack = attack_mock  # ty: ignore[invalid-assignment]
+        mock_attack_instance.attack = attack_mock  # type: ignore[assignment, ty:invalid-assignment]
 
         await run_task_couples_with_attack(
             couples=[couple],

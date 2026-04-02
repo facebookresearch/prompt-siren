@@ -450,7 +450,7 @@ class MockAttack(AbstractAttack[MockEnvState, str, str, StrContentAttack]):
             RunContext(deps=MockEnvState(value="mock"), model=TestModel(), usage=RunUsage()),
             environment,
             FinishReason.AGENT_LOOP_END,
-            None,  # type: ignore[arg-type] -- no need to add a full state here
+            None,  # type: ignore[arg-type, ty:invalid-argument-type] -- no need to add a full state here
         )
         return end_state, attacks_dict
 

@@ -51,7 +51,7 @@ class TestImageCacheVerifyImageExists:
     @pytest.fixture
     def cache(self, mock_docker: MockDockerClient) -> ImageCache:
         return ImageCache(
-            docker=mock_docker,  # type: ignore[arg-type]
+            docker=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
             batch_id="test-batch",
         )
 
@@ -92,7 +92,7 @@ class TestImageCacheEnsureImageAvailable:
     @pytest.fixture
     def cache(self, mock_docker: MockDockerClient) -> ImageCache:
         return ImageCache(
-            docker=mock_docker,  # type: ignore[arg-type]
+            docker=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
             batch_id="test-batch",
         )
 
@@ -155,7 +155,7 @@ class TestImageCacheNon404Errors:
     @pytest.fixture
     def cache(self, mock_docker: MockDockerClient) -> ImageCache:
         return ImageCache(
-            docker=mock_docker,  # type: ignore[arg-type]
+            docker=mock_docker,  # type: ignore[arg-type, ty:invalid-argument-type]
             batch_id="test-batch",
         )
 
