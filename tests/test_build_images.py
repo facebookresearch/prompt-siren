@@ -14,6 +14,8 @@ from prompt_siren.sandbox_managers.image_spec import BuildImageSpec
 class MockDockerClient:
     """Mock Docker client for testing."""
 
+    build_image: Any
+
     def __init__(self) -> None:
         self.inspect_image = AsyncMock()
         self.delete_image = AsyncMock()
