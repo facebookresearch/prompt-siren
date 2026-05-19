@@ -1,9 +1,9 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 import dataclasses
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Generic, Protocol, runtime_checkable, TypeVar
+from typing import Any, Generic, Protocol, runtime_checkable, TypeVar
 
 from typing_extensions import assert_never, Self
 
@@ -248,14 +248,19 @@ class BashEnvironment(
     name: str = "bash"
     all_injection_ids: list[InjectionVectorID]
     _sandbox_manager: SandboxManagerT
+    _injection_specs: Mapping[str, Any] | None  # Maps instance_id -> InjectionSpec
+    _current_instance_id: str | None  # Set by create_task_context
 
     def __init__(
         self,
         sandbox_manager: SandboxManagerT,
         all_injection_ids: list[InjectionVectorID],
+        injection_specs: Mapping[str, Any] | None = None,
     ) -> None:
         self._sandbox_manager = sandbox_manager
         self.all_injection_ids = all_injection_ids
+        self._injection_specs = injection_specs
+        self._current_instance_id = None
 
     async def copy_env_state(self, env_state: BashEnvState) -> BashEnvState:
         """Clone sandbox state (both containers and network if present)."""
@@ -284,6 +289,15 @@ class BashEnvironment(
         self,
         task: TaskCouple[BashEnvState] | BenignTask[BashEnvState] | MaliciousTask[BashEnvState],
     ) -> AsyncIterator[BashEnvState]:
+        # Extract instance_id for injection spec lookup
+        if isinstance(task, TaskCouple):
+            self._current_instance_id = task.benign.id
+        elif isinstance(task, BenignTask):
+            self._current_instance_id = task.id
+        else:
+            # MaliciousTask doesn't have an instance_id, keep previous or None
+            pass
+
         # Recreate task setup from task (cheap object construction)
         task_setup = _create_task_setup_from_task(task)
         # Setup task returns SandboxState with all container IDs
@@ -316,8 +330,21 @@ class BashEnvironment(
         # When an attack is missing, render the default value
         attacks = defaults | attacks
 
+        # Get current comment style from injection specs
+        comment_style = "python"  # default
+        if self._injection_specs and self._current_instance_id:
+            spec = self._injection_specs.get(self._current_instance_id, {})
+            comment_style = spec.get("comment_style", "python")
+
         final_output = raw_output
         for injection_id, attack in attacks.items():
-            final_output = final_output.replace(injection_id, attack.content)
+            content = attack.content
+            # Apply RST formatting: indent continuation lines with 3 spaces
+            if comment_style == "rst" and content:
+                lines = content.split("\n")
+                if len(lines) > 1:
+                    # First line follows the "..", rest need 3-space indent
+                    content = lines[0] + "\n" + "\n".join("   " + line for line in lines[1:])
+            final_output = final_output.replace(injection_id, content)
 
         return final_output
