@@ -67,11 +67,8 @@ def _extract_text_from_result(result: TaskResult[None]) -> str:
     """Extract text content from the final message in a task result."""
     if not result.run_context.messages:
         return ""
-
     final_message = result.run_context.messages[-1]
-
     text_parts = [part.content for part in final_message.parts if isinstance(part, TextPart)]
-
     return " ".join(text_parts)
 
 
@@ -113,7 +110,7 @@ class PurpleLlamaDataset(
     _task_couples: list[TaskCouple[None]]
 
     @property
-    def system_prompt(self) -> str | None:
+    def system_prompt(self) -> None:
         """No dataset-level system prompt - each task has its own."""
         return None
 

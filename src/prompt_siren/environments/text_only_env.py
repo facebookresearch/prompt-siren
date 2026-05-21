@@ -18,7 +18,7 @@ from ..environments.abstract import SnapshottableAbstractEnvironment
 from ..tasks import BenignTask, MaliciousTask, TaskCouple
 from ..types import InjectionVectorID, StrContentAttack
 
-INJECTION_PLACEHOLDER = "{INJECTION}"
+INJECTION_PLACEHOLDER = "{INJECTION-c1fd6d0e-28e2-414f-bf6b-d1a208daace2}"
 
 
 @dataclass
@@ -27,8 +27,8 @@ class TextOnlyEnvironment(SnapshottableAbstractEnvironment[None, str, str, StrCo
 
     This environment:
     - Uses None as env_state (no stateful context needed)
-    - Has a single injection vector: "{INJECTION}"
-    - Renders by replacing {INJECTION} placeholder with attack content
+    - Has a single injection vector: "{INJECTION-c1fd6d0e-28e2-414f-bf6b-d1a208daace2}"
+    - Renders by replacing {INJECTION-c1fd6d0e-28e2-414f-bf6b-d1a208daace2} placeholder with attack content
     """
 
     name: str = "text-only"

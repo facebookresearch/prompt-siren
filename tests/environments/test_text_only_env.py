@@ -27,7 +27,7 @@ class TestTextOnlyEnvironment:
     def test_injection_ids(self, env: TextOnlyEnvironment):
         """Test that environment has the expected injection IDs."""
         assert env.all_injection_ids == [INJECTION_PLACEHOLDER]
-        assert INJECTION_PLACEHOLDER == "{INJECTION}"
+        assert INJECTION_PLACEHOLDER == "{INJECTION-c1fd6d0e-28e2-414f-bf6b-d1a208daace2}"
 
     async def test_copy_env_state_returns_none(self, env: TextOnlyEnvironment):
         """Test that copy_env_state returns None."""
@@ -56,7 +56,7 @@ class TestGetInjectableIds:
 
     async def test_returns_placeholder_when_present(self, env: TextOnlyEnvironment):
         """Test that placeholder is returned when present in raw output."""
-        raw_output = "Hello {INJECTION} world"
+        raw_output = "Hello {INJECTION-c1fd6d0e-28e2-414f-bf6b-d1a208daace2} world"
         result = await env.get_injectable_ids(raw_output)
         assert result == [INJECTION_PLACEHOLDER]
 
@@ -104,13 +104,13 @@ class TestRender:
 
     async def test_render_without_attack_replaces_with_empty(self, env: TextOnlyEnvironment):
         """Test that rendering without attack replaces placeholder with empty string."""
-        raw_output = "Hello {INJECTION} world"
+        raw_output = "Hello {INJECTION-c1fd6d0e-28e2-414f-bf6b-d1a208daace2} world"
         result = await env.render(raw_output, attacks=None)
         assert result == "Hello  world"
 
     async def test_render_with_attack_replaces_placeholder(self, env: TextOnlyEnvironment):
         """Test that rendering with attack replaces placeholder with attack content."""
-        raw_output = "Hello {INJECTION} world"
+        raw_output = "Hello {INJECTION-c1fd6d0e-28e2-414f-bf6b-d1a208daace2} world"
         attacks = {INJECTION_PLACEHOLDER: StrContentAttack(content="INJECTED")}
         result = await env.render(raw_output, attacks=attacks)
         assert result == "Hello INJECTED world"
@@ -123,21 +123,21 @@ class TestRender:
 
     async def test_render_replaces_multiple_occurrences(self, env: TextOnlyEnvironment):
         """Test that multiple occurrences of placeholder are replaced."""
-        raw_output = "{INJECTION} and {INJECTION} again"
+        raw_output = "{INJECTION-c1fd6d0e-28e2-414f-bf6b-d1a208daace2} and {INJECTION-c1fd6d0e-28e2-414f-bf6b-d1a208daace2} again"
         attacks = {INJECTION_PLACEHOLDER: StrContentAttack(content="X")}
         result = await env.render(raw_output, attacks=attacks)
         assert result == "X and X again"
 
     async def test_render_with_empty_attack_content(self, env: TextOnlyEnvironment):
         """Test rendering with empty attack content."""
-        raw_output = "Start {INJECTION} end"
+        raw_output = "Start {INJECTION-c1fd6d0e-28e2-414f-bf6b-d1a208daace2} end"
         attacks = {INJECTION_PLACEHOLDER: StrContentAttack(content="")}
         result = await env.render(raw_output, attacks=attacks)
         assert result == "Start  end"
 
     async def test_render_with_multiline_attack(self, env: TextOnlyEnvironment):
         """Test rendering with multiline attack content."""
-        raw_output = "Input: {INJECTION}"
+        raw_output = "Input: {INJECTION-c1fd6d0e-28e2-414f-bf6b-d1a208daace2}"
         attacks = {INJECTION_PLACEHOLDER: StrContentAttack(content="line1\nline2")}
         result = await env.render(raw_output, attacks=attacks)
         assert result == "Input: line1\nline2"
